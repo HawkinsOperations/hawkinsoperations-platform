@@ -1,0 +1,10 @@
+{
+  "contract_version": "1.0.0",
+  "published_at": "2026-04-21T00:00:00Z",
+  "schemas": {
+    "detection_artifact": "contracts/schemas/detection-artifact.schema.json",
+    "validation_report": "contracts/schemas/validation-report.schema.json",
+    "proof_record": "contracts/schemas/proof-record.schema.json"
+  },
+  "notes": "Initial platform contract baseline for detection-validation-proof chaining."
+}

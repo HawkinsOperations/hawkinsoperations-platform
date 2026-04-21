@@ -1,7 +1,23 @@
 {
   "ledger_version": "1.0.0",
   "repository": "hawkinsoperations-platform",
-  "generated_at": "2026-04-21T00:00:00Z",
-  "entries": []
+  "generated_at": "2026-04-21T16:39:00-05:00",
+  "entries": [
+    {
+      "id": "PLATFORM-CONTRACTS-2026-04-21-001",
+      "timestamp": "2026-04-21T16:39:00-05:00",
+      "type": "contract_baseline",
+      "summary": "Initial cross-repository contract package for detection-validation-proof linkage.",
+      "artifact_paths": [
+        "contracts/contract-version.json",
+        "contracts/README.md",
+        "contracts/schemas/detection-artifact.schema.json",
+        "contracts/schemas/validation-report.schema.json",
+        "contracts/schemas/proof-record.schema.json"
+      ],
+      "sha256": "e2ce7cb3337f136b7b74acaf863455c20ca89608c66c561c42a38423b1a78acd",
+      "source_ref": "contract_version=1.0.0",
+      "notes": "Baseline schema set; CI enforcement wiring is next gate."
+    }
+  ]
 }
-

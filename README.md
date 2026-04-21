@@ -12,6 +12,18 @@ This repository defines how detection and validation components are wired, promo
 - Deployment orchestration scripts and integration modules
 - Environment-agnostic operational controls and runbooks
 
+## Contract Baseline
+
+Initial contract package is now defined under `contracts/`:
+
+- `contracts/contract-version.json`
+- `contracts/schemas/detection-artifact.schema.json`
+- `contracts/schemas/validation-report.schema.json`
+- `contracts/schemas/proof-record.schema.json`
+
+This baseline defines minimum fields required for reproducible
+detection-to-validation-to-proof linkage.
+
 ## Out of Scope
 
 - Host-specific workstation configuration state
@@ -36,4 +48,3 @@ This repository defines how detection and validation components are wired, promo
 - Validation: `hawkinsoperations-validation`
 - Proof: `hawkinsoperations-proof`
 - Website: `hawkinsoperations-website`
-
