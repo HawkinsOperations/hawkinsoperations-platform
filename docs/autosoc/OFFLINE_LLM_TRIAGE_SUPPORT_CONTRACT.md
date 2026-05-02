@@ -4,7 +4,7 @@
 
 This contract defines how HawkinsOperations may use an offline or local model as triage-support labor without granting it authority.
 
-The contract is public-safe by design. It does not include raw prompts, raw model output, local paths, host labels, device identifiers, private evidence filenames, or runtime configuration details.
+The contract is sanitized for repo review by design. It does not include raw prompts, raw model output, local paths, host labels, device identifiers, private evidence filenames, or runtime configuration details.
 
 ## Current Scope
 
@@ -14,7 +14,7 @@ The contract is public-safe by design. It does not include raw prompts, raw mode
 - Private evidence classification: `PRIVATE_RUNTIME_EVIDENCE` or `PRIVATE_SUPPORTING_EVIDENCE`
 - Public-safe status: `NOT_PUBLIC_SAFE`
 
-Private lab model support completed and private GPU activity was observed during a bounded model call. Those observations remain private evidence and do not promote public runtime, signal, production, or public-safe proof.
+Private model-support and GPU-activity observations remain private evidence. They do not promote public runtime, signal, production, or public-safe proof.
 
 ## Input Case Packet Requirements
 
@@ -120,7 +120,9 @@ PUBLIC_SAFE_STATUS=NOT_PUBLIC_SAFE
 PROOF_CEILING=TEST_VALIDATED_SYNTHETIC_SCOPE
 ```
 
-## Allowed Public Wording
+## Allowed Internal Classification Wording
+
+These phrases are allowed only as bounded internal classification or reviewed contract language. They are not public proof claims and do not make private runtime evidence public-safe.
 
 - `private lab model support completed`
 - `private GPU activity observed during bounded model call`
