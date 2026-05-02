@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HawkinsOperations/hawkinsoperations-platform/contracts/schemas/local-llm-runtime-receipt.schema.json",
+  "title": "Local LLM Runtime Receipt Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "receipt_id",
+    "receipt_type",
+    "runtime_subject_id",
+    "schema_claim_ceiling",
+    "model",
+    "input",
+    "output",
+    "runtime",
+    "operator_review",
+    "ai_decided_disposition",
+    "claim_boundary",
+    "privacy_boundary",
+    "created_at"
+  ],
+  "properties": {
+    "receipt_id": {
+      "type": "string",
+      "pattern": "^HO-GPU-01-LLM-RUNTIME-RECEIPT-[0-9]{3,}$"
+    },
+    "receipt_type": {
+      "type": "string",
+      "const": "local_llm_runtime_receipt"
+    },
+    "runtime_subject_id": {
+      "type": "string",
+      "const": "HO-GPU-01"
+    },
+    "schema_claim_ceiling": {
+      "type": "string",
+      "const": "SCHEMA_ONLY_NOT_RUNTIME_PROOF"
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model_name",
+        "model_version",
+        "model_digest",
+        "runtime_engine"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_digest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runtime_engine": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input_packet_ref",
+        "input_hash_sha256",
+        "raw_input_included"
+      ],
+      "properties": {
+        "input_packet_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input_hash_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "raw_input_included": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "output_packet_ref",
+        "output_hash_sha256",
+        "raw_output_included",
+        "allowed_output_scope"
+      ],
+      "properties": {
+        "output_packet_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "output_hash_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "raw_output_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "allowed_output_scope": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "summarize",
+              "recommend_next_checks",
+              "map_evidence",
+              "list_uncertainty"
+            ]
+          },
+          "minItems": 4,
+          "uniqueItems": true
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_status",
+        "runtime_active",
+        "runtime_active_claim",
+        "signal_observed",
+        "public_safe",
+        "evidence_hash_sha256"
+      ],
+      "properties": {
+        "runtime_status": {
+          "type": "string",
+          "enum": [
+            "PRIVATE_EVIDENCE_ONLY",
+            "NOT_PROVEN",
+            "BLOCKED",
+            "UNKNOWN"
+          ]
+        },
+        "runtime_active": {
+          "type": "boolean",
+          "const": false
+        },
+        "runtime_active_claim": {
+          "type": "string",
+          "const": "NOT_PROVEN"
+        },
+        "signal_observed": {
+          "type": "boolean",
+          "const": false
+        },
+        "public_safe": {
+          "type": "boolean",
+          "const": false
+        },
+        "evidence_hash_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "operator_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operator_approval_required",
+        "operator_approved",
+        "approved_for_public_use"
+      ],
+      "properties": {
+        "operator_approval_required": {
+          "type": "boolean",
+          "const": true
+        },
+        "operator_approved": {
+          "type": "boolean"
+        },
+        "approved_for_public_use": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "ai_decided_disposition": {
+      "type": "boolean",
+      "const": false
+    },
+    "claim_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_proves_runtime",
+        "schema_proves_signal",
+        "schema_proves_public_safe_status",
+        "ai_final_disposition_authority"
+      ],
+      "properties": {
+        "schema_proves_runtime": {
+          "type": "boolean",
+          "const": false
+        },
+        "schema_proves_signal": {
+          "type": "boolean",
+          "const": false
+        },
+        "schema_proves_public_safe_status": {
+          "type": "boolean",
+          "const": false
+        },
+        "ai_final_disposition_authority": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "privacy_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_prompt_included",
+        "raw_model_output_included",
+        "local_paths_included",
+        "hostnames_included",
+        "internal_ips_included",
+        "secrets_included"
+      ],
+      "properties": {
+        "raw_prompt_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_model_output_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "local_paths_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "hostnames_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "internal_ips_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "secrets_included": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

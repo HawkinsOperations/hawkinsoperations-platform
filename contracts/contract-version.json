@@ -4,7 +4,8 @@
   "schemas": {
     "detection_artifact": "contracts/schemas/detection-artifact.schema.json",
     "validation_report": "contracts/schemas/validation-report.schema.json",
-    "proof_record": "contracts/schemas/proof-record.schema.json"
+    "proof_record": "contracts/schemas/proof-record.schema.json",
+    "local_llm_runtime_receipt": "contracts/schemas/local-llm-runtime-receipt.schema.json"
   },
   "notes": "Initial platform contract baseline for detection-validation-proof chaining."
 }

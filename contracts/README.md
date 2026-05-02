@@ -23,6 +23,24 @@ Any schema-breaking change requires:
 - `contracts/schemas/detection-artifact.schema.json`
 - `contracts/schemas/validation-report.schema.json`
 - `contracts/schemas/proof-record.schema.json`
+- `contracts/schemas/local-llm-runtime-receipt.schema.json`
+
+## Local LLM Runtime Receipt Boundary
+
+The local LLM runtime receipt schema is a schema-level control only. It may
+record sanitized model metadata, input hashes, output hashes, runtime status,
+operator review state, and explicit AI authority boundaries.
+
+It does not prove:
+
+- runtime-active status
+- signal-observed status
+- public-safe status
+- AI-approved disposition
+
+Minimal examples live in:
+
+- `contracts/examples/local-llm-runtime-receipt.valid.sample.json`
 
 ## Contract Intent
 
