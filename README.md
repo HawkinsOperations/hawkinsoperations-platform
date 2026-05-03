@@ -23,8 +23,10 @@ This repository defines how detection and validation components are wired, promo
 - Build loud. Verify hard. Claim tight. Ship receipts.
 - Website/public pages route to proof records; they do not replace proof.
 - Validation PR #18 clone-runnable proof pack: merged into `hawkinsoperations-validation`.
-- Platform next gate: HO-DET-001 runtime contract enforcement.
-- Platform contract status: schema and verifier guardrails only; this does not prove live runtime, public-safe signal, or public-safe runtime evidence.
+- Platform runtime contract enforcement: merged through `HawkinsOperations/hawkinsoperations-platform#5`.
+- Platform verifier status: `PLATFORM_RUNTIME_CONTRACT=pass`; this is schema and verifier guardrail only.
+- Platform contract status: non-promotional guardrail; it does not prove live runtime, public-safe signal, public-safe runtime evidence, live Splunk fired, Splunk-proven Runtime Signal 001, Cribl-routed status, Wazuh-routed public proof, AWS-live status, production-ready status, fleet-wide coverage, autonomous SOC operation, AI-approved disposition, or analyst-approved disposition.
+- Next gate: evidence-backed runtime or signal promotion only after separate proof review, privacy review, stale review, wording review, and Raylee approval.
 - Runtime-active and signal-observed claims remain blocked.
 
 ## Blocked Claims
