@@ -1,0 +1,56 @@
+{
+  "contract_id": "HO-DET-001-RUNTIME-CONTRACT-001",
+  "contract_type": "platform_runtime_contract_enforcement",
+  "detection_id": "HO-DET-001",
+  "proof_ceiling": "TEST_VALIDATED_SYNTHETIC_SCOPE",
+  "public_safe_status": "NOT_PUBLIC_SAFE",
+  "promotion_status": "BLOCKED",
+  "validation_result_ref": "hawkinsoperations-validation/reports/ho-det-001/validation-result.json",
+  "case_packet_ref": "hawkinsoperations-validation/validation/successor/ho-det-001/case-packet.json",
+  "validation_pr": "HawkinsOperations/hawkinsoperations-validation#18",
+  "validation_merge_commit": "ce6a2501b27ff0301529aa604f1d39e5d6d6d185",
+  "runtime_active": false,
+  "signal_observed": false,
+  "public_safe_runtime_proof": false,
+  "ai_decided_disposition": false,
+  "ai_may_approve": false,
+  "ai_may_promote": false,
+  "ai_may_close": false,
+  "human_review_required": true,
+  "allowed_claims": [
+    "validation PR #18 clone-runnable proof pack merged",
+    "platform runtime contract enforcement exists",
+    "public proof ceiling remains TEST_VALIDATED_SYNTHETIC_SCOPE",
+    "runtime-active and signal-observed remain blocked"
+  ],
+  "blocked_claims": [
+    "runtime-active",
+    "signal-observed",
+    "public-safe runtime proof",
+    "production-ready",
+    "fleet-wide",
+    "Splunk-proven Runtime Signal 001",
+    "Cribl-routed",
+    "Wazuh-routed public proof",
+    "AWS-live",
+    "autonomous SOC",
+    "AI-approved disposition",
+    "analyst-approved disposition"
+  ],
+  "privacy_boundary": {
+    "local_private_paths_included": false,
+    "hostnames_included": false,
+    "lan_ips_included": false,
+    "secret_material_included": false,
+    "screenshots_included": false,
+    "raw_command_lines_included": false,
+    "raw_runtime_evidence_included": false,
+    "private_evidence_filenames_included": false
+  },
+  "does_not_prove": [
+    "live runtime signal",
+    "public-safe runtime evidence",
+    "production deployment",
+    "fleet-wide coverage"
+  ]
+}
