@@ -1,6 +1,6 @@
 # HawkinsOperations Platform
 
-Platform contracts, integration logic, and operational plumbing for HawkinsOps V2.
+Platform contracts, integration logic, and operational plumbing for HawkinsOperations.
 
 Owner identity: Raylee Hawkins, Detection Engineer | SOC Automation | Detection-as-Code | Security Automation.
 
@@ -9,6 +9,27 @@ Official links: [Raylee Hawkins on LinkedIn](https://www.linkedin.com/in/raylee-
 ## Purpose
 
 This repository defines how detection and validation components are wired, promoted, and operated.
+
+## HawkinsOperations Closed SOC Loop 001
+
+- GitHub Project: pending ProjectV2 access / attachment. Current org project route: https://github.com/orgs/HawkinsOperations/projects
+- Reviewer entry point: https://github.com/HawkinsOperations/.github/blob/main/profile/START_HERE.md
+- Closed SOC Loop 001 route: https://github.com/HawkinsOperations/hawkinsoperations-validation/blob/main/docs/HO-DET-001_CLOSED_LOOP.md
+- Current HO-DET-001 ceiling: TEST_VALIDATED_SYNTHETIC_SCOPE
+- HawkinsOperations is the governed successor system; HawkinsOps and older surfaces are legacy/reference unless revalidated.
+- Truth surface: platform contract and architecture truth. This repository defines integration contracts, promotion plumbing, and environment-agnostic operational controls.
+- Sprint thesis: speed with enforcement through deterministic validation, CI/CD gates, evidence records, proof contracts, and bounded public claims.
+- AI is labor. Governance is authority.
+- Build loud. Verify hard. Claim tight. Ship receipts.
+- Website/public pages route to proof records; they do not replace proof.
+- Validation PR #18 clone-runnable proof pack: merged into `hawkinsoperations-validation`.
+- Platform next gate: HO-DET-001 runtime contract enforcement.
+- Platform contract status: schema and verifier guardrails only; this does not prove live runtime, public-safe signal, or public-safe runtime evidence.
+- Runtime-active and signal-observed claims remain blocked.
+
+## Blocked Claims
+
+This repository does not claim: runtime-active, signal-observed, evidence-linked public proof, public-safe, live Splunk firing, production triage, analyst-approved disposition, HO-GPU-01 runtime-active, Cribl-routed, Wazuh-routed, AWS-live, autonomous SOC, production-ready SOC, fleet-wide deployment, or AI-approved disposition.
 
 ## Scope
 
@@ -24,6 +45,8 @@ Initial contract package is now defined under `contracts/`:
 - `contracts/schemas/detection-artifact.schema.json`
 - `contracts/schemas/validation-report.schema.json`
 - `contracts/schemas/proof-record.schema.json`
+- `contracts/schemas/local-llm-runtime-receipt.schema.json`
+- `contracts/schemas/ho-det-001-runtime-contract.schema.json`
 
 This baseline defines minimum fields required for reproducible
 detection-to-validation-to-proof linkage.
@@ -40,7 +63,7 @@ detection-to-validation-to-proof linkage.
 - Integration points must be versioned and explicitly documented.
 - Operational changes require corresponding proof updates in `hawkinsoperations-proof`.
 
-## Public-Safe Proof
+## Reviewed External Proof Candidates
 
 - Architecture/control flow diagrams (sanitized)
 - Promotion control descriptions

@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HawkinsOperations/hawkinsoperations-platform/contracts/schemas/ho-det-001-runtime-contract.schema.json",
+  "title": "HO-DET-001 Runtime Contract Enforcement",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_id",
+    "contract_type",
+    "detection_id",
+    "proof_ceiling",
+    "public_safe_status",
+    "promotion_status",
+    "validation_result_ref",
+    "case_packet_ref",
+    "validation_pr",
+    "validation_merge_commit",
+    "runtime_active",
+    "signal_observed",
+    "public_safe_runtime_proof",
+    "ai_decided_disposition",
+    "ai_may_approve",
+    "ai_may_promote",
+    "ai_may_close",
+    "human_review_required",
+    "allowed_claims",
+    "blocked_claims",
+    "privacy_boundary",
+    "does_not_prove"
+  ],
+  "properties": {
+    "contract_id": {
+      "const": "HO-DET-001-RUNTIME-CONTRACT-001"
+    },
+    "contract_type": {
+      "const": "platform_runtime_contract_enforcement"
+    },
+    "detection_id": {
+      "const": "HO-DET-001"
+    },
+    "proof_ceiling": {
+      "const": "TEST_VALIDATED_SYNTHETIC_SCOPE"
+    },
+    "public_safe_status": {
+      "const": "NOT_PUBLIC_SAFE"
+    },
+    "promotion_status": {
+      "const": "BLOCKED"
+    },
+    "validation_result_ref": {
+      "const": "hawkinsoperations-validation/reports/ho-det-001/validation-result.json"
+    },
+    "case_packet_ref": {
+      "const": "hawkinsoperations-validation/validation/successor/ho-det-001/case-packet.json"
+    },
+    "validation_pr": {
+      "const": "HawkinsOperations/hawkinsoperations-validation#18"
+    },
+    "validation_merge_commit": {
+      "const": "ce6a2501b27ff0301529aa604f1d39e5d6d6d185"
+    },
+    "runtime_active": {
+      "type": "boolean",
+      "const": false
+    },
+    "signal_observed": {
+      "type": "boolean",
+      "const": false
+    },
+    "public_safe_runtime_proof": {
+      "type": "boolean",
+      "const": false
+    },
+    "ai_decided_disposition": {
+      "type": "boolean",
+      "const": false
+    },
+    "ai_may_approve": {
+      "type": "boolean",
+      "const": false
+    },
+    "ai_may_promote": {
+      "type": "boolean",
+      "const": false
+    },
+    "ai_may_close": {
+      "type": "boolean",
+      "const": false
+    },
+    "human_review_required": {
+      "type": "boolean",
+      "const": true
+    },
+    "allowed_claims": {
+      "type": "array",
+      "minItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "validation PR #18 clone-runnable proof pack merged",
+          "platform runtime contract enforcement exists",
+          "public proof ceiling remains TEST_VALIDATED_SYNTHETIC_SCOPE",
+          "runtime-active and signal-observed remain blocked"
+        ]
+      }
+    },
+    "blocked_claims": {
+      "type": "array",
+      "minItems": 12,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "runtime-active",
+          "signal-observed",
+          "public-safe runtime proof",
+          "production-ready",
+          "fleet-wide",
+          "Splunk-proven Runtime Signal 001",
+          "Cribl-routed",
+          "Wazuh-routed public proof",
+          "AWS-live",
+          "autonomous SOC",
+          "AI-approved disposition",
+          "analyst-approved disposition"
+        ]
+      }
+    },
+    "privacy_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local_private_paths_included",
+        "hostnames_included",
+        "lan_ips_included",
+        "secret_material_included",
+        "screenshots_included",
+        "raw_command_lines_included",
+        "raw_runtime_evidence_included",
+        "private_evidence_filenames_included"
+      ],
+      "properties": {
+        "local_private_paths_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "hostnames_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "lan_ips_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "secret_material_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "screenshots_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_command_lines_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_runtime_evidence_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "private_evidence_filenames_included": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "does_not_prove": {
+      "type": "array",
+      "minItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "live runtime signal",
+          "public-safe runtime evidence",
+          "production deployment",
+          "fleet-wide coverage"
+        ]
+      }
+    }
+  }
+}
