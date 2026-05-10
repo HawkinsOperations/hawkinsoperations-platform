@@ -114,8 +114,8 @@ def load_json(path: Path) -> dict:
 def validate_schema_if_possible(sample: dict, schema: dict) -> None:
     try:
         import jsonschema  # type: ignore
-    except Exception:
-        return
+    except Exception as exc:
+        fail(f"jsonschema dependency is required for schema validation: {exc}")
 
     try:
         jsonschema.Draft202012Validator(schema).validate(sample)
