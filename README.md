@@ -25,6 +25,7 @@ This repository defines how detection and validation components are wired, promo
 - Validation PR #18 clone-runnable proof pack: merged into `hawkinsoperations-validation`.
 - Platform runtime contract enforcement: merged through `HawkinsOperations/hawkinsoperations-platform#5`.
 - Platform verifier status: `PLATFORM_RUNTIME_CONTRACT=pass`; this is schema and verifier guardrail only.
+- HO-DET-011 case-packet guardrail: `scripts/verify-ho-det-011-case-packet.py` runs in the governance gate workflow; this is claim-boundary CI only.
 - Platform contract status: non-promotional guardrail; it does not prove live runtime, public-safe signal, public-safe runtime evidence, live Splunk fired, Splunk-proven Runtime Signal 001, Cribl-routed status, Wazuh-routed public proof, AWS-live status, production-ready status, fleet-wide coverage, autonomous SOC operation, AI-approved disposition, or analyst-approved disposition.
 - Next gate: evidence-backed runtime or signal promotion only after separate proof review, privacy review, stale review, wording review, and Raylee approval.
 - Runtime-active and signal-observed claims remain blocked.
@@ -49,6 +50,7 @@ Initial contract package is now defined under `contracts/`:
 - `contracts/schemas/proof-record.schema.json`
 - `contracts/schemas/local-llm-runtime-receipt.schema.json`
 - `contracts/schemas/ho-det-001-runtime-contract.schema.json`
+- `contracts/schemas/ho-det-011-case-packet.schema.json`
 
 This baseline defines minimum fields required for reproducible
 detection-to-validation-to-proof linkage.

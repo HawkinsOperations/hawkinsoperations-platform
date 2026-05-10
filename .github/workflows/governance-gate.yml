@@ -30,3 +30,9 @@ jobs:
             exit 1
           }
 
+  ho-det-011-case-packet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify HO-DET-011 case packet guardrail
+        run: python scripts/verify-ho-det-011-case-packet.py
