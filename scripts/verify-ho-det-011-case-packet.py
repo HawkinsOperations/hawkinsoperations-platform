@@ -63,6 +63,7 @@ REQUIRED_BLOCKED_CLAIMS = {
     "production-ready",
     "fleet-wide",
     "service-creation coverage completeness",
+    "AI-decided disposition",
     "AI-approved disposition",
     "AI-closed disposition",
 }
@@ -79,6 +80,7 @@ BLOCKED_ALLOWED_CLAIM_PATTERNS = [
     r"production[-\s]+ready",
     r"fleet[-\s]+wide",
     r"service[-\s]+creation\s+coverage\s+complet",
+    r"ai[-\s]+decided",
     r"ai[-\s]+approved",
     r"ai[-\s]+closed",
 ]

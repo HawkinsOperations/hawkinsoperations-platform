@@ -6,7 +6,8 @@
     "validation_report": "contracts/schemas/validation-report.schema.json",
     "proof_record": "contracts/schemas/proof-record.schema.json",
     "local_llm_runtime_receipt": "contracts/schemas/local-llm-runtime-receipt.schema.json",
-    "ho_det_001_runtime_contract": "contracts/schemas/ho-det-001-runtime-contract.schema.json"
+    "ho_det_001_runtime_contract": "contracts/schemas/ho-det-001-runtime-contract.schema.json",
+    "ho_det_011_case_packet": "contracts/schemas/ho-det-011-case-packet.schema.json"
   },
   "notes": "Platform contract baseline for detection-validation-proof chaining, local LLM runtime receipts, and HO-DET-001 runtime-boundary enforcement."
 }

@@ -213,7 +213,7 @@
     },
     "blocked_claims": {
       "type": "array",
-      "minItems": 13,
+      "minItems": 14,
       "uniqueItems": true,
       "items": {
         "enum": [
@@ -228,6 +228,7 @@
           "production-ready",
           "fleet-wide",
           "service-creation coverage completeness",
+          "AI-decided disposition",
           "AI-approved disposition",
           "AI-closed disposition"
         ]
