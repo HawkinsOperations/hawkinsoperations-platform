@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HawkinsOperations/hawkinsoperations-platform/contracts/schemas/ho-det-011-case-packet.schema.json",
+  "title": "HO-DET-011 Case Packet Guardrail",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "packet_id",
+    "packet_type",
+    "detection_id",
+    "proof_ceiling",
+    "public_safe_status",
+    "promotion_status",
+    "validation_result_ref",
+    "validation_cases_ref",
+    "validation_pr",
+    "validation_merge_commit",
+    "validation_status",
+    "synthetic_validation",
+    "exact_claim_supported",
+    "runtime_active",
+    "signal_observed",
+    "evidence_linked_public_proof",
+    "public_safe_runtime_proof",
+    "production_ready",
+    "fleet_wide",
+    "live_splunk_fired",
+    "wazuh_routed",
+    "cribl_routed",
+    "aws_live",
+    "service_creation_coverage_complete",
+    "ai_decided_disposition",
+    "ai_may_approve",
+    "ai_may_promote",
+    "ai_may_close",
+    "human_review_required",
+    "telemetry_boundary",
+    "validation_counts",
+    "allowed_claims",
+    "blocked_claims",
+    "privacy_boundary",
+    "does_not_prove"
+  ],
+  "properties": {
+    "packet_id": {
+      "const": "HO-DET-011-CASE-PACKET-001"
+    },
+    "packet_type": {
+      "const": "platform_case_packet_guardrail"
+    },
+    "detection_id": {
+      "const": "HO-DET-011"
+    },
+    "proof_ceiling": {
+      "const": "TEST_VALIDATED_SYNTHETIC_SCOPE"
+    },
+    "public_safe_status": {
+      "const": "NOT_PUBLIC_SAFE"
+    },
+    "promotion_status": {
+      "const": "BLOCKED"
+    },
+    "validation_result_ref": {
+      "const": "hawkinsoperations-validation/reports/ho-det-011/validation-result.json"
+    },
+    "validation_cases_ref": {
+      "const": "hawkinsoperations-validation/validation/successor/ho-det-011/validation-cases.json"
+    },
+    "validation_pr": {
+      "const": "HawkinsOperations/hawkinsoperations-validation#25"
+    },
+    "validation_merge_commit": {
+      "const": "4c4bf5a"
+    },
+    "validation_status": {
+      "const": "pass"
+    },
+    "synthetic_validation": {
+      "type": "boolean",
+      "const": true
+    },
+    "exact_claim_supported": {
+      "const": "HO-DET-011 passed synthetic validation against controlled Windows service creation fixtures."
+    },
+    "runtime_active": {
+      "type": "boolean",
+      "const": false
+    },
+    "signal_observed": {
+      "type": "boolean",
+      "const": false
+    },
+    "evidence_linked_public_proof": {
+      "type": "boolean",
+      "const": false
+    },
+    "public_safe_runtime_proof": {
+      "type": "boolean",
+      "const": false
+    },
+    "production_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "fleet_wide": {
+      "type": "boolean",
+      "const": false
+    },
+    "live_splunk_fired": {
+      "type": "boolean",
+      "const": false
+    },
+    "wazuh_routed": {
+      "type": "boolean",
+      "const": false
+    },
+    "cribl_routed": {
+      "type": "boolean",
+      "const": false
+    },
+    "aws_live": {
+      "type": "boolean",
+      "const": false
+    },
+    "service_creation_coverage_complete": {
+      "type": "boolean",
+      "const": false
+    },
+    "ai_decided_disposition": {
+      "type": "boolean",
+      "const": false
+    },
+    "ai_may_approve": {
+      "type": "boolean",
+      "const": false
+    },
+    "ai_may_promote": {
+      "type": "boolean",
+      "const": false
+    },
+    "ai_may_close": {
+      "type": "boolean",
+      "const": false
+    },
+    "human_review_required": {
+      "type": "boolean",
+      "const": true
+    },
+    "telemetry_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_7045",
+        "event_4697",
+        "event_1"
+      ],
+      "properties": {
+        "event_7045": {
+          "const": "Windows System / Service Control Manager service-install telemetry"
+        },
+        "event_4697": {
+          "const": "Windows Security service installation auditing where available"
+        },
+        "event_1": {
+          "const": "Sysmon process creation context where available"
+        }
+      }
+    },
+    "validation_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total_cases",
+        "positive_cases",
+        "negative_cases",
+        "pass",
+        "fail",
+        "matched_positive_count"
+      ],
+      "properties": {
+        "total_cases": {
+          "const": 6
+        },
+        "positive_cases": {
+          "const": 3
+        },
+        "negative_cases": {
+          "const": 3
+        },
+        "pass": {
+          "const": 6
+        },
+        "fail": {
+          "const": 0
+        },
+        "matched_positive_count": {
+          "const": 3
+        }
+      }
+    },
+    "allowed_claims": {
+      "type": "array",
+      "minItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "HO-DET-011 source artifacts exist in the detections repository.",
+          "HO-DET-011 passed synthetic validation against controlled Windows service creation fixtures.",
+          "HO-DET-011 platform case-packet guardrail exists for synthetic-scope claim boundaries.",
+          "HO-DET-011 remains capped at TEST_VALIDATED_SYNTHETIC_SCOPE."
+        ]
+      }
+    },
+    "blocked_claims": {
+      "type": "array",
+      "minItems": 13,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "runtime-active",
+          "signal-observed",
+          "public-safe",
+          "evidence-linked public proof",
+          "live Splunk fired",
+          "Wazuh-routed",
+          "Cribl-routed",
+          "AWS-live",
+          "production-ready",
+          "fleet-wide",
+          "service-creation coverage completeness",
+          "AI-approved disposition",
+          "AI-closed disposition"
+        ]
+      }
+    },
+    "privacy_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "synthetic_fixtures_only",
+        "local_private_paths_included",
+        "hostnames_included",
+        "lan_ips_included",
+        "secret_material_included",
+        "screenshots_included",
+        "raw_runtime_evidence_included"
+      ],
+      "properties": {
+        "synthetic_fixtures_only": {
+          "type": "boolean",
+          "const": true
+        },
+        "local_private_paths_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "hostnames_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "lan_ips_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "secret_material_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "screenshots_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_runtime_evidence_included": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "does_not_prove": {
+      "type": "array",
+      "minItems": 6,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "runtime activity",
+          "signal observation",
+          "public-safe evidence",
+          "production deployment",
+          "fleet-wide coverage",
+          "routing through Wazuh or Cribl",
+          "AWS-live coverage",
+          "complete service-creation coverage"
+        ]
+      }
+    }
+  }
+}
