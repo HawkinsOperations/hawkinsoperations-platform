@@ -4,7 +4,7 @@ Platform contracts, integration logic, and operational plumbing for HawkinsOpera
 
 Owner identity: Raylee Hawkins, Detection Engineer | SOC Automation | Detection-as-Code | Security Automation.
 
-Official links: [Raylee Hawkins on LinkedIn](https://www.linkedin.com/in/raylee-hawkins) · [Raylee Hawkins on GitHub](https://github.com/raylee-hawkins) · [HawkinsOps legacy/reference portfolio](https://hawkinsops.com) · [HawkinsOperations GitHub organization](https://github.com/HawkinsOperations) · [RayleeOps public operating journal](https://rayleeops.com)
+Official links: [Raylee Hawkins on LinkedIn](https://www.linkedin.com/in/raylee-hawkins) Â· [Raylee Hawkins on GitHub](https://github.com/raylee-hawkins) Â· [HawkinsOps legacy/reference portfolio](https://hawkinsops.com) Â· [HawkinsOperations GitHub organization](https://github.com/HawkinsOperations) Â· [RayleeOps public operating journal](https://rayleeops.com)
 
 ## Purpose
 
@@ -15,7 +15,7 @@ This repository defines how detection and validation components are wired, promo
 - GitHub Project: pending ProjectV2 access / attachment. Current org project route: https://github.com/orgs/HawkinsOperations/projects
 - Reviewer entry point: https://github.com/HawkinsOperations/.github/blob/main/profile/START_HERE.md
 - Closed SOC Loop 001 route: https://github.com/HawkinsOperations/hawkinsoperations-validation/blob/main/docs/HO-DET-001_CLOSED_LOOP.md
-- Current HO-DET-001 ceiling: TEST_VALIDATED_SYNTHETIC_SCOPE
+- Current HO-DET-001 ceiling: CONTROLLED_TEST_VALIDATED
 - HawkinsOperations is the governed successor system; HawkinsOps and older surfaces are legacy/reference unless revalidated.
 - Truth surface: platform contract and architecture truth. This repository defines integration contracts, promotion plumbing, and environment-agnostic operational controls.
 - Sprint thesis: speed with enforcement through deterministic validation, required checks where configured, evidence records, proof contracts, and bounded public claims.

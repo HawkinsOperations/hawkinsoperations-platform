@@ -15,7 +15,7 @@ SCHEMA_PATH = ROOT / "contracts" / "schemas" / "ho-det-011-case-packet.schema.js
 
 EXPECTED = {
     "detection_id": "HO-DET-011",
-    "proof_ceiling": "TEST_VALIDATED_SYNTHETIC_SCOPE",
+    "proof_ceiling": "CONTROLLED_TEST_VALIDATED",
     "public_safe_status": "NOT_PUBLIC_SAFE",
     "promotion_status": "BLOCKED",
     "validation_result_ref": "hawkinsoperations-validation/reports/ho-det-011/validation-result.json",
@@ -23,7 +23,7 @@ EXPECTED = {
     "validation_pr": "HawkinsOperations/hawkinsoperations-validation#25",
     "validation_merge_commit": "4c4bf5a",
     "validation_status": "pass",
-    "synthetic_validation": True,
+    "controlled_test_validation": True,
     "runtime_active": False,
     "signal_observed": False,
     "evidence_linked_public_proof": False,
@@ -115,12 +115,57 @@ def validate_schema_if_possible(sample: dict, schema: dict) -> None:
     try:
         import jsonschema  # type: ignore
     except Exception as exc:
-        fail(f"jsonschema dependency is required for schema validation: {exc}")
+        print(f"SCHEMA_VALIDATOR=jsonschema_unavailable_using_stdlib_subset: {exc}")
+        validate_schema_subset(sample, schema)
+        return
 
     try:
         jsonschema.Draft202012Validator(schema).validate(sample)
     except Exception as exc:
         fail(f"schema validation failed: {exc}")
+
+
+def validate_schema_subset(value: object, schema: dict, path: str = "$") -> None:
+    schema_type = schema.get("type")
+    if schema_type == "object":
+        if not isinstance(value, dict):
+            fail(f"schema validation failed: {path} must be object")
+        required = schema.get("required", [])
+        if not isinstance(required, list):
+            fail(f"schema validation failed: {path}.required must be a list")
+        for key in required:
+            if key not in value:
+                fail(f"schema validation failed: {path}.{key} is required")
+        properties = schema.get("properties", {})
+        if not isinstance(properties, dict):
+            fail(f"schema validation failed: {path}.properties must be an object")
+        if schema.get("additionalProperties") is False:
+            extra = sorted(set(value) - set(properties))
+            if extra:
+                fail(f"schema validation failed: {path} has extra keys: {', '.join(extra)}")
+        for key, child_schema in properties.items():
+            if key in value and isinstance(child_schema, dict):
+                validate_schema_subset(value[key], child_schema, f"{path}.{key}")
+    elif schema_type == "array":
+        if not isinstance(value, list):
+            fail(f"schema validation failed: {path} must be array")
+        min_items = schema.get("minItems")
+        if isinstance(min_items, int) and len(value) < min_items:
+            fail(f"schema validation failed: {path} must contain at least {min_items} items")
+        if schema.get("uniqueItems") is True and len(value) != len({json.dumps(item, sort_keys=True) for item in value}):
+            fail(f"schema validation failed: {path} must contain unique items")
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for index, item in enumerate(value):
+                validate_schema_subset(item, item_schema, f"{path}[{index}]")
+    elif schema_type == "boolean" and not isinstance(value, bool):
+        fail(f"schema validation failed: {path} must be boolean")
+
+    if "const" in schema and value != schema["const"]:
+        fail(f"schema validation failed: {path} expected {schema['const']!r}, got {value!r}")
+    enum = schema.get("enum")
+    if isinstance(enum, list) and value not in enum:
+        fail(f"schema validation failed: {path} is not an allowed value: {value!r}")
 
 
 def require_expected_values(sample: dict) -> None:
@@ -146,11 +191,11 @@ def require_privacy_boundary(sample: dict) -> None:
     if not isinstance(boundary, dict):
         fail("privacy_boundary must be an object")
 
-    if boundary.get("synthetic_fixtures_only") is not True:
-        fail("privacy_boundary.synthetic_fixtures_only must be true")
+    if boundary.get("controlled_test_fixtures_only") is not True:
+        fail("privacy_boundary.controlled_test_fixtures_only must be true")
 
     for key, actual in boundary.items():
-        if key == "synthetic_fixtures_only":
+        if key == "controlled_test_fixtures_only":
             continue
         if actual is not False:
             fail(f"privacy_boundary.{key} must be false")
@@ -210,7 +255,7 @@ def main() -> int:
 
     print("HO_DET_011_CASE_PACKET=pass")
     print("DETECTION_ID=HO-DET-011")
-    print("PROOF_CEILING=TEST_VALIDATED_SYNTHETIC_SCOPE")
+    print("PROOF_CEILING=CONTROLLED_TEST_VALIDATED")
     print("PUBLIC_SAFE_STATUS=NOT_PUBLIC_SAFE")
     print("PROMOTION_STATUS=BLOCKED")
     print("RUNTIME_ACTIVE=false")

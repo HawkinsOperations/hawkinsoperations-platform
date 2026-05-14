@@ -2,7 +2,7 @@
   "contract_id": "HO-DET-001-RUNTIME-CONTRACT-001",
   "contract_type": "platform_runtime_contract_enforcement",
   "detection_id": "HO-DET-001",
-  "proof_ceiling": "TEST_VALIDATED_SYNTHETIC_SCOPE",
+  "proof_ceiling": "CONTROLLED_TEST_VALIDATED",
   "public_safe_status": "NOT_PUBLIC_SAFE",
   "promotion_status": "BLOCKED",
   "validation_result_ref": "hawkinsoperations-validation/reports/ho-det-001/validation-result.json",
@@ -20,7 +20,7 @@
   "allowed_claims": [
     "validation PR #18 clone-runnable proof pack merged",
     "platform runtime contract enforcement exists",
-    "public proof ceiling remains TEST_VALIDATED_SYNTHETIC_SCOPE",
+    "public proof ceiling remains CONTROLLED_TEST_VALIDATED",
     "runtime-active and signal-observed remain blocked"
   ],
   "blocked_claims": [
