@@ -4,7 +4,7 @@ Platform contracts, integration logic, and operational plumbing for HawkinsOpera
 
 Owner identity: Raylee Hawkins, Detection Engineer | SOC Automation | Detection-as-Code | Security Automation.
 
-Official links: [Raylee Hawkins on LinkedIn](https://www.linkedin.com/in/raylee-hawkins) Â· [Raylee Hawkins on GitHub](https://github.com/raylee-hawkins) Â· [HawkinsOps legacy/reference portfolio](https://hawkinsops.com) Â· [HawkinsOperations GitHub organization](https://github.com/HawkinsOperations) Â· [RayleeOps public operating journal](https://rayleeops.com)
+Official links: [Raylee Hawkins on LinkedIn](https://www.linkedin.com/in/raylee-hawkins) | [Raylee Hawkins on GitHub](https://github.com/raylee-hawkins) | [HawkinsOps legacy/reference portfolio](https://hawkinsops.com) | [HawkinsOperations GitHub organization](https://github.com/HawkinsOperations) | [RayleeOps public operating journal](https://rayleeops.com)
 
 ## Purpose
 
