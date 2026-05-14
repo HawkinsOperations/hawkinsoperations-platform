@@ -15,7 +15,7 @@ SCHEMA_PATH = ROOT / "contracts" / "schemas" / "ho-det-001-runtime-contract.sche
 
 EXPECTED = {
     "detection_id": "HO-DET-001",
-    "proof_ceiling": "TEST_VALIDATED_SYNTHETIC_SCOPE",
+    "proof_ceiling": "CONTROLLED_TEST_VALIDATED",
     "public_safe_status": "NOT_PUBLIC_SAFE",
     "promotion_status": "BLOCKED",
     "validation_pr": "HawkinsOperations/hawkinsoperations-validation#18",
@@ -172,7 +172,7 @@ def main() -> int:
 
     print("PLATFORM_RUNTIME_CONTRACT=pass")
     print("DETECTION_ID=HO-DET-001")
-    print("PROOF_CEILING=TEST_VALIDATED_SYNTHETIC_SCOPE")
+    print("PROOF_CEILING=CONTROLLED_TEST_VALIDATED")
     print("PUBLIC_SAFE_STATUS=NOT_PUBLIC_SAFE")
     print("PROMOTION_STATUS=BLOCKED")
     print("RUNTIME_ACTIVE=false")

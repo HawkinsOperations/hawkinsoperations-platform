@@ -10,7 +10,7 @@ The contract is sanitized for repo review by design. It does not include raw pro
 
 - Contract status: `SOURCE_EXISTS`
 - Supported workflow: support-only triage over a sanitized case packet
-- Public proof ceiling: `TEST_VALIDATED_SYNTHETIC_SCOPE`
+- Public proof ceiling: `CONTROLLED_TEST_VALIDATED`
 - Private evidence classification: `PRIVATE_RUNTIME_EVIDENCE` or `PRIVATE_SUPPORTING_EVIDENCE`
 - Public-safe status: `NOT_PUBLIC_SAFE`
 
@@ -102,7 +102,7 @@ The deterministic verifier must fail if:
 For HO-DET-001, public proof remains:
 
 ```text
-PROOF_CEILING=TEST_VALIDATED_SYNTHETIC_SCOPE
+PROOF_CEILING=CONTROLLED_TEST_VALIDATED
 ```
 
 Private model support and private GPU activity do not change the public proof ceiling.
@@ -117,7 +117,7 @@ AI_MAY_APPROVE=false
 AI_MAY_PROMOTE=false
 AI_MAY_CLOSE=false
 PUBLIC_SAFE_STATUS=NOT_PUBLIC_SAFE
-PROOF_CEILING=TEST_VALIDATED_SYNTHETIC_SCOPE
+PROOF_CEILING=CONTROLLED_TEST_VALIDATED
 ```
 
 ## Allowed Internal Classification Wording
@@ -128,7 +128,7 @@ These phrases are allowed only as bounded internal classification or reviewed co
 - `private GPU activity observed during bounded model call`
 - `AI remained support-only`
 - `deterministic verifier preserved boundary`
-- `public proof ceiling remains TEST_VALIDATED_SYNTHETIC_SCOPE`
+- `public proof ceiling remains CONTROLLED_TEST_VALIDATED`
 
 ## Blocked Public Wording
 

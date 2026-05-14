@@ -16,7 +16,7 @@
     "validation_pr",
     "validation_merge_commit",
     "validation_status",
-    "synthetic_validation",
+    "controlled_test_validation",
     "exact_claim_supported",
     "runtime_active",
     "signal_observed",
@@ -52,7 +52,7 @@
       "const": "HO-DET-011"
     },
     "proof_ceiling": {
-      "const": "TEST_VALIDATED_SYNTHETIC_SCOPE"
+      "const": "CONTROLLED_TEST_VALIDATED"
     },
     "public_safe_status": {
       "const": "NOT_PUBLIC_SAFE"
@@ -75,12 +75,12 @@
     "validation_status": {
       "const": "pass"
     },
-    "synthetic_validation": {
+    "controlled_test_validation": {
       "type": "boolean",
       "const": true
     },
     "exact_claim_supported": {
-      "const": "HO-DET-011 passed synthetic validation against controlled Windows service creation fixtures."
+      "const": "HO-DET-011 passed controlled-test validation against controlled Windows service creation fixtures."
     },
     "runtime_active": {
       "type": "boolean",
@@ -205,9 +205,9 @@
       "items": {
         "enum": [
           "HO-DET-011 source artifacts exist in the detections repository.",
-          "HO-DET-011 passed synthetic validation against controlled Windows service creation fixtures.",
-          "HO-DET-011 platform case-packet guardrail exists for synthetic-scope claim boundaries.",
-          "HO-DET-011 remains capped at TEST_VALIDATED_SYNTHETIC_SCOPE."
+          "HO-DET-011 passed controlled-test validation against controlled Windows service creation fixtures.",
+          "HO-DET-011 platform case-packet guardrail exists for controlled-test-scope claim boundaries.",
+          "HO-DET-011 remains capped at CONTROLLED_TEST_VALIDATED."
         ]
       }
     },
@@ -238,7 +238,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "synthetic_fixtures_only",
+        "controlled_test_fixtures_only",
         "local_private_paths_included",
         "hostnames_included",
         "lan_ips_included",
@@ -247,7 +247,7 @@
         "raw_runtime_evidence_included"
       ],
       "properties": {
-        "synthetic_fixtures_only": {
+        "controlled_test_fixtures_only": {
           "type": "boolean",
           "const": true
         },

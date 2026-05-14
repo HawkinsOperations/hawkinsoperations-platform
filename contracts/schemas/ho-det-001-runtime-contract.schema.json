@@ -39,7 +39,7 @@
       "const": "HO-DET-001"
     },
     "proof_ceiling": {
-      "const": "TEST_VALIDATED_SYNTHETIC_SCOPE"
+      "const": "CONTROLLED_TEST_VALIDATED"
     },
     "public_safe_status": {
       "const": "NOT_PUBLIC_SAFE"
@@ -99,7 +99,7 @@
         "enum": [
           "validation PR #18 clone-runnable proof pack merged",
           "platform runtime contract enforcement exists",
-          "public proof ceiling remains TEST_VALIDATED_SYNTHETIC_SCOPE",
+          "public proof ceiling remains CONTROLLED_TEST_VALIDATED",
           "runtime-active and signal-observed remain blocked"
         ]
       }
