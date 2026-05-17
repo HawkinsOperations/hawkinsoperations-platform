@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HawkinsOperations/hawkinsoperations-platform/contracts/schemas/local-gpu-triage-support-v0.schema.json",
+  "title": "Local GPU Triage Support v0 Packet",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "packet_type",
+    "contract_version",
+    "pipeline_phase",
+    "ai_support_mode",
+    "local_gpu_runtime_status",
+    "local_gpu_runtime_label",
+    "true_gpu_ci_status",
+    "human_review_required",
+    "ai_decided_disposition",
+    "recommended_disposition",
+    "public_safe_status",
+    "public_proof_ceiling",
+    "runtime_active_public_proof",
+    "signal_observed_public_proof",
+    "production_ready",
+    "runtime_truth",
+    "model_support",
+    "github_ci_truth",
+    "privacy_boundary",
+    "blocked_claims",
+    "supported_claims",
+    "does_not_prove",
+    "next_allowed_move",
+    "stop_conditions"
+  ],
+  "properties": {
+    "packet_type": {
+      "type": "string",
+      "const": "local_gpu_triage_support_v0"
+    },
+    "contract_version": {
+      "type": "string",
+      "const": "0.1.0"
+    },
+    "pipeline_phase": {
+      "type": "string",
+      "const": "PHASE_A_CONTRACT_VERIFIER_ONLY"
+    },
+    "ai_support_mode": {
+      "type": "string",
+      "const": "AI_SUPPORT_ONLY"
+    },
+    "local_gpu_runtime_status": {
+      "type": "string",
+      "const": "PRIVATE_RUNTIME_SUPPORT_CONFIRMED"
+    },
+    "local_gpu_runtime_label": {
+      "type": "string",
+      "enum": [
+        "LOCAL_GPU_SUPPORT_NODE",
+        "PRIVATE_GPU_SUPPORT_NODE",
+        "gpu_support_node_01"
+      ]
+    },
+    "true_gpu_ci_status": {
+      "type": "string",
+      "const": "PENDING_RUNNER_CONFIRMATION"
+    },
+    "human_review_required": {
+      "type": "boolean",
+      "const": true
+    },
+    "ai_decided_disposition": {
+      "type": "boolean",
+      "const": false
+    },
+    "recommended_disposition": {
+      "type": "null"
+    },
+    "public_safe_status": {
+      "type": "string",
+      "const": "NOT_PUBLIC_SAFE"
+    },
+    "public_proof_ceiling": {
+      "type": "string",
+      "const": "CONTROLLED_TEST_VALIDATED"
+    },
+    "runtime_active_public_proof": {
+      "type": "boolean",
+      "const": false
+    },
+    "signal_observed_public_proof": {
+      "type": "boolean",
+      "const": false
+    },
+    "production_ready": {
+      "type": "boolean",
+      "const": false
+    },
+    "runtime_truth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_support_class",
+        "gpu_visible_private_support",
+        "local_model_service_present",
+        "runtime_refresh_required_for_new_claims",
+        "public_runtime_claim_allowed"
+      ],
+      "properties": {
+        "runtime_support_class": {
+          "type": "string",
+          "const": "PRIVATE_RUNTIME_SUPPORT"
+        },
+        "gpu_visible_private_support": {
+          "type": "boolean",
+          "const": true
+        },
+        "local_model_service_present": {
+          "type": "boolean",
+          "const": true
+        },
+        "runtime_refresh_required_for_new_claims": {
+          "type": "boolean",
+          "const": true
+        },
+        "public_runtime_claim_allowed": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "model_support": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local_model_available_private_support",
+        "model_family",
+        "raw_model_output_included",
+        "allowed_ai_actions",
+        "blocked_ai_actions"
+      ],
+      "properties": {
+        "local_model_available_private_support": {
+          "type": "boolean",
+          "const": true
+        },
+        "model_family": {
+          "type": "string",
+          "const": "local_ollama_qwen_support"
+        },
+        "raw_model_output_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "allowed_ai_actions": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "summarize",
+              "list_uncertainty",
+              "recommend_next_checks",
+              "map_evidence_fields"
+            ]
+          },
+          "minItems": 4,
+          "uniqueItems": true
+        },
+        "blocked_ai_actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 6,
+          "uniqueItems": true
+        }
+      }
+    },
+    "github_ci_truth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "self_hosted_runner_proven",
+        "runner_labels_proven",
+        "workflow_created",
+        "true_gpu_ci_status"
+      ],
+      "properties": {
+        "self_hosted_runner_proven": {
+          "type": "boolean",
+          "const": false
+        },
+        "runner_labels_proven": {
+          "type": "boolean",
+          "const": false
+        },
+        "workflow_created": {
+          "type": "boolean",
+          "const": false
+        },
+        "true_gpu_ci_status": {
+          "type": "string",
+          "const": "PENDING_RUNNER_CONFIRMATION"
+        }
+      }
+    },
+    "privacy_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "real_host_identifier_included",
+        "local_paths_included",
+        "internal_ips_included",
+        "secrets_included",
+        "raw_model_output_included",
+        "private_evidence_filenames_included"
+      ],
+      "properties": {
+        "real_host_identifier_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "local_paths_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "internal_ips_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "secrets_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "raw_model_output_included": {
+          "type": "boolean",
+          "const": false
+        },
+        "private_evidence_filenames_included": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "blocked_claims": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 10,
+      "uniqueItems": true
+    },
+    "supported_claims": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 3,
+      "uniqueItems": true
+    },
+    "does_not_prove": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 6,
+      "uniqueItems": true
+    },
+    "next_allowed_move": {
+      "type": "string",
+      "const": "HUMAN_REVIEW_BEFORE_ANY_RUNTIME_OR_WORKFLOW_EXTENSION"
+    },
+    "stop_conditions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 5,
+      "uniqueItems": true
+    }
+  }
+}
