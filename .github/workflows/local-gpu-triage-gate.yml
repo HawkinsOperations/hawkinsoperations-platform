@@ -22,23 +22,29 @@ jobs:
 
       - name: Confirm runner context
         run: |
-          echo "runner_label_set=ho-gpu-01,gpu,v100"
-          echo "runner_scope=repo-level-self-hosted"
-          echo "gpu_check=enabled"
-          nvidia-smi --query-gpu=name,driver_version,memory.total,memory.used,utilization.gpu,temperature.gpu,pstate --format=csv,noheader
+          echo "RUNNER_LABEL_SET=approved_self_hosted_gpu_label_set"
+          echo "RUNNER_SCOPE=repo_level_self_hosted"
+          if command -v nvidia-smi >/dev/null 2>&1; then
+            nvidia-smi --query-gpu=name --format=csv,noheader >/dev/null
+            echo "GPU_CAPABILITY_CHECK=pass"
+          else
+            echo "GPU_CAPABILITY_CHECK=fail"
+            exit 1
+          fi
 
       - name: Validate local GPU triage contract JSON
         run: |
-          python -m json.tool contracts/schemas/local-gpu-triage-support-v0.schema.json
-          python -m json.tool contracts/examples/local-gpu-triage-support-v0.sample.json
+          python3 -m json.tool contracts/schemas/local-gpu-triage-support-v0.schema.json >/dev/null
+          python3 -m json.tool contracts/examples/local-gpu-triage-support-v0.sample.json >/dev/null
+          echo "LOCAL_GPU_TRIAGE_JSON_VALIDATION=pass"
 
       - name: Run deterministic local GPU triage verifier
         run: |
-          python -B scripts/verify_local_gpu_triage.py contracts/examples/local-gpu-triage-support-v0.sample.json --self-test
+          python3 -B scripts/verify_local_gpu_triage.py contracts/examples/local-gpu-triage-support-v0.sample.json --self-test
 
       - name: Print local GPU triage status packet
         run: |
-          python -B scripts/run_local_gpu_triage.py status --format json
+          python3 -B scripts/run_local_gpu_triage.py status --format json
 
       - name: Run factory controller plan when org mirror is present
         run: |
@@ -55,9 +61,9 @@ jobs:
             echo "This skip does not promote proof or reduce Local GPU Triage Gate verification."
             exit 0
           fi
-          python -B scripts/ho_factory.py plan --detection all --repo-root "$ORG_ROOT" --format json
+          python3 -B scripts/ho_factory.py plan --detection all --repo-root "$ORG_ROOT" --format json
 
       - name: Run existing platform verifier gates
         run: |
-          python -B scripts/verify-ho-det-001-runtime-contract.py
-          python -B scripts/verify-ho-det-011-case-packet.py
+          python3 -B scripts/verify-ho-det-001-runtime-contract.py
+          python3 -B scripts/verify-ho-det-011-case-packet.py
