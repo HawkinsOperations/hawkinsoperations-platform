@@ -1,0 +1,182 @@
+{
+  "controller_version": "0.1.0",
+  "mode": "status",
+  "generated_output_files": false,
+  "packets": [
+    {
+      "controller_version": "0.1.0",
+      "detection_id": "HO-DET-011",
+      "current_state": "PRIVATE_RUNTIME_EVIDENCE_CAPTURED",
+      "public_proof_ceiling": "CONTROLLED_TEST_VALIDATED",
+      "private_evidence_state": "PRIVATE_RUNTIME_EVIDENCE_CAPTURED",
+      "public_safe_status": "NOT_PUBLIC_SAFE",
+      "runtime_active": false,
+      "signal_observed": false,
+      "ai_decided_disposition": false,
+      "human_review_required": true,
+      "gate_summary": [
+        {
+          "gate": "source",
+          "status": "FOUND",
+          "owner_repo": "hawkinsoperations-detections",
+          "claim": "source exists",
+          "promotion_allowed": false
+        },
+        {
+          "gate": "validation",
+          "status": "CONTROLLED_TEST_VALIDATED",
+          "owner_repo": "hawkinsoperations-validation",
+          "claim": "controlled-test validation passed",
+          "promotion_allowed": false
+        },
+        {
+          "gate": "platform_guardrail",
+          "status": "STATE_DRIFT_REVIEW_REQUIRED",
+          "owner_repo": "hawkinsoperations-platform",
+          "claim": "platform guardrail reported",
+          "promotion_allowed": false
+        },
+        {
+          "gate": "proof_record",
+          "status": "FOUND",
+          "owner_repo": "hawkinsoperations-proof",
+          "claim": "proof state reported, not promoted",
+          "promotion_allowed": false
+        },
+        {
+          "gate": "blocked_claims",
+          "status": "PRESENT",
+          "owner_repo": "hawkinsoperations-platform",
+          "claim": "blocked claims inventory present",
+          "promotion_allowed": false
+        },
+        {
+          "gate": "next_legal_move",
+          "status": "REVIEW_REQUIRED",
+          "owner_repo": "hawkinsoperations-platform",
+          "claim": "Review platform drift before any guardrail update; routed telemetry or public-safe wording remains blocked until separate evidence linkage, redaction review, stale review, wording review, and Raylee approval.",
+          "promotion_allowed": false
+        }
+      ],
+      "decision": {
+        "status": "DRIFT_REVIEW_REQUIRED",
+        "merge_recommendation": "REVIEW_REQUIRED",
+        "proof_promotion_allowed": false,
+        "public_rendering_allowed": false,
+        "reason": "Platform guardrail remains pinned to an earlier 6-case shape while current validation, proof, and detection surfaces record 17 controlled-test fixtures."
+      },
+      "truth_boundary": {
+        "source_truth": "reported",
+        "validation_truth": "controlled-test validated",
+        "platform_truth": "controller reported drift review required",
+        "proof_truth": "private runtime evidence state reported",
+        "runtime_truth": "not public proven",
+        "signal_truth": "not public proven",
+        "public_proof": "not public safe"
+      },
+      "repo_surfaces_found": [
+        {
+          "repo": "hawkinsoperations-detections",
+          "paths": [
+            "detections/successor/ho-det-011/status.yml",
+            "detections/successor/ho-det-011/rule.yml",
+            "detections/successor/ho-det-011/splunk.spl",
+            "detections/successor/ho-det-011/wazuh.xml",
+            "detections/successor/ho-det-011/event-mapping.yml",
+            "detections/DETECTION_FACTORY_INDEX.md"
+          ]
+        },
+        {
+          "repo": "hawkinsoperations-validation",
+          "paths": [
+            "reports/ho-det-011/validation-result.json",
+            "validation/successor/ho-det-011/validation-cases.json"
+          ]
+        },
+        {
+          "repo": "hawkinsoperations-proof",
+          "paths": [
+            "proof/records/HO-DET-011.md"
+          ]
+        },
+        {
+          "repo": "hawkinsoperations-platform",
+          "paths": [
+            "contracts/examples/ho-det-011-case-packet.sample.json",
+            "contracts/schemas/ho-det-011-case-packet.schema.json",
+            "scripts/verify-ho-det-011-case-packet.py"
+          ]
+        }
+      ],
+      "required_surfaces_missing": [],
+      "validation_state": {
+        "status": "pass",
+        "total_cases": 17,
+        "positive_cases": 7,
+        "negative_cases": 10,
+        "missed_positive_count": 0,
+        "false_positive_negative_count": 0,
+        "exact_claim_supported": "HO-DET-011 passed controlled-test validation against controlled Windows service creation fixtures."
+      },
+      "proof_state": {
+        "record_path": "hawkinsoperations-proof/proof/records/HO-DET-011.md",
+        "card_path": null,
+        "record_exists": true,
+        "card_exists": false,
+        "state": "PRIVATE_RUNTIME_EVIDENCE_CAPTURED"
+      },
+      "platform_guardrail_status": "STATE_DRIFT_REVIEW_REQUIRED",
+      "blocked_claims": [
+        "runtime-active",
+        "signal-observed",
+        "public-safe",
+        "evidence-linked public proof",
+        "live Splunk fired",
+        "Splunk observed",
+        "Wazuh observed",
+        "Wazuh-routed",
+        "Cribl-routed",
+        "Security Onion observed",
+        "production-ready",
+        "fleet-wide",
+        "autonomous SOC",
+        "AI-approved disposition",
+        "analyst-approved disposition",
+        "service-creation coverage completeness"
+      ],
+      "supported_claims": [
+        "HO-DET-011 source artifacts exist.",
+        "HO-DET-011 passed controlled-test validation against 17 controlled Windows service creation fixtures.",
+        "HO-DET-011 has a platform case-packet guardrail that preserves controlled-test-scope claim boundaries.",
+        "HO-DET-011 has sanitized private local Windows runtime evidence captured for one controlled service-creation test.",
+        "HO-DET-011 is capped at PRIVATE_RUNTIME_EVIDENCE_CAPTURED for private evidence and NOT_PUBLIC_SAFE for public use."
+      ],
+      "next_allowed_move": "Review platform drift before any guardrail update; routed telemetry or public-safe wording remains blocked until separate evidence linkage, redaction review, stale review, wording review, and Raylee approval.",
+      "stop_conditions": [
+        "Do not repair the 6-case platform guardrail in v0.",
+        "Do not promote proof.",
+        "Do not claim public-safe status.",
+        "Do not claim runtime-active or signal-observed public proof.",
+        "Do not create generated output files."
+      ],
+      "state_consistency": [
+        "STATE_DRIFT_REVIEW_REQUIRED",
+        "Platform sample and verifier remain pinned to an earlier 6-case guardrail while current validation, proof, and detection facts record 17 controlled-test fixtures."
+      ],
+      "does_not_prove": [
+        "runtime activity",
+        "public or routed signal observation",
+        "public-safe proof",
+        "live Splunk firing",
+        "Wazuh observation",
+        "Cribl routing",
+        "Security Onion observation",
+        "production deployment",
+        "fleet-wide coverage",
+        "service-creation coverage completeness",
+        "AI-approved disposition",
+        "analyst-approved disposition"
+      ]
+    }
+  ]
+}

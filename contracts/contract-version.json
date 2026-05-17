@@ -1,13 +1,14 @@
 {
-  "contract_version": "1.0.0",
-  "published_at": "2026-04-21T00:00:00Z",
+  "contract_version": "1.1.0",
+  "published_at": "2026-05-17T00:00:00Z",
   "schemas": {
     "detection_artifact": "contracts/schemas/detection-artifact.schema.json",
     "validation_report": "contracts/schemas/validation-report.schema.json",
     "proof_record": "contracts/schemas/proof-record.schema.json",
     "local_llm_runtime_receipt": "contracts/schemas/local-llm-runtime-receipt.schema.json",
     "ho_det_001_runtime_contract": "contracts/schemas/ho-det-001-runtime-contract.schema.json",
-    "ho_det_011_case_packet": "contracts/schemas/ho-det-011-case-packet.schema.json"
+    "ho_det_011_case_packet": "contracts/schemas/ho-det-011-case-packet.schema.json",
+    "detection_factory_controller_v0": "contracts/schemas/detection-factory-controller-v0.schema.json"
   },
-  "notes": "Platform contract baseline for detection-validation-proof chaining, local LLM runtime receipts, and HO-DET-001 runtime-boundary enforcement."
+  "notes": "Platform contract baseline for detection-validation-proof chaining, local LLM runtime receipts, HO-DET-001 runtime-boundary enforcement, HO-DET-011 case-packet guardrails, and the Detection Factory Controller v0 reviewer-packet contract."
 }

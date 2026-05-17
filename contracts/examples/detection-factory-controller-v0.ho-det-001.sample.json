@@ -1,0 +1,176 @@
+{
+  "controller_version": "0.1.0",
+  "mode": "status",
+  "generated_output_files": false,
+  "packets": [
+    {
+      "controller_version": "0.1.0",
+      "detection_id": "HO-DET-001",
+      "current_state": "CONTROLLED_TEST_VALIDATED",
+      "public_proof_ceiling": "CONTROLLED_TEST_VALIDATED",
+      "private_evidence_state": "PRIVATE_INTERNAL_BOUNDARY_CONTEXT",
+      "public_safe_status": "NOT_PUBLIC_SAFE",
+      "runtime_active": false,
+      "signal_observed": false,
+      "ai_decided_disposition": false,
+      "human_review_required": true,
+      "gate_summary": [
+        {
+          "gate": "source",
+          "status": "FOUND",
+          "owner_repo": "hawkinsoperations-detections",
+          "claim": "source exists",
+          "promotion_allowed": false
+        },
+        {
+          "gate": "validation",
+          "status": "CONTROLLED_TEST_VALIDATED",
+          "owner_repo": "hawkinsoperations-validation",
+          "claim": "controlled-test validation passed",
+          "promotion_allowed": false
+        },
+        {
+          "gate": "platform_guardrail",
+          "status": "SATISFIED_NON_PROMOTIONAL_BOUNDARY",
+          "owner_repo": "hawkinsoperations-platform",
+          "claim": "platform guardrail reported",
+          "promotion_allowed": false
+        },
+        {
+          "gate": "proof_record",
+          "status": "FOUND",
+          "owner_repo": "hawkinsoperations-proof",
+          "claim": "proof state reported, not promoted",
+          "promotion_allowed": false
+        },
+        {
+          "gate": "blocked_claims",
+          "status": "PRESENT",
+          "owner_repo": "hawkinsoperations-platform",
+          "claim": "blocked claims inventory present",
+          "promotion_allowed": false
+        },
+        {
+          "gate": "next_legal_move",
+          "status": "REVIEW_REQUIRED",
+          "owner_repo": "hawkinsoperations-platform",
+          "claim": "Review packet only; stronger claims require separate evidence linkage, privacy review, stale review, wording review, and Raylee approval.",
+          "promotion_allowed": false
+        }
+      ],
+      "decision": {
+        "status": "READY_FOR_REVIEW",
+        "merge_recommendation": "REVIEW_REQUIRED",
+        "proof_promotion_allowed": false,
+        "public_rendering_allowed": false,
+        "reason": "Controller v0 reports HO-DET-001 state only and preserves proof boundaries."
+      },
+      "truth_boundary": {
+        "source_truth": "reported",
+        "validation_truth": "controlled-test validated",
+        "platform_truth": "controller and runtime-contract guardrail reported",
+        "proof_truth": "proof record reported",
+        "runtime_truth": "not public proven",
+        "signal_truth": "not public proven",
+        "public_proof": "not public safe"
+      },
+      "repo_surfaces_found": [
+        {
+          "repo": "hawkinsoperations-detections",
+          "paths": [
+            "detections/successor/ho-det-001/status.yml",
+            "detections/successor/ho-det-001/rule.yml",
+            "detections/successor/ho-det-001/splunk.spl",
+            "detections/DETECTION_FACTORY_INDEX.md"
+          ]
+        },
+        {
+          "repo": "hawkinsoperations-validation",
+          "paths": [
+            "reports/ho-det-001/validation-result.json",
+            "validation/successor/ho-det-001/case-packet.json",
+            "validation/successor/ho-det-001/autosoc-triage-packet.json",
+            "validation/successor/ho-det-001/llm-summary.json"
+          ]
+        },
+        {
+          "repo": "hawkinsoperations-proof",
+          "paths": [
+            "proof/records/HO-DET-001.md",
+            "proof/cards/HO-DET-001.md"
+          ]
+        },
+        {
+          "repo": "hawkinsoperations-platform",
+          "paths": [
+            "contracts/examples/ho-det-001-runtime-contract.sample.json",
+            "contracts/schemas/ho-det-001-runtime-contract.schema.json",
+            "scripts/verify-ho-det-001-runtime-contract.py"
+          ]
+        }
+      ],
+      "required_surfaces_missing": [],
+      "validation_state": {
+        "status": "pass",
+        "total_cases": 14,
+        "positive_cases": 7,
+        "negative_cases": 7,
+        "missed_positive_count": 0,
+        "false_positive_negative_count": 0,
+        "exact_claim_supported": "HO-DET-001 passed controlled-test validation against controlled positive and negative process-creation fixtures."
+      },
+      "proof_state": {
+        "record_path": "hawkinsoperations-proof/proof/records/HO-DET-001.md",
+        "card_path": "hawkinsoperations-proof/proof/cards/HO-DET-001.md",
+        "record_exists": true,
+        "card_exists": true,
+        "state": "CONTROLLED_TEST_VALIDATED_WITH_PRIVATE_INTERNAL_BOUNDARY_CONTEXT"
+      },
+      "platform_guardrail_status": "SATISFIED_NON_PROMOTIONAL_BOUNDARY",
+      "blocked_claims": [
+        "runtime-active",
+        "signal-observed",
+        "evidence-linked public proof",
+        "public-safe",
+        "live Splunk fired",
+        "Cribl-routed",
+        "Wazuh-routed",
+        "AWS-live",
+        "production-ready",
+        "fleet-wide",
+        "autonomous SOC",
+        "AI-approved disposition",
+        "analyst-approved disposition"
+      ],
+      "supported_claims": [
+        "HO-DET-001 source exists.",
+        "HO-DET-001 Splunk source exists.",
+        "HO-DET-001 passed controlled-test validation against controlled positive and negative process-creation fixtures.",
+        "HO-DET-001 platform runtime contract enforcement exists as a non-promotional guardrail."
+      ],
+      "next_allowed_move": "Review packet only; stronger claims require separate evidence linkage, privacy review, stale review, wording review, and Raylee approval.",
+      "stop_conditions": [
+        "Do not promote proof.",
+        "Do not claim public-safe status.",
+        "Do not claim runtime-active or signal-observed public proof.",
+        "Do not create generated output files."
+      ],
+      "state_consistency": [
+        "STATE_CONSISTENT_WITH_V0_BOUNDARY"
+      ],
+      "does_not_prove": [
+        "runtime activity",
+        "signal observation",
+        "public-safe status",
+        "production deployment",
+        "fleet-wide coverage",
+        "live Splunk firing",
+        "Cribl routing",
+        "Wazuh routing",
+        "AWS-live coverage",
+        "AI-approved disposition",
+        "analyst-approved disposition"
+      ]
+    }
+  ]
+}

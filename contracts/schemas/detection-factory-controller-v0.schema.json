@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HawkinsOperations/hawkinsoperations-platform/contracts/schemas/detection-factory-controller-v0.schema.json",
+  "title": "Detection Factory Controller v0 Reviewer Packet",
+  "type": "object",
+  "required": [
+    "controller_version",
+    "mode",
+    "generated_output_files",
+    "packets"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "controller_version": {
+      "const": "0.1.0"
+    },
+    "mode": {
+      "enum": [
+        "status",
+        "plan"
+      ]
+    },
+    "generated_output_files": {
+      "const": false
+    },
+    "packets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/reviewer_packet"
+      }
+    }
+  },
+  "$defs": {
+    "repo_surface": {
+      "type": "object",
+      "required": [
+        "repo",
+        "paths"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "validation_state": {
+      "type": "object",
+      "required": [
+        "status",
+        "total_cases",
+        "positive_cases",
+        "negative_cases",
+        "missed_positive_count",
+        "false_positive_negative_count",
+        "exact_claim_supported"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": "pass"
+        },
+        "total_cases": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "positive_cases": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "negative_cases": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missed_positive_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "false_positive_negative_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exact_claim_supported": {
+          "type": "string"
+        }
+      }
+    },
+    "proof_state": {
+      "type": "object",
+      "required": [
+        "record_path",
+        "card_path",
+        "record_exists",
+        "card_exists",
+        "state"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "record_path": {
+          "type": "string"
+        },
+        "card_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "record_exists": {
+          "type": "boolean"
+        },
+        "card_exists": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string"
+        }
+      }
+    },
+    "gate_summary_item": {
+      "type": "object",
+      "required": [
+        "gate",
+        "status",
+        "owner_repo",
+        "claim",
+        "promotion_allowed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "gate": {
+          "enum": [
+            "source",
+            "validation",
+            "platform_guardrail",
+            "proof_record",
+            "blocked_claims",
+            "next_legal_move"
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "owner_repo": {
+          "type": "string"
+        },
+        "claim": {
+          "type": "string"
+        },
+        "promotion_allowed": {
+          "const": false
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": [
+        "status",
+        "merge_recommendation",
+        "proof_promotion_allowed",
+        "public_rendering_allowed",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "READY_FOR_REVIEW",
+            "DRIFT_REVIEW_REQUIRED"
+          ]
+        },
+        "merge_recommendation": {
+          "const": "REVIEW_REQUIRED"
+        },
+        "proof_promotion_allowed": {
+          "const": false
+        },
+        "public_rendering_allowed": {
+          "const": false
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "truth_boundary": {
+      "type": "object",
+      "required": [
+        "source_truth",
+        "validation_truth",
+        "platform_truth",
+        "proof_truth",
+        "runtime_truth",
+        "signal_truth",
+        "public_proof"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "source_truth": {
+          "type": "string"
+        },
+        "validation_truth": {
+          "type": "string"
+        },
+        "platform_truth": {
+          "type": "string"
+        },
+        "proof_truth": {
+          "type": "string"
+        },
+        "runtime_truth": {
+          "type": "string"
+        },
+        "signal_truth": {
+          "type": "string"
+        },
+        "public_proof": {
+          "type": "string"
+        }
+      }
+    },
+    "reviewer_packet": {
+      "type": "object",
+      "required": [
+        "controller_version",
+        "detection_id",
+        "current_state",
+        "public_proof_ceiling",
+        "private_evidence_state",
+        "public_safe_status",
+        "runtime_active",
+        "signal_observed",
+        "ai_decided_disposition",
+        "human_review_required",
+        "gate_summary",
+        "decision",
+        "truth_boundary",
+        "repo_surfaces_found",
+        "required_surfaces_missing",
+        "validation_state",
+        "proof_state",
+        "platform_guardrail_status",
+        "blocked_claims",
+        "supported_claims",
+        "next_allowed_move",
+        "stop_conditions",
+        "state_consistency",
+        "does_not_prove"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "controller_version": {
+          "const": "0.1.0"
+        },
+        "detection_id": {
+          "enum": [
+            "HO-DET-001",
+            "HO-DET-011"
+          ]
+        },
+        "current_state": {
+          "type": "string"
+        },
+        "public_proof_ceiling": {
+          "enum": [
+            "CONTROLLED_TEST_VALIDATED"
+          ]
+        },
+        "private_evidence_state": {
+          "type": "string"
+        },
+        "public_safe_status": {
+          "const": "NOT_PUBLIC_SAFE"
+        },
+        "runtime_active": {
+          "const": false
+        },
+        "signal_observed": {
+          "const": false
+        },
+        "ai_decided_disposition": {
+          "const": false
+        },
+        "human_review_required": {
+          "const": true
+        },
+        "gate_summary": {
+          "type": "array",
+          "minItems": 6,
+          "items": {
+            "$ref": "#/$defs/gate_summary_item"
+          }
+        },
+        "decision": {
+          "$ref": "#/$defs/decision"
+        },
+        "truth_boundary": {
+          "$ref": "#/$defs/truth_boundary"
+        },
+        "repo_surfaces_found": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/repo_surface"
+          }
+        },
+        "required_surfaces_missing": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "validation_state": {
+          "$ref": "#/$defs/validation_state"
+        },
+        "proof_state": {
+          "$ref": "#/$defs/proof_state"
+        },
+        "platform_guardrail_status": {
+          "type": "string"
+        },
+        "blocked_claims": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "supported_claims": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "next_allowed_move": {
+          "type": "string"
+        },
+        "stop_conditions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "state_consistency": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "does_not_prove": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
