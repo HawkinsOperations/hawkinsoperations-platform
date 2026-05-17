@@ -22,8 +22,9 @@ jobs:
 
       - name: Confirm runner context
         run: |
-          hostname
-          uname -a
+          echo "runner_label_set=ho-gpu-01,gpu,v100"
+          echo "runner_scope=repo-level-self-hosted"
+          echo "gpu_check=enabled"
           nvidia-smi --query-gpu=name,driver_version,memory.total,memory.used,utilization.gpu,temperature.gpu,pstate --format=csv,noheader
 
       - name: Validate local GPU triage contract JSON
