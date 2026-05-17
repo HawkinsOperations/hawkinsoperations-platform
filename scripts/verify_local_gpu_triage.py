@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import re
 import sys
 from pathlib import Path
@@ -78,18 +79,21 @@ PROMOTED_SUPPORTED_CLAIM_PATTERNS = [
 ]
 
 
+class ValidationError(Exception):
+    """Packet validation failed closed."""
+
+
 def fail(message: str) -> None:
-    print(f"LOCAL_GPU_TRIAGE=fail: {message}", file=sys.stderr)
-    raise SystemExit(1)
+    raise ValidationError(message)
 
 
 def load_json(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        fail(f"missing required file: {path}")
+        raise ValidationError(f"missing required file: {path}")
     except json.JSONDecodeError as exc:
-        fail(f"invalid JSON in {path}: {exc}")
+        raise ValidationError(f"invalid JSON in {path}: {exc}")
 
     if not isinstance(data, dict):
         fail("packet must be a JSON object")
@@ -100,12 +104,87 @@ def validate_schema_if_possible(sample: dict[str, Any], schema: dict[str, Any]) 
     try:
         import jsonschema  # type: ignore
     except Exception:
+        validate_schema_subset(sample, schema)
         return
 
     try:
         jsonschema.Draft202012Validator(schema).validate(sample)
     except Exception as exc:
         fail(f"schema validation failed: {exc}")
+
+
+def validate_schema_subset(value: Any, schema: dict[str, Any], path: str = "$") -> None:
+    """Validate the schema features used by this contract without dependencies."""
+
+    if "$ref" in schema:
+        fail(f"unsupported schema $ref at {path}")
+
+    if "const" in schema and value != schema["const"]:
+        fail(f"{path} expected const {schema['const']!r}, got {value!r}")
+
+    if "enum" in schema and value not in schema["enum"]:
+        fail(f"{path} expected one of {schema['enum']!r}, got {value!r}")
+
+    schema_type = schema.get("type")
+    if schema_type:
+        require_type(value, schema_type, path)
+
+    if schema_type == "object":
+        if not isinstance(value, dict):
+            fail(f"{path} must be an object")
+
+        required = schema.get("required", [])
+        for key in required:
+            if key not in value:
+                fail(f"{path}.{key} is required")
+
+        properties = schema.get("properties", {})
+        if schema.get("additionalProperties") is False:
+            extra = sorted(set(value) - set(properties))
+            if extra:
+                fail(f"{path} has unsupported properties: {', '.join(extra)}")
+
+        for key, child_schema in properties.items():
+            if key in value:
+                validate_schema_subset(value[key], child_schema, f"{path}.{key}")
+
+    if schema_type == "array":
+        if not isinstance(value, list):
+            fail(f"{path} must be an array")
+
+        min_items = schema.get("minItems")
+        if min_items is not None and len(value) < min_items:
+            fail(f"{path} must contain at least {min_items} items")
+
+        if schema.get("uniqueItems") is True:
+            normalized = [json.dumps(item, sort_keys=True) for item in value]
+            if len(normalized) != len(set(normalized)):
+                fail(f"{path} must contain unique items")
+
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for index, item in enumerate(value):
+                validate_schema_subset(item, item_schema, f"{path}[{index}]")
+
+    if isinstance(value, str):
+        min_length = schema.get("minLength")
+        if min_length is not None and len(value) < min_length:
+            fail(f"{path} must be at least {min_length} characters")
+
+
+def require_type(value: Any, schema_type: str, path: str) -> None:
+    type_checks = {
+        "object": lambda item: isinstance(item, dict),
+        "array": lambda item: isinstance(item, list),
+        "string": lambda item: isinstance(item, str),
+        "boolean": lambda item: isinstance(item, bool),
+        "null": lambda item: item is None,
+    }
+    check = type_checks.get(schema_type)
+    if check is None:
+        fail(f"unsupported schema type {schema_type!r} at {path}")
+    if not check(value):
+        fail(f"{path} must be {schema_type}")
 
 
 def iter_string_values(value: Any) -> Iterable[str]:
@@ -181,24 +260,74 @@ def reject_promoted_supported_claims(packet: dict[str, Any]) -> None:
                 fail(f"supported_claims promotes blocked wording: {claim!r}")
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) != 1:
-        print("usage: verify_local_gpu_triage.py <packet.json>", file=sys.stderr)
-        return 2
-
-    packet_path = Path(argv[0])
-    if not packet_path.is_absolute():
-        packet_path = ROOT / packet_path
-
-    packet = load_json(packet_path)
-    schema = load_json(SCHEMA_PATH)
-
+def validate_packet(packet: dict[str, Any], schema: dict[str, Any]) -> None:
     validate_schema_if_possible(packet, schema)
     require_expected_values(packet)
     require_nested_boundaries(packet)
     require_blocked_claims(packet)
     reject_promoted_supported_claims(packet)
     reject_private_or_host_values(packet)
+
+
+def run_self_tests(sample: dict[str, Any], schema: dict[str, Any]) -> None:
+    cases: list[tuple[str, dict[str, Any]]] = []
+
+    missing_runtime = copy.deepcopy(sample)
+    missing_runtime.pop("runtime_truth", None)
+    cases.append(("missing runtime_truth", missing_runtime))
+
+    missing_ci = copy.deepcopy(sample)
+    missing_ci.pop("true_gpu_ci_status", None)
+    cases.append(("missing true_gpu_ci_status", missing_ci))
+
+    public_safe = copy.deepcopy(sample)
+    public_safe["public_safe_status"] = "PUBLIC_SAFE"
+    cases.append(("public_safe_status promoted", public_safe))
+
+    ai_decided = copy.deepcopy(sample)
+    ai_decided["ai_decided_disposition"] = True
+    cases.append(("AI decided disposition", ai_decided))
+
+    gpu_ci_implemented = copy.deepcopy(sample)
+    gpu_ci_implemented["true_gpu_ci_status"] = "IMPLEMENTED"
+    cases.append(("true GPU CI implemented claim", gpu_ci_implemented))
+
+    private_host = copy.deepcopy(sample)
+    private_host["local_gpu_runtime_label"] = "HO" + "-GPU" + "-01"
+    cases.append(("real private GPU host identifier", private_host))
+
+    for name, packet in cases:
+        try:
+            validate_packet(packet, schema)
+        except ValidationError:
+            continue
+        fail(f"negative self-test did not fail closed: {name}")
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) not in (1, 2):
+        print("usage: verify_local_gpu_triage.py <packet.json> [--self-test]", file=sys.stderr)
+        return 2
+
+    self_test = "--self-test" in argv
+    paths = [arg for arg in argv if arg != "--self-test"]
+    if len(paths) != 1:
+        print("usage: verify_local_gpu_triage.py <packet.json> [--self-test]", file=sys.stderr)
+        return 2
+
+    packet_path = Path(paths[0])
+    if not packet_path.is_absolute():
+        packet_path = ROOT / packet_path
+
+    try:
+        packet = load_json(packet_path)
+        schema = load_json(SCHEMA_PATH)
+        validate_packet(packet, schema)
+        if self_test:
+            run_self_tests(packet, schema)
+    except ValidationError as exc:
+        print(f"LOCAL_GPU_TRIAGE=fail: {exc}", file=sys.stderr)
+        return 1
 
     print("LOCAL_GPU_TRIAGE=pass")
     print("AI_SUPPORT_MODE=AI_SUPPORT_ONLY")
@@ -207,6 +336,8 @@ def main(argv: list[str]) -> int:
     print("PUBLIC_SAFE_STATUS=NOT_PUBLIC_SAFE")
     print("AI_DECIDED_DISPOSITION=false")
     print("HUMAN_REVIEW_REQUIRED=true")
+    if self_test:
+        print("NEGATIVE_SELF_TESTS=pass")
     return 0
 
 
