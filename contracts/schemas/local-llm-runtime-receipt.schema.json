@@ -22,7 +22,7 @@
   "properties": {
     "receipt_id": {
       "type": "string",
-      "pattern": "^HO-GPU-01-LLM-RUNTIME-RECEIPT-[0-9]{3,}$"
+      "pattern": "^LOCAL_GPU_SUPPORT_NODE-LLM-RUNTIME-RECEIPT-[0-9]{3,}$"
     },
     "receipt_type": {
       "type": "string",
@@ -30,7 +30,7 @@
     },
     "runtime_subject_id": {
       "type": "string",
-      "const": "HO-GPU-01"
+      "const": "LOCAL_GPU_SUPPORT_NODE"
     },
     "schema_claim_ceiling": {
       "type": "string",

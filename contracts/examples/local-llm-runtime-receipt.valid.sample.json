@@ -1,7 +1,7 @@
 {
-  "receipt_id": "HO-GPU-01-LLM-RUNTIME-RECEIPT-001",
+  "receipt_id": "LOCAL_GPU_SUPPORT_NODE-LLM-RUNTIME-RECEIPT-001",
   "receipt_type": "local_llm_runtime_receipt",
-  "runtime_subject_id": "HO-GPU-01",
+  "runtime_subject_id": "LOCAL_GPU_SUPPORT_NODE",
   "schema_claim_ceiling": "SCHEMA_ONLY_NOT_RUNTIME_PROOF",
   "model": {
     "provider": "local",
