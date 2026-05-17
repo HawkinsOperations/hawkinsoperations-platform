@@ -44,7 +44,7 @@ jobs:
 
       - name: Print local GPU triage status packet
         run: |
-          python3 -B scripts/run_local_gpu_triage.py status --format json
+          python3 -B scripts/run_local_gpu_triage.py status --format receipt
 
       - name: Run factory controller plan when org mirror is present
         run: |
@@ -57,11 +57,11 @@ jobs:
             fi
           done
           if [ -n "$missing" ]; then
-            echo "Skipping ho_factory plan: isolated Actions checkout does not provide org sibling repos:$missing"
-            echo "This skip does not promote proof or reduce Local GPU Triage Gate verification."
+            echo "FACTORY_CONTROLLER_PLAN=skipped_isolated_checkout"
             exit 0
           fi
-          python3 -B scripts/ho_factory.py plan --detection all --repo-root "$ORG_ROOT" --format json
+          python3 -B scripts/ho_factory.py plan --detection all --repo-root "$ORG_ROOT" --format json >/dev/null
+          echo "FACTORY_CONTROLLER_PLAN=pass"
 
       - name: Run existing platform verifier gates
         run: |

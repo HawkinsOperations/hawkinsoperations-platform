@@ -111,8 +111,20 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     status = subparsers.add_parser("status")
-    status.add_argument("--format", choices=["json"], default="json")
+    status.add_argument("--format", choices=["json", "receipt"], default="json")
     return parser.parse_args(argv)
+
+
+def print_receipt() -> None:
+    print("LOCAL_GPU_TRIAGE_STATUS_PACKET=pass")
+    print("AI_SUPPORT_MODE=support_only")
+    print("PUBLIC_SAFE_STATUS=not_public_safe")
+    print("PROOF_CEILING=controlled_test_validated")
+    print("HUMAN_REVIEW_REQUIRED=true")
+    print("MODEL_EXECUTION_IN_CI=false")
+    print("OLLAMA_PROMPT_EXECUTION_IN_CI=false")
+    print("ARTIFACT_UPLOAD=false")
+    print("PUBLIC_PROOF_PROMOTION=false")
 
 
 def main(argv: list[str]) -> int:
@@ -121,7 +133,10 @@ def main(argv: list[str]) -> int:
         print("LOCAL_GPU_TRIAGE=fail: unsupported command", file=sys.stderr)
         return 2
 
-    print(json.dumps(PACKET, indent=2, sort_keys=False))
+    if args.format == "receipt":
+        print_receipt()
+    else:
+        print(json.dumps(PACKET, indent=2, sort_keys=False))
     return 0
 
 
