@@ -24,6 +24,7 @@ Any schema-breaking change requires:
 - `contracts/schemas/validation-report.schema.json`
 - `contracts/schemas/proof-record.schema.json`
 - `contracts/schemas/local-llm-runtime-receipt.schema.json`
+- `contracts/schemas/detection-factory-controller-v0.schema.json`
 
 ## Local LLM Runtime Receipt Boundary
 
@@ -41,9 +42,36 @@ It does not prove:
 Minimal examples live in:
 
 - `contracts/examples/local-llm-runtime-receipt.valid.sample.json`
+- `contracts/examples/detection-factory-controller-v0.ho-det-001.sample.json`
+- `contracts/examples/detection-factory-controller-v0.ho-det-011.sample.json`
 
 ## Contract Intent
 
 These contracts define minimum required fields for reproducible
 detection-to-validation-to-proof linkage. They are baseline constraints,
 not full maturity coverage.
+
+## Detection Factory Controller v0
+
+Detection Factory Controller v0 is documented in:
+
+- `docs/factory/DETECTION_FACTORY_CONTROLLER_V0.md`
+
+The controller entry point is:
+
+- `scripts/ho_factory.py`
+
+v0 supports status and plan reviewer packets for `HO-DET-001` and
+`HO-DET-011`. It is read-only and stdout-only. It does not create generated
+output files, promote proof, publish evidence, update website wording, create
+pull requests, merge changes, or claim public-safe/runtime-active/signal-
+observed status.
+
+Reviewer packets include `gate_summary`, `decision`, and `truth_boundary`
+fields so reviewers can see the source, validation, platform guardrail, proof
+record, blocked-claim, and next-legal-move chain without inferring promotion.
+
+`HO-DET-011` currently reports `STATE_DRIFT_REVIEW_REQUIRED` because the
+platform case-packet guardrail sample remains pinned to an earlier 6-case shape
+while current detection, validation, and proof surfaces record 17 controlled-
+test fixtures. v0 reports that drift; it does not repair it.
