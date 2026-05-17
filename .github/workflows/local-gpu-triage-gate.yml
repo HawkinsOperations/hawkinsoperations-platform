@@ -1,0 +1,63 @@
+name: Local GPU Triage Gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-gpu-triage-gate
+  cancel-in-progress: false
+
+jobs:
+  local-gpu-triage-status:
+    name: Local GPU triage status
+    runs-on: [self-hosted, ho-gpu-01, gpu, v100]
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Confirm runner context
+        run: |
+          echo "runner_label_set=ho-gpu-01,gpu,v100"
+          echo "runner_scope=repo-level-self-hosted"
+          echo "gpu_check=enabled"
+          nvidia-smi --query-gpu=name,driver_version,memory.total,memory.used,utilization.gpu,temperature.gpu,pstate --format=csv,noheader
+
+      - name: Validate local GPU triage contract JSON
+        run: |
+          python -m json.tool contracts/schemas/local-gpu-triage-support-v0.schema.json
+          python -m json.tool contracts/examples/local-gpu-triage-support-v0.sample.json
+
+      - name: Run deterministic local GPU triage verifier
+        run: |
+          python -B scripts/verify_local_gpu_triage.py contracts/examples/local-gpu-triage-support-v0.sample.json --self-test
+
+      - name: Print local GPU triage status packet
+        run: |
+          python -B scripts/run_local_gpu_triage.py status --format json
+
+      - name: Run factory controller plan when org mirror is present
+        run: |
+          ORG_ROOT="$(dirname "$GITHUB_WORKSPACE")"
+          required_repos="hawkinsoperations-detections hawkinsoperations-validation hawkinsoperations-proof hawkinsoperations-platform"
+          missing=""
+          for repo in $required_repos; do
+            if [ ! -d "$ORG_ROOT/$repo" ]; then
+              missing="$missing $repo"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "Skipping ho_factory plan: isolated Actions checkout does not provide org sibling repos:$missing"
+            echo "This skip does not promote proof or reduce Local GPU Triage Gate verification."
+            exit 0
+          fi
+          python -B scripts/ho_factory.py plan --detection all --repo-root "$ORG_ROOT" --format json
+
+      - name: Run existing platform verifier gates
+        run: |
+          python -B scripts/verify-ho-det-001-runtime-contract.py
+          python -B scripts/verify-ho-det-011-case-packet.py
