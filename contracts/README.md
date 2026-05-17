@@ -25,6 +25,7 @@ Any schema-breaking change requires:
 - `contracts/schemas/proof-record.schema.json`
 - `contracts/schemas/local-llm-runtime-receipt.schema.json`
 - `contracts/schemas/detection-factory-controller-v0.schema.json`
+- `contracts/schemas/local-gpu-triage-support-v0.schema.json`
 
 ## Local LLM Runtime Receipt Boundary
 
@@ -44,6 +45,7 @@ Minimal examples live in:
 - `contracts/examples/local-llm-runtime-receipt.valid.sample.json`
 - `contracts/examples/detection-factory-controller-v0.ho-det-001.sample.json`
 - `contracts/examples/detection-factory-controller-v0.ho-det-011.sample.json`
+- `contracts/examples/local-gpu-triage-support-v0.sample.json`
 
 ## Contract Intent
 
@@ -75,3 +77,25 @@ record, blocked-claim, and next-legal-move chain without inferring promotion.
 platform case-packet guardrail sample remains pinned to an earlier 6-case shape
 while current detection, validation, and proof surfaces record 17 controlled-
 test fixtures. v0 reports that drift; it does not repair it.
+
+## Local GPU Triage Pipeline v0
+
+Local GPU Triage Pipeline v0 is documented in:
+
+- `docs/factory/LOCAL_GPU_TRIAGE_PIPELINE_V0.md`
+
+The status entry point is:
+
+- `scripts/run_local_gpu_triage.py`
+
+The deterministic verifier is:
+
+- `scripts/verify_local_gpu_triage.py`
+
+Phase A is contract and verifier only. It reports sanitized private local GPU
+support status, preserves `AI_SUPPORT_ONLY`, requires human review, keeps true
+GPU CI at `PENDING_RUNNER_CONFIRMATION`, and writes only to stdout. It does not
+create generated runtime packets, open SSH, execute model prompts, create
+workflows, inspect runner settings, promote proof, or claim public-safe,
+runtime-active public proof, signal-observed public proof, production,
+autonomous, AI-approved, or analyst-approved status.
