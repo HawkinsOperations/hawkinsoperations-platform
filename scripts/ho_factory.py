@@ -8,7 +8,10 @@ The controller prints to stdout only and does not create generated output files.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
+import sqlite3
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,8 +19,51 @@ from typing import Any
 
 
 CONTROLLER_VERSION = "0.1.0"
+CASE_LEDGER_VERSION = "AUTOSOC_CASE_LEDGER_V0"
 PLATFORM_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO_ROOT = PLATFORM_ROOT.parent
+DEFAULT_CASE_LEDGER = PLATFORM_ROOT / "evidence" / "autosoc-case-ledger-v0.sqlite"
+
+CASE_LEDGER_TRUTH_CLASSES = (
+    "FORWARD_GOVERNED_CASE",
+    "SYNTHETIC_TEST_CASE",
+    "RECOVERED_HISTORICAL_IMPORT",
+    "PRIVATE_RUNTIME_EVIDENCE",
+    "PUBLIC_PROOF_CANDIDATE",
+    "PUBLIC_BLOCKED",
+)
+
+CASE_LEDGER_TEXT_SCAN_FIELDS = (
+    "case_id",
+    "detection_id",
+    "truth_class",
+    "case_status",
+    "source_packet_ref",
+    "proof_ceiling",
+    "public_safe_status",
+    "ai_support_mode",
+    "closure_reason",
+    "created_at",
+    "inserted_at",
+    "event_hash",
+    "parent_event_hash",
+    "ledger_version",
+    "recommended_disposition",
+    "payload_json",
+)
+
+CASE_LEDGER_APPEND_ONLY_TRIGGERS = {
+    "case_events_no_update": "BEFORE UPDATE",
+    "case_events_no_delete": "BEFORE DELETE",
+}
+
+PRIVATE_MARKER_PATTERNS = (
+    re.compile(r"\b[A-Za-z]:\\"),
+    re.compile(r"\b(?:10|127|169\.254|172\.(?:1[6-9]|2\d|3[0-1])|192\.168)\.\d{1,3}\.\d{1,3}\b"),
+    re.compile(r"\b[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}\b"),
+    re.compile(r"(?i)\b(secret|password|token|api[_-]?key|credential)\b"),
+    re.compile(r"(?i)\b(raw model output|private evidence filename|internal service)\b"),
+)
 
 
 class FactoryError(RuntimeError):
@@ -78,6 +124,381 @@ PLATFORM_SAMPLE_BLOCKED = (
     "fleet-wide",
     "AI-approved disposition",
 )
+
+
+def case_factory_issue_plan(spec: DetectionSpec) -> dict[str, Any]:
+    labels = [
+        "autosoc:case",
+        "autosoc:sanitized",
+        "autosoc:validated",
+        "autosoc:needs-human-review",
+        "autosoc:blocked-close",
+        "publication:not-approved",
+        "ai:support-only",
+        f"det:{spec.detection_id.lower()}",
+    ]
+    result = "BLOCKED_HUMAN_REVIEW_REQUIRED"
+    blockers = [
+        "human_review_required=true",
+        "github_issue_mutation_allowed=false",
+        "close_action_allowed=false",
+        "ai_support_is_labor_not_authority",
+    ]
+    if spec.detection_id == "HO-DET-011" and spec.platform_guardrail_status == "STATE_DRIFT_REVIEW_REQUIRED":
+        result = "BLOCKED_PLATFORM_GUARDRAIL_DRIFT"
+        blockers.append("ho_det_011_platform_guardrail_drift_review_required")
+
+    return {
+        "factory_version": "AUTOSOC_CASE_FACTORY_V0",
+        "case_state": "DETERMINISTIC_RULE_EVALUATED",
+        "github_issue_plan": {
+            "mode": "dry_run_only",
+            "mutation_allowed": False,
+            "issue_ref": None,
+            "labels_to_add": labels,
+            "labels_to_remove": [],
+            "comment_intent": "Prepare sanitized deterministic status only; do not mutate GitHub Issues.",
+            "close_action_allowed": False,
+        },
+        "deterministic_close_rule": {
+            "evaluated": True,
+            "close_eligible": False,
+            "result": result,
+            "blockers": blockers,
+            "ai_authority_granted": False,
+            "proof_promotion_allowed": False,
+            "public_safe_promotion_allowed": False,
+        },
+        "ai_support_boundary": {
+            "allowed_role": "AI_SUPPORT_ONLY",
+            "ai_decided_disposition": False,
+            "recommended_disposition": None,
+            "may_approve": False,
+            "may_promote": False,
+            "may_close": False,
+        },
+    }
+
+
+def bool_int(value: bool) -> int:
+    return 1 if value else 0
+
+
+def stable_json(value: dict[str, Any]) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def case_ledger_schema_sql() -> str:
+    truth_values = ", ".join(f"'{item}'" for item in CASE_LEDGER_TRUTH_CLASSES)
+    return f"""
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS ledger_metadata (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS case_events (
+  event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_hash TEXT NOT NULL UNIQUE,
+  parent_event_hash TEXT,
+  inserted_at TEXT NOT NULL,
+  ledger_version TEXT NOT NULL CHECK (ledger_version = '{CASE_LEDGER_VERSION}'),
+  case_id TEXT NOT NULL,
+  detection_id TEXT NOT NULL,
+  truth_class TEXT NOT NULL CHECK (truth_class IN ({truth_values})),
+  case_status TEXT NOT NULL,
+  proof_ceiling TEXT NOT NULL,
+  public_safe_status TEXT NOT NULL CHECK (public_safe_status IN ('NO', 'BLOCKED', 'NOT_PUBLIC_SAFE')),
+  ai_support_mode TEXT NOT NULL CHECK (ai_support_mode = 'AI_SUPPORT_ONLY'),
+  ai_decided_disposition INTEGER NOT NULL CHECK (ai_decided_disposition = 0),
+  recommended_disposition TEXT CHECK (recommended_disposition IS NULL),
+  deterministic_close_eligible INTEGER NOT NULL CHECK (deterministic_close_eligible = 0),
+  deterministic_close_blocked INTEGER NOT NULL CHECK (deterministic_close_blocked = 1),
+  human_review_required INTEGER NOT NULL CHECK (human_review_required = 1),
+  gpu_supported INTEGER NOT NULL CHECK (gpu_supported IN (0, 1)),
+  public_safe INTEGER NOT NULL CHECK (public_safe = 0),
+  proof_blocked INTEGER NOT NULL CHECK (proof_blocked = 1),
+  github_issue_mutation_allowed INTEGER NOT NULL CHECK (github_issue_mutation_allowed = 0),
+  case_closed INTEGER NOT NULL CHECK (case_closed = 0),
+  legacy_import_count INTEGER NOT NULL DEFAULT 0 CHECK (legacy_import_count = 0),
+  payload_json TEXT NOT NULL,
+  source_packet_ref TEXT NOT NULL
+);
+
+CREATE TRIGGER IF NOT EXISTS case_events_no_update
+BEFORE UPDATE ON case_events
+BEGIN
+  SELECT RAISE(ABORT, 'case ledger is append-only: update blocked');
+END;
+
+CREATE TRIGGER IF NOT EXISTS case_events_no_delete
+BEFORE DELETE ON case_events
+BEGIN
+  SELECT RAISE(ABORT, 'case ledger is append-only: delete blocked');
+END;
+"""
+
+
+def connect_ledger(path: Path) -> sqlite3.Connection:
+    return sqlite3.connect(path)
+
+
+def initialize_ledger_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(case_ledger_schema_sql())
+    metadata = {
+        "ledger_version": CASE_LEDGER_VERSION,
+        "ledger_kind": "seed_sample_only",
+        "long_term_runtime_ledger": "false",
+        "proof_promotion_allowed": "false",
+        "public_safe_promotion_allowed": "false",
+        "github_issue_mutation_allowed": "false",
+        "case_closure_allowed": "false",
+        "ai_support_mode": "AI_SUPPORT_ONLY",
+        "human_review_required": "true",
+    }
+    conn.executemany(
+        "INSERT OR IGNORE INTO ledger_metadata(key, value) VALUES (?, ?)",
+        sorted(metadata.items()),
+    )
+
+
+def scan_private_markers(label: str, value: Any) -> None:
+    text = json.dumps(value, sort_keys=True) if not isinstance(value, str) else value
+    for pattern in PRIVATE_MARKER_PATTERNS:
+        if pattern.search(text):
+            raise FactoryError(f"{label} contains blocked private marker: {pattern.pattern}")
+
+
+def scan_ledger_event_text_fields(event: dict[str, Any]) -> dict[str, Any]:
+    scanned_fields: dict[str, Any] = {}
+    for field in CASE_LEDGER_TEXT_SCAN_FIELDS:
+        if field in event and event[field] is not None:
+            scanned_fields[field] = event[field]
+    payload = json.loads(str(event["payload_json"]))
+    scanned_fields["payload_json_parsed"] = payload
+    scan_private_markers("case ledger stored event text fields", scanned_fields)
+    return payload
+
+
+def build_sample_case_event(repo_root: Path) -> dict[str, Any]:
+    packet_ref = "hawkinsoperations-validation/validation/successor/ho-det-001/case-packet.json"
+    packet = load_json(repo_root / packet_ref)
+    if packet.get("detection_id") != "HO-DET-001":
+        raise FactoryError("sample case packet detection_id must be HO-DET-001")
+    if packet.get("proof_level") != "CONTROLLED_TEST_VALIDATED":
+        raise FactoryError("sample case packet proof_level must be CONTROLLED_TEST_VALIDATED")
+    if packet.get("public_safe_status") not in {"NO", "BLOCKED", "NOT_PUBLIC_SAFE"}:
+        raise FactoryError("sample case packet public_safe_status must remain blocked")
+    case_factory = packet.get("case_factory")
+    if not isinstance(case_factory, dict):
+        raise FactoryError("sample case packet missing case_factory object")
+    close_rule = case_factory.get("deterministic_close_rule")
+    if not isinstance(close_rule, dict):
+        raise FactoryError("sample case packet missing deterministic close rule")
+    if close_rule.get("close_eligible") is not False:
+        raise FactoryError("sample case packet close eligibility must remain false")
+    if close_rule.get("ai_authority_granted") is not False:
+        raise FactoryError("sample case packet must not grant AI authority")
+
+    payload = {
+        "packet_ref": packet_ref,
+        "case_factory_version": case_factory.get("factory_version"),
+        "case_state": case_factory.get("case_state"),
+        "supported_claim": packet.get("public_claim_boundary", {}).get("supported_claim"),
+        "issue_plan_mode": case_factory.get("github_issue_plan", {}).get("mode"),
+        "close_rule_result": close_rule.get("result"),
+        "truth_boundary": (
+            "SQLite seed records one sanitized controlled-test case-factory packet only. "
+            "It is not a live runtime ledger, proof promotion, public-safe approval, or case closure."
+        ),
+    }
+    scan_private_markers("case ledger sample payload", payload)
+
+    event = {
+        "inserted_at": "2026-05-18T18:10:00Z",
+        "ledger_version": CASE_LEDGER_VERSION,
+        "case_id": packet["case_id"],
+        "detection_id": packet["detection_id"],
+        "truth_class": "SYNTHETIC_TEST_CASE",
+        "case_status": "HUMAN_REVIEW_REQUIRED",
+        "proof_ceiling": packet["proof_level"],
+        "public_safe_status": packet["public_safe_status"],
+        "ai_support_mode": "AI_SUPPORT_ONLY",
+        "ai_decided_disposition": False,
+        "recommended_disposition": None,
+        "deterministic_close_eligible": False,
+        "deterministic_close_blocked": True,
+        "human_review_required": True,
+        "gpu_supported": False,
+        "public_safe": False,
+        "proof_blocked": True,
+        "github_issue_mutation_allowed": False,
+        "case_closed": False,
+        "legacy_import_count": 0,
+        "payload_json": payload,
+        "source_packet_ref": packet_ref,
+    }
+    event_hash_input = dict(event)
+    event_hash_input["payload_json"] = payload
+    event["event_hash"] = hashlib.sha256(stable_json(event_hash_input).encode("utf-8")).hexdigest()
+    return event
+
+
+def insert_case_event(conn: sqlite3.Connection, event: dict[str, Any]) -> str:
+    scan_private_markers("case ledger event", event)
+    existing = conn.execute(
+        "SELECT event_hash FROM case_events WHERE event_hash = ?",
+        (event["event_hash"],),
+    ).fetchone()
+    if existing:
+        return "already_present"
+    conn.execute(
+        """
+        INSERT INTO case_events (
+          event_hash, parent_event_hash, inserted_at, ledger_version, case_id,
+          detection_id, truth_class, case_status, proof_ceiling, public_safe_status,
+          ai_support_mode, ai_decided_disposition, recommended_disposition,
+          deterministic_close_eligible, deterministic_close_blocked,
+          human_review_required, gpu_supported, public_safe, proof_blocked,
+          github_issue_mutation_allowed, case_closed, legacy_import_count,
+          payload_json, source_packet_ref
+        ) VALUES (
+          :event_hash, NULL, :inserted_at, :ledger_version, :case_id,
+          :detection_id, :truth_class, :case_status, :proof_ceiling, :public_safe_status,
+          :ai_support_mode, :ai_decided_disposition, :recommended_disposition,
+          :deterministic_close_eligible, :deterministic_close_blocked,
+          :human_review_required, :gpu_supported, :public_safe, :proof_blocked,
+          :github_issue_mutation_allowed, :case_closed, :legacy_import_count,
+          :payload_json, :source_packet_ref
+        )
+        """,
+        {
+            **event,
+            "payload_json": stable_json(event["payload_json"]),
+            "ai_decided_disposition": bool_int(event["ai_decided_disposition"]),
+            "deterministic_close_eligible": bool_int(event["deterministic_close_eligible"]),
+            "deterministic_close_blocked": bool_int(event["deterministic_close_blocked"]),
+            "human_review_required": bool_int(event["human_review_required"]),
+            "gpu_supported": bool_int(event["gpu_supported"]),
+            "public_safe": bool_int(event["public_safe"]),
+            "proof_blocked": bool_int(event["proof_blocked"]),
+            "github_issue_mutation_allowed": bool_int(event["github_issue_mutation_allowed"]),
+            "case_closed": bool_int(event["case_closed"]),
+        },
+    )
+    return "inserted"
+
+
+def ledger_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
+    def grouped(column: str) -> dict[str, int]:
+        rows = conn.execute(f"SELECT {column}, COUNT(*) FROM case_events GROUP BY {column} ORDER BY {column}").fetchall()
+        return {str(key): int(count) for key, count in rows}
+
+    counts = conn.execute(
+        """
+        SELECT
+          COUNT(*),
+          COALESCE(SUM(gpu_supported), 0),
+          COALESCE(SUM(deterministic_close_eligible), 0),
+          COALESCE(SUM(deterministic_close_blocked), 0),
+          COALESCE(SUM(human_review_required), 0),
+          COALESCE(SUM(public_safe), 0),
+          COALESCE(SUM(proof_blocked), 0)
+        FROM case_events
+        """
+    ).fetchone()
+    return {
+        "ledger_version": CASE_LEDGER_VERSION,
+        "total_cases": int(counts[0]),
+        "cases_by_detection": grouped("detection_id"),
+        "cases_by_truth_class": grouped("truth_class"),
+        "cases_by_status": grouped("case_status"),
+        "gpu_supported_count": int(counts[1]),
+        "deterministic_close_eligible_count": int(counts[2]),
+        "deterministic_close_blocked_count": int(counts[3]),
+        "human_review_required_count": int(counts[4]),
+        "public_safe_count": int(counts[5]),
+        "proof_blocked_count": int(counts[6]),
+        "truth_boundary": "seed_sample_only_not_live_runtime_ledger_not_proof",
+    }
+
+
+def verify_append_only_triggers(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'case_events'"
+    ).fetchall()
+    triggers = {str(name): str(sql or "") for name, sql in rows}
+    for name, required_clause in CASE_LEDGER_APPEND_ONLY_TRIGGERS.items():
+        sql = triggers.get(name)
+        if not sql:
+            raise FactoryError(f"append-only trigger missing: {name}")
+        normalized_sql = " ".join(sql.upper().split())
+        if required_clause not in normalized_sql:
+            raise FactoryError(f"append-only trigger {name} missing {required_clause}")
+        if "RAISE" not in normalized_sql or "ABORT" not in normalized_sql:
+            raise FactoryError(f"append-only trigger {name} must abort mutation")
+    return sorted(CASE_LEDGER_APPEND_ONLY_TRIGGERS)
+
+
+def verify_ledger(conn: sqlite3.Connection) -> dict[str, Any]:
+    metadata = dict(conn.execute("SELECT key, value FROM ledger_metadata").fetchall())
+    required_metadata = {
+        "ledger_version": CASE_LEDGER_VERSION,
+        "long_term_runtime_ledger": "false",
+        "proof_promotion_allowed": "false",
+        "public_safe_promotion_allowed": "false",
+        "github_issue_mutation_allowed": "false",
+        "case_closure_allowed": "false",
+        "ai_support_mode": "AI_SUPPORT_ONLY",
+        "human_review_required": "true",
+    }
+    for key, expected in required_metadata.items():
+        if metadata.get(key) != expected:
+            raise FactoryError(f"ledger metadata {key} expected {expected!r}, got {metadata.get(key)!r}")
+
+    rows = conn.execute("SELECT * FROM case_events ORDER BY event_id").fetchall()
+    columns = [item[1] for item in conn.execute("PRAGMA table_info(case_events)").fetchall()]
+    if not rows:
+        raise FactoryError("case ledger must contain at least one sanitized seed event")
+    for row in rows:
+        event = dict(zip(columns, row))
+        if not event.get("proof_ceiling"):
+            raise FactoryError("ledger event missing proof_ceiling")
+        if event.get("public_safe_status") not in {"NO", "BLOCKED", "NOT_PUBLIC_SAFE"}:
+            raise FactoryError("ledger event public_safe_status is promoted or missing")
+        false_fields = (
+            "ai_decided_disposition",
+            "deterministic_close_eligible",
+            "public_safe",
+            "github_issue_mutation_allowed",
+            "case_closed",
+            "legacy_import_count",
+        )
+        for field in false_fields:
+            if int(event[field]) != 0:
+                raise FactoryError(f"ledger event {field} must remain 0")
+        true_fields = ("deterministic_close_blocked", "human_review_required", "proof_blocked")
+        for field in true_fields:
+            if int(event[field]) != 1:
+                raise FactoryError(f"ledger event {field} must remain 1")
+        if event.get("ai_support_mode") != "AI_SUPPORT_ONLY":
+            raise FactoryError("ledger event ai_support_mode must be AI_SUPPORT_ONLY")
+        if event.get("recommended_disposition") is not None:
+            raise FactoryError("ledger event recommended_disposition must be null")
+        payload = scan_ledger_event_text_fields(event)
+        if "proof" in str(payload.get("truth_boundary", "")).lower() and "not" not in str(payload.get("truth_boundary", "")).lower():
+            raise FactoryError("ledger payload implies proof promotion")
+
+    trigger_names = verify_append_only_triggers(conn)
+
+    return {
+        "ledger_verifier": "pass",
+        "append_only_triggers": "sqlite_master_trigger_inspection_no_dml",
+        "append_only_trigger_names": trigger_names,
+        "event_count": len(rows),
+        "metrics": ledger_metrics(conn),
+    }
 
 
 SPECS: dict[str, DetectionSpec] = {
@@ -500,6 +921,7 @@ def build_packet(repo_root: Path, spec: DetectionSpec) -> dict[str, Any]:
         "platform_guardrail_status": spec.platform_guardrail_status,
         "blocked_claims": sorted(set(platform_claims)),
         "supported_claims": list(spec.supported_claims),
+        "case_factory": case_factory_issue_plan(spec),
         "next_allowed_move": spec.next_allowed_move,
         "stop_conditions": list(spec.stop_conditions),
         "state_consistency": list(spec.state_consistency),
@@ -515,12 +937,56 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         sub.add_argument("--detection", required=True, choices=("HO-DET-001", "HO-DET-011", "all"))
         sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
         sub.add_argument("--format", default="json", choices=("json",))
+    for mode in ("ledger-init-sample", "ledger-verify", "ledger-metrics"):
+        sub = subparsers.add_parser(mode)
+        sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+        sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
+        sub.add_argument("--format", default="json", choices=("json",))
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     repo_root = Path(args.repo_root).resolve()
+
+    if args.mode in {"ledger-init-sample", "ledger-verify", "ledger-metrics"}:
+        ledger_path = Path(args.ledger_path).resolve()
+        if ledger_path != DEFAULT_CASE_LEDGER.resolve():
+            raise FactoryError(f"Case Ledger v0 seed path is not approved for this scope: {ledger_path}")
+        if args.mode == "ledger-init-sample":
+            ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        elif not ledger_path.is_file():
+            raise FactoryError(f"Case Ledger v0 seed file is missing: {ledger_path}")
+        with connect_ledger(ledger_path) as conn:
+            if args.mode == "ledger-init-sample":
+                initialize_ledger_schema(conn)
+                insert_status = insert_case_event(conn, build_sample_case_event(repo_root))
+                verification = verify_ledger(conn)
+                output = {
+                    "ledger_version": CASE_LEDGER_VERSION,
+                    "mode": args.mode,
+                    "ledger_path": str(ledger_path),
+                    "sqlite_choice": "SQLite is used for v0 because CHECK constraints, append-only triggers, unique event hashes, and metrics queries can be verified deterministically without a new dependency.",
+                    "sample_insert_status": insert_status,
+                    "verification": verification,
+                }
+            elif args.mode == "ledger-verify":
+                output = {
+                    "ledger_version": CASE_LEDGER_VERSION,
+                    "mode": args.mode,
+                    "ledger_path": str(ledger_path),
+                    "verification": verify_ledger(conn),
+                }
+            else:
+                output = {
+                    "ledger_version": CASE_LEDGER_VERSION,
+                    "mode": args.mode,
+                    "ledger_path": str(ledger_path),
+                    "metrics": ledger_metrics(conn),
+                }
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
     detection_ids = sorted(SPECS) if args.detection == "all" else [args.detection]
 
     packets = [build_packet(repo_root, SPECS[detection_id]) for detection_id in detection_ids]

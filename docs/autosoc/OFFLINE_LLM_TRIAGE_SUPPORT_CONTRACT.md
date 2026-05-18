@@ -60,6 +60,28 @@ The model may produce support-only fields:
 
 Every output is advisory. AI output is not authority.
 
+## AutoSOC Case Factory v0 Issue Boundary
+
+AutoSOC Case Factory v0 may attach model-support context only to sanitized case
+packets. The case factory may prepare a dry-run GitHub Issue label/comment plan,
+but it must not mutate GitHub Issues, close cases, approve cases, promote proof,
+or mark anything public-safe.
+
+Required v0 issue-boundary values:
+
+```text
+GITHUB_ISSUE_PLAN_MODE=dry_run_only
+GITHUB_ISSUE_MUTATION_ALLOWED=false
+GITHUB_ISSUE_CLOSE_ALLOWED=false
+DETERMINISTIC_CLOSE_ELIGIBLE=false
+CASE_FACTORY_RESULT=BLOCKED_HUMAN_REVIEW_REQUIRED
+AI_SUPPORT_MODE=AI_SUPPORT_ONLY
+```
+
+The deterministic verifier may evaluate whether a case packet is complete enough
+to prepare a dry-run status update. That evaluation is not closure authority.
+Human review remains required.
+
 ## Blocked Model Output Fields And Actions
 
 The model must not set or imply:
@@ -93,6 +115,7 @@ The deterministic verifier must fail if:
 - AI may approve, promote, close, or mark public-safe.
 - Human review is not required.
 - Recommended disposition is non-null.
+- GitHub Issue mutation or closure is allowed in a v0 packet.
 - Public-safe status is anything other than `NOT_PUBLIC_SAFE`.
 - Proof ceiling is stronger than the current allowed ceiling.
 - Output contains private paths, hostnames, LAN IPs, usernames, VM IDs, MAC addresses, raw model output, private evidence filenames, internal service names, device paths, SSH details, infrastructure details, or GPU host labels.

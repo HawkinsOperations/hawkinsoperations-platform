@@ -79,6 +79,25 @@ The CLI prints one sanitized status packet to stdout. It does not write files,
 connect over SSH, run local model prompts, pull models, install packages, restart
 services, or inspect GitHub runner settings.
 
+## AutoSOC Case Factory v0 Boundary
+
+AutoSOC Case Factory v0 may use the local GPU triage status as optional
+support-only context after a case packet has already been sanitized and
+validated. The local GPU lane must not decide disposition, close cases, approve
+promotion, or mark public-safe status.
+
+The only GitHub Issue behavior in v0 is a dry-run plan:
+
+- labels may be proposed, not applied
+- comments may be drafted as intent, not posted
+- close eligibility may be evaluated, but must remain blocked
+- GitHub Issue mutation remains `false`
+- human review remains required
+
+HO-DET-011 platform guardrail drift must keep close eligibility blocked until a
+separate scoped drift review is completed. Validation counts remain validation
+facts only; they are not proof promotion authority.
+
 ## Phase B Workflow Gate
 
 Workflow:
@@ -201,5 +220,6 @@ Stop before extending this pipeline if the next action would require:
 - SSH, model execution, or runtime mutation
 - generated runtime packet files
 - proof, website, validation, detections, or organization metadata edits
+- GitHub Issue mutation or case closure
 - public-safe, runtime-active public proof, signal-observed public proof,
   production, fleet, autonomous, AI-approved, or analyst-approved claims

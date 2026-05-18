@@ -96,6 +96,120 @@ Modes:
 
 The CLI writes to stdout only. It must not create generated output files.
 
+## AutoSOC Case Ledger v0
+
+AutoSOC Case Ledger v0 is a platform-owned SQLite seed ledger for durable
+schema, insert, verifier, and metrics validation. SQLite is used for v0 because
+the standard library can enforce `CHECK` constraints, append-only triggers,
+unique event hashes, and metrics queries without adding a service or dependency.
+
+The approved seed path is:
+
+```text
+evidence/autosoc-case-ledger-v0.sqlite
+```
+
+This repository SQLite file is a v0 seed/sample artifact only. It is not the
+long-term live accumulating production or runtime ledger. A live runtime ledger
+requires separate non-source-controlled route approval.
+
+### Ledger Schema
+
+`ledger_metadata`:
+
+- `key TEXT PRIMARY KEY`
+- `value TEXT NOT NULL`
+
+`case_events`:
+
+- `event_id INTEGER PRIMARY KEY AUTOINCREMENT`
+- `event_hash TEXT NOT NULL UNIQUE`
+- `parent_event_hash TEXT`
+- `inserted_at TEXT NOT NULL`
+- `ledger_version TEXT NOT NULL`
+- `case_id TEXT NOT NULL`
+- `detection_id TEXT NOT NULL`
+- `truth_class TEXT NOT NULL`
+- `case_status TEXT NOT NULL`
+- `proof_ceiling TEXT NOT NULL`
+- `public_safe_status TEXT NOT NULL`
+- `ai_support_mode TEXT NOT NULL`
+- `ai_decided_disposition INTEGER NOT NULL`
+- `recommended_disposition TEXT`
+- `deterministic_close_eligible INTEGER NOT NULL`
+- `deterministic_close_blocked INTEGER NOT NULL`
+- `human_review_required INTEGER NOT NULL`
+- `gpu_supported INTEGER NOT NULL`
+- `public_safe INTEGER NOT NULL`
+- `proof_blocked INTEGER NOT NULL`
+- `github_issue_mutation_allowed INTEGER NOT NULL`
+- `case_closed INTEGER NOT NULL`
+- `legacy_import_count INTEGER NOT NULL`
+- `payload_json TEXT NOT NULL`
+- `source_packet_ref TEXT NOT NULL`
+
+Allowed `truth_class` values:
+
+- `FORWARD_GOVERNED_CASE`
+- `SYNTHETIC_TEST_CASE`
+- `RECOVERED_HISTORICAL_IMPORT`
+- `PRIVATE_RUNTIME_EVIDENCE`
+- `PUBLIC_PROOF_CANDIDATE`
+- `PUBLIC_BLOCKED`
+
+Required v0 constraints:
+
+- `ai_support_mode = AI_SUPPORT_ONLY`
+- `ai_decided_disposition = 0`
+- `recommended_disposition IS NULL`
+- `deterministic_close_eligible = 0`
+- `deterministic_close_blocked = 1`
+- `human_review_required = 1`
+- `public_safe = 0`
+- `proof_blocked = 1`
+- `github_issue_mutation_allowed = 0`
+- `case_closed = 0`
+- `legacy_import_count = 0`
+
+The ledger installs SQLite triggers that abort `UPDATE` and `DELETE` against
+`case_events`, preserving append-only behavior. `ledger-verify` confirms those
+append-only guards by inspecting the trigger definitions in `sqlite_master`;
+it does not run `UPDATE` or `DELETE` negative tests against the seed ledger.
+
+### Ledger CLI
+
+```powershell
+python -B scripts\ho_factory.py ledger-init-sample --repo-root "<ORG_REPO_ROOT>" --ledger evidence\autosoc-case-ledger-v0.sqlite
+python -B scripts\ho_factory.py ledger-verify --repo-root "<ORG_REPO_ROOT>" --ledger evidence\autosoc-case-ledger-v0.sqlite
+python -B scripts\ho_factory.py ledger-metrics --repo-root "<ORG_REPO_ROOT>" --ledger evidence\autosoc-case-ledger-v0.sqlite
+```
+
+Only `ledger-init-sample` may create the approved ledger parent directory.
+`ledger-verify` and `ledger-metrics` require the seed ledger file to exist and
+fail closed if it is missing.
+
+The sample insert path reads the sanitized HO-DET-001 case-factory packet from
+the validation repo and inserts one `SYNTHETIC_TEST_CASE` seed event. It does not
+copy raw event fields, private paths, hostnames, LAN IPs, usernames, VM IDs, MAC
+addresses, raw model output, secrets, private evidence filenames, or internal
+service details.
+
+The metrics output includes:
+
+- `total_cases`
+- `cases_by_detection`
+- `cases_by_truth_class`
+- `cases_by_status`
+- `gpu_supported_count`
+- `deterministic_close_eligible_count`
+- `deterministic_close_blocked_count`
+- `human_review_required_count`
+- `public_safe_count`
+- `proof_blocked_count`
+
+Ledger metrics count ledger rows only. They do not import or claim legacy/V1
+historical counts as current governed proof.
+
 ## Fail Closed Rules
 
 The controller must fail closed if:
@@ -108,6 +222,12 @@ The controller must fail closed if:
   handling are detected
 - proof, validation, detection, website, workflow, or GitHub mutation would be
   required
+- the ledger would promote proof, public-safe status, AI disposition authority,
+  GitHub Issue mutation, or case closure
+- the ledger would import legacy/V1 historical counts as governed proof
+- the ledger would expose private paths, hostnames, LAN IPs, usernames, VM IDs,
+  MAC addresses, raw model output, secrets, private evidence filenames, or
+  internal service details
 
 Unsupported detection IDs fail closed with a non-zero CLI exit.
 
