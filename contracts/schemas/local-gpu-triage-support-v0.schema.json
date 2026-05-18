@@ -41,7 +41,7 @@
     },
     "pipeline_phase": {
       "type": "string",
-      "const": "PHASE_A_CONTRACT_VERIFIER_ONLY"
+      "const": "PHASE_B_MANUAL_GATE_PASSED_BOUNDED_RECEIPT"
     },
     "ai_support_mode": {
       "type": "string",
@@ -61,7 +61,7 @@
     },
     "true_gpu_ci_status": {
       "type": "string",
-      "const": "PENDING_RUNNER_CONFIRMATION"
+      "const": "LOCAL_GPU_TRIAGE_GATE_GITHUB_ACTIONS_RUN_PASSED_WITH_PRIVATE_OPERATIONAL_METADATA"
     },
     "human_review_required": {
       "type": "boolean",
@@ -181,24 +181,39 @@
         "self_hosted_runner_proven",
         "runner_labels_proven",
         "workflow_created",
-        "true_gpu_ci_status"
+        "workflow_run_id",
+        "true_gpu_ci_status",
+        "model_execution_in_ci",
+        "ollama_prompt_execution_in_ci"
       ],
       "properties": {
         "self_hosted_runner_proven": {
           "type": "boolean",
-          "const": false
+          "const": true
         },
         "runner_labels_proven": {
           "type": "boolean",
-          "const": false
+          "const": true
         },
         "workflow_created": {
           "type": "boolean",
-          "const": false
+          "const": true
+        },
+        "workflow_run_id": {
+          "type": "string",
+          "const": "26006504673"
         },
         "true_gpu_ci_status": {
           "type": "string",
-          "const": "PENDING_RUNNER_CONFIRMATION"
+          "const": "LOCAL_GPU_TRIAGE_GATE_GITHUB_ACTIONS_RUN_PASSED_WITH_PRIVATE_OPERATIONAL_METADATA"
+        },
+        "model_execution_in_ci": {
+          "type": "boolean",
+          "const": false
+        },
+        "ollama_prompt_execution_in_ci": {
+          "type": "boolean",
+          "const": false
         }
       }
     },
@@ -269,7 +284,7 @@
     },
     "next_allowed_move": {
       "type": "string",
-      "const": "HUMAN_REVIEW_BEFORE_ANY_RUNTIME_OR_WORKFLOW_EXTENSION"
+      "const": "HUMAN_REVIEW_BEFORE_ANY_MODEL_EXECUTION_OR_PROOF_PROMOTION"
     },
     "stop_conditions": {
       "type": "array",

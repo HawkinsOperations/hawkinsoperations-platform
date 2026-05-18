@@ -11,5 +11,5 @@
     "detection_factory_controller_v0": "contracts/schemas/detection-factory-controller-v0.schema.json",
     "local_gpu_triage_support_v0": "contracts/schemas/local-gpu-triage-support-v0.schema.json"
   },
-  "notes": "Platform contract baseline for detection-validation-proof chaining, local LLM runtime receipts, HO-DET-001 runtime-boundary enforcement, HO-DET-011 case-packet guardrails, the Detection Factory Controller v0 reviewer-packet contract, and the Local GPU Triage Pipeline v0 Phase A contract/verifier boundary."
+  "notes": "Platform contract baseline for detection-validation-proof chaining, local LLM runtime receipts, HO-DET-001 runtime-boundary enforcement, HO-DET-011 case-packet guardrails, the Detection Factory Controller v0 reviewer-packet contract, and the Local GPU Triage Pipeline v0 bounded Phase B manual-gate receipt boundary."
 }
