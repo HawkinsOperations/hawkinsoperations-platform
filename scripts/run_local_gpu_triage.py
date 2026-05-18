@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print the Local GPU Triage Pipeline v0 Phase A status packet."""
+"""Print the Local GPU Triage Pipeline v0 bounded status packet."""
 
 from __future__ import annotations
 
@@ -12,11 +12,11 @@ from typing import Any
 PACKET: dict[str, Any] = {
     "packet_type": "local_gpu_triage_support_v0",
     "contract_version": "0.1.0",
-    "pipeline_phase": "PHASE_A_CONTRACT_VERIFIER_ONLY",
+    "pipeline_phase": "PHASE_B_MANUAL_GATE_PASSED_BOUNDED_RECEIPT",
     "ai_support_mode": "AI_SUPPORT_ONLY",
     "local_gpu_runtime_status": "PRIVATE_RUNTIME_SUPPORT_CONFIRMED",
     "local_gpu_runtime_label": "LOCAL_GPU_SUPPORT_NODE",
-    "true_gpu_ci_status": "PENDING_RUNNER_CONFIRMATION",
+    "true_gpu_ci_status": "LOCAL_GPU_TRIAGE_GATE_GITHUB_ACTIONS_RUN_PASSED_WITH_PRIVATE_OPERATIONAL_METADATA",
     "human_review_required": True,
     "ai_decided_disposition": False,
     "recommended_disposition": None,
@@ -52,10 +52,13 @@ PACKET: dict[str, Any] = {
         ],
     },
     "github_ci_truth": {
-        "self_hosted_runner_proven": False,
-        "runner_labels_proven": False,
-        "workflow_created": False,
-        "true_gpu_ci_status": "PENDING_RUNNER_CONFIRMATION",
+        "self_hosted_runner_proven": True,
+        "runner_labels_proven": True,
+        "workflow_created": True,
+        "workflow_run_id": "26006504673",
+        "true_gpu_ci_status": "LOCAL_GPU_TRIAGE_GATE_GITHUB_ACTIONS_RUN_PASSED_WITH_PRIVATE_OPERATIONAL_METADATA",
+        "model_execution_in_ci": False,
+        "ollama_prompt_execution_in_ci": False,
     },
     "privacy_boundary": {
         "real_host_identifier_included": False,
@@ -75,13 +78,14 @@ PACKET: dict[str, Any] = {
         "AI-approved disposition",
         "analyst-approved disposition",
         "final disposition decision",
-        "true GPU CI implemented",
+        "model execution in CI",
+        "Ollama prompt execution in CI",
     ],
     "supported_claims": [
         "private local GPU support status can be reported with sanitized labels",
         "local model support remains advisory",
         "human review remains required",
-        "GitHub GPU CI remains pending runner confirmation",
+        "manual GitHub Actions gate executed on the configured self-hosted GPU runner label route and passed deterministic contract/status/verifier checks",
     ],
     "does_not_prove": [
         "public-safe status",
@@ -91,9 +95,10 @@ PACKET: dict[str, Any] = {
         "fleet deployment",
         "autonomous operation",
         "AI or analyst disposition authority",
-        "true GPU CI",
+        "model execution in CI",
+        "Ollama prompt execution in CI",
     ],
-    "next_allowed_move": "HUMAN_REVIEW_BEFORE_ANY_RUNTIME_OR_WORKFLOW_EXTENSION",
+    "next_allowed_move": "HUMAN_REVIEW_BEFORE_ANY_MODEL_EXECUTION_OR_PROOF_PROMOTION",
     "stop_conditions": [
         "real host identifier would be needed",
         "local path or internal IP would be included",
@@ -117,6 +122,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def print_receipt() -> None:
     print("LOCAL_GPU_TRIAGE_STATUS_PACKET=pass")
+    print("LOCAL_GPU_TRIAGE_GATE_STATUS=LOCAL_GPU_TRIAGE_GATE_GITHUB_ACTIONS_RUN_PASSED_WITH_PRIVATE_OPERATIONAL_METADATA")
+    print("LOCAL_GPU_TRIAGE_GATE_RUN_ID=26006504673")
+    print("GPU_CAPABILITY_CHECK=pass")
+    print("LOCAL_GPU_TRIAGE_JSON_VALIDATION=pass")
+    print("LOCAL_GPU_TRIAGE_VERIFIER=pass")
+    print("STATUS_PACKET_RECEIPT=pass")
+    print("PLATFORM_VERIFIERS=pass")
     print("AI_SUPPORT_MODE=support_only")
     print("PUBLIC_SAFE_STATUS=not_public_safe")
     print("PROOF_CEILING=controlled_test_validated")

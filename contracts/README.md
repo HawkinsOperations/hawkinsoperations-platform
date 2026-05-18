@@ -92,10 +92,13 @@ The deterministic verifier is:
 
 - `scripts/verify_local_gpu_triage.py`
 
-Phase A is contract and verifier only. It reports sanitized private local GPU
-support status, preserves `AI_SUPPORT_ONLY`, requires human review, keeps true
-GPU CI at `PENDING_RUNNER_CONFIRMATION`, and writes only to stdout. It does not
-create generated runtime packets, open SSH, execute model prompts, create
-workflows, inspect runner settings, promote proof, or claim public-safe,
-runtime-active public proof, signal-observed public proof, production,
-autonomous, AI-approved, or analyst-approved status.
+The current bounded status packet reports sanitized private local GPU support
+status, preserves `AI_SUPPORT_ONLY`, requires human review, and records the
+approved reclassified Local GPU Triage Gate run `26006504673` as
+`LOCAL_GPU_TRIAGE_GATE_GITHUB_ACTIONS_RUN_PASSED_WITH_PRIVATE_OPERATIONAL_METADATA`.
+The manual GitHub Actions gate executed on the configured self-hosted GPU runner
+label route and passed deterministic contract/status/verifier checks. It does
+not create generated runtime packets, open SSH, execute model prompts in CI,
+run Ollama prompts in CI, inspect runner settings, promote proof, or claim
+public-safe, runtime-active public proof, signal-observed public proof,
+production, autonomous, AI-approved, or analyst-approved status.

@@ -13,12 +13,16 @@ proof, or publishes evidence.
 
 ## Phase A Boundary
 
-Phase A records private runtime/support truth as a bounded status packet:
+The current bounded status packet records private runtime/support truth and the
+approved reclassified Phase B GitHub Actions gate receipt:
 
 - `ai_support_mode: AI_SUPPORT_ONLY`
 - `local_gpu_runtime_status: PRIVATE_RUNTIME_SUPPORT_CONFIRMED`
 - `local_gpu_runtime_label: LOCAL_GPU_SUPPORT_NODE`
-- `true_gpu_ci_status: PENDING_RUNNER_CONFIRMATION`
+- `true_gpu_ci_status: LOCAL_GPU_TRIAGE_GATE_GITHUB_ACTIONS_RUN_PASSED_WITH_PRIVATE_OPERATIONAL_METADATA`
+- `github_ci_truth.workflow_run_id: 26006504673`
+- `github_ci_truth.model_execution_in_ci: false`
+- `github_ci_truth.ollama_prompt_execution_in_ci: false`
 - `human_review_required: true`
 - `ai_decided_disposition: false`
 - `recommended_disposition: null`
@@ -52,13 +56,16 @@ Platform contract truth:
 - This contract defines required packet fields and verifier behavior.
 - The verifier enforces claim and privacy boundaries over sanitized packets.
 
-GitHub CI truth:
+GitHub Actions gate truth:
 
-- True GPU CI remains `PENDING_RUNNER_CONFIRMATION` until self-hosted runner
-  labels and repository access are separately proven.
-- Phase A does not add a workflow and does not claim GPU CI is implemented.
-- Phase B may move GitHub CI truth to scheduled validation only after the
-  manual workflow runs successfully on the labeled runner.
+- Local GPU Triage Gate run `26006504673` is the current bounded receipt.
+- The run is logged as
+  `LOCAL_GPU_TRIAGE_GATE_GITHUB_ACTIONS_RUN_PASSED_WITH_PRIVATE_OPERATIONAL_METADATA`.
+- The manual GitHub Actions gate executed on the configured self-hosted GPU
+  runner label route and passed deterministic contract/status/verifier checks.
+- The gate receipt does not claim model execution in CI, Ollama prompt
+  execution in CI, public-safe runtime proof, runtime-active public proof, or
+  signal-observed public proof.
 
 ## CLI Contract
 
@@ -134,12 +141,20 @@ strictly labeled runner and the GitHub check shows:
 - concurrency gate
 - GitHub check result acts as the CI receipt
 
-## Not Yet Proven Until Workflow Dispatch Passes
+## Current Gate Receipt
 
-Until a manual `workflow_dispatch` run succeeds, Phase B is implemented but not
-validated as GPU CI. `true_gpu_ci_status` remains
-`PENDING_RUNNER_CONFIRMATION`. The next gate before model prompt execution is a
-separate approval after the Phase B check run is reviewed.
+Manual `workflow_dispatch` run `26006504673` is the current bounded Phase B
+receipt after approved metadata reclassification. The passed bounded markers are:
+
+- `GPU_CAPABILITY_CHECK=pass`
+- `LOCAL_GPU_TRIAGE_JSON_VALIDATION=pass`
+- `LOCAL_GPU_TRIAGE_VERIFIER=pass`
+- `STATUS_PACKET_RECEIPT=pass`
+- `PLATFORM_VERIFIERS=pass`
+
+The next gate before any model prompt execution remains a separate approval.
+Private/local Ollama support is tracked as private Work artifact truth and is
+not CI model execution.
 
 ## Verifier Contract
 
@@ -162,7 +177,7 @@ The verifier fails closed if the packet:
 - claims production, fleet, or autonomous operation
 - gives AI or analyst disposition authority
 - decides final disposition
-- claims true GPU CI before runner confirmation
+- claims model execution in CI or Ollama prompt execution in CI
 
 ## Reviewer Packet Contract
 

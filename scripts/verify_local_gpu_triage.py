@@ -17,11 +17,11 @@ SCHEMA_PATH = ROOT / "contracts" / "schemas" / "local-gpu-triage-support-v0.sche
 EXPECTED = {
     "packet_type": "local_gpu_triage_support_v0",
     "contract_version": "0.1.0",
-    "pipeline_phase": "PHASE_A_CONTRACT_VERIFIER_ONLY",
+    "pipeline_phase": "PHASE_B_MANUAL_GATE_PASSED_BOUNDED_RECEIPT",
     "ai_support_mode": "AI_SUPPORT_ONLY",
     "local_gpu_runtime_status": "PRIVATE_RUNTIME_SUPPORT_CONFIRMED",
     "local_gpu_runtime_label": "LOCAL_GPU_SUPPORT_NODE",
-    "true_gpu_ci_status": "PENDING_RUNNER_CONFIRMATION",
+    "true_gpu_ci_status": "LOCAL_GPU_TRIAGE_GATE_GITHUB_ACTIONS_RUN_PASSED_WITH_PRIVATE_OPERATIONAL_METADATA",
     "human_review_required": True,
     "ai_decided_disposition": False,
     "recommended_disposition": None,
@@ -42,7 +42,8 @@ REQUIRED_BLOCKED_CLAIMS = {
     "AI-approved disposition",
     "analyst-approved disposition",
     "final disposition decision",
-    "true GPU CI implemented",
+    "model execution in CI",
+    "Ollama prompt execution in CI",
 }
 
 PRIVATE_GPU_NODE_PATTERN = r"\b" + "HO" + r"-" + "GPU" + r"-" + "01" + r"\b"
@@ -75,7 +76,8 @@ PROMOTED_SUPPORTED_CLAIM_PATTERNS = [
     r"\bAI-approved\b",
     r"\banalyst-approved\b",
     r"\bfinal\s+disposition\b",
-    r"\btrue\s+GPU\s+CI\s+(is\s+)?(implemented|proven|ready)\b",
+    r"\bmodel\s+execution\s+in\s+CI\s+(is\s+)?(implemented|proven|ready|true)\b",
+    r"\bOllama\s+prompt\s+execution\s+in\s+CI\s+(is\s+)?(implemented|proven|ready|true)\b",
 ]
 
 
@@ -216,12 +218,18 @@ def require_nested_boundaries(packet: dict[str, Any]) -> None:
     github_ci = packet.get("github_ci_truth")
     if not isinstance(github_ci, dict):
         fail("github_ci_truth must be an object")
-    required_false = ("self_hosted_runner_proven", "runner_labels_proven", "workflow_created")
-    for key in required_false:
-        if github_ci.get(key) is not False:
-            fail(f"github_ci_truth.{key} must be false")
-    if github_ci.get("true_gpu_ci_status") != "PENDING_RUNNER_CONFIRMATION":
-        fail("github_ci_truth.true_gpu_ci_status must remain pending")
+    required_true = ("self_hosted_runner_proven", "runner_labels_proven", "workflow_created")
+    for key in required_true:
+        if github_ci.get(key) is not True:
+            fail(f"github_ci_truth.{key} must be true")
+    if github_ci.get("workflow_run_id") != "26006504673":
+        fail("github_ci_truth.workflow_run_id must reference the approved reclassified run")
+    if github_ci.get("true_gpu_ci_status") != EXPECTED["true_gpu_ci_status"]:
+        fail("github_ci_truth.true_gpu_ci_status must match the corrected bounded gate status")
+    if github_ci.get("model_execution_in_ci") is not False:
+        fail("github_ci_truth.model_execution_in_ci must be false")
+    if github_ci.get("ollama_prompt_execution_in_ci") is not False:
+        fail("github_ci_truth.ollama_prompt_execution_in_ci must be false")
 
     model_support = packet.get("model_support")
     if not isinstance(model_support, dict):
@@ -255,8 +263,6 @@ def reject_promoted_supported_claims(packet: dict[str, Any]) -> None:
         normalized = str(claim)
         for pattern in PROMOTED_SUPPORTED_CLAIM_PATTERNS:
             if re.search(pattern, normalized, flags=re.IGNORECASE):
-                if "pending runner confirmation" in normalized.lower():
-                    continue
                 fail(f"supported_claims promotes blocked wording: {claim!r}")
 
 
@@ -288,9 +294,13 @@ def run_self_tests(sample: dict[str, Any], schema: dict[str, Any]) -> None:
     ai_decided["ai_decided_disposition"] = True
     cases.append(("AI decided disposition", ai_decided))
 
-    gpu_ci_implemented = copy.deepcopy(sample)
-    gpu_ci_implemented["true_gpu_ci_status"] = "IMPLEMENTED"
-    cases.append(("true GPU CI implemented claim", gpu_ci_implemented))
+    model_execution_ci = copy.deepcopy(sample)
+    model_execution_ci["github_ci_truth"]["model_execution_in_ci"] = True
+    cases.append(("model execution in CI claim", model_execution_ci))
+
+    ollama_prompt_ci = copy.deepcopy(sample)
+    ollama_prompt_ci["github_ci_truth"]["ollama_prompt_execution_in_ci"] = True
+    cases.append(("Ollama prompt execution in CI claim", ollama_prompt_ci))
 
     private_host = copy.deepcopy(sample)
     private_host["local_gpu_runtime_label"] = "HO" + "-GPU" + "-01"
@@ -332,7 +342,9 @@ def main(argv: list[str]) -> int:
     print("LOCAL_GPU_TRIAGE=pass")
     print("AI_SUPPORT_MODE=AI_SUPPORT_ONLY")
     print("LOCAL_GPU_RUNTIME_STATUS=PRIVATE_RUNTIME_SUPPORT_CONFIRMED")
-    print("TRUE_GPU_CI_STATUS=PENDING_RUNNER_CONFIRMATION")
+    print("TRUE_GPU_CI_STATUS=LOCAL_GPU_TRIAGE_GATE_GITHUB_ACTIONS_RUN_PASSED_WITH_PRIVATE_OPERATIONAL_METADATA")
+    print("MODEL_EXECUTION_IN_CI=false")
+    print("OLLAMA_PROMPT_EXECUTION_IN_CI=false")
     print("PUBLIC_SAFE_STATUS=NOT_PUBLIC_SAFE")
     print("AI_DECIDED_DISPOSITION=false")
     print("HUMAN_REVIEW_REQUIRED=true")
