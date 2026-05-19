@@ -23,6 +23,7 @@ CASE_LEDGER_VERSION = "AUTOSOC_CASE_LEDGER_V0"
 PLATFORM_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO_ROOT = PLATFORM_ROOT.parent
 DEFAULT_CASE_LEDGER = PLATFORM_ROOT / "evidence" / "autosoc-case-ledger-v0.sqlite"
+SPLUNK_HO_DET_001_APPEND_APPROVAL = "APPEND_ONE_SANITIZED_SPLUNK_HO_DET_001_RUNTIME_CASE_APPROVED"
 
 CASE_LEDGER_TRUTH_CLASSES = (
     "FORWARD_GOVERNED_CASE",
@@ -63,6 +64,57 @@ PRIVATE_MARKER_PATTERNS = (
     re.compile(r"\b[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}\b"),
     re.compile(r"(?i)\b(secret|password|token|api[_-]?key|credential)\b"),
     re.compile(r"(?i)\b(raw model output|private evidence filename|internal service)\b"),
+)
+
+SPLUNK_SANITIZED_INPUT_ALLOWED_KEYS = {
+    "case_id",
+    "detection_id",
+    "source_system",
+    "observed_time_utc",
+    "splunk_result_ref",
+    "sanitized_event_fingerprint",
+    "rule_match_name",
+    "rule_match_version",
+}
+
+SPLUNK_SANITIZED_INPUT_BLOCKED_KEYS = {
+    "_raw",
+    "raw",
+    "raw_event",
+    "raw_event_payload",
+    "raw_payload",
+    "event_payload",
+    "payload",
+    "command_line",
+    "process_command_line",
+    "cmdline",
+    "host",
+    "hostname",
+    "user",
+    "username",
+    "src_ip",
+    "dest_ip",
+    "ip",
+    "mac",
+    "mac_address",
+    "vm_id",
+    "private_path",
+    "private_evidence_filename",
+    "secret",
+    "token",
+    "credential",
+    "password",
+    "internal_service",
+    "internal_service_detail",
+}
+
+SPLUNK_SANITIZED_VALUE_PATTERNS = (
+    re.compile(r"(?i)\b_raw\b"),
+    re.compile(r"(?i)\braw\s+(event|payload|command)\b"),
+    re.compile(r"(?i)\bcommand\s+line\b"),
+    re.compile(r"(?i)\b(hostname|host\s+name|username|user\s+name|vm\s*id)\b"),
+    re.compile(r"(?i)\bprivate\s+(path|evidence|filename)\b"),
+    re.compile(r"(?i)\binternal\s+service\b"),
 )
 
 
@@ -279,6 +331,194 @@ def scan_ledger_event_text_fields(event: dict[str, Any]) -> dict[str, Any]:
     scanned_fields["payload_json_parsed"] = payload
     scan_private_markers("case ledger stored event text fields", scanned_fields)
     return payload
+
+
+def load_sanitized_input(path_or_stdin: str) -> dict[str, Any]:
+    if path_or_stdin == "-":
+        raw_text = sys.stdin.read()
+        source = "stdin"
+    else:
+        path = Path(path_or_stdin)
+        if not path.is_file():
+            raise FactoryError(f"sanitized input file is missing: {path}")
+        raw_text = path.read_text(encoding="utf-8")
+        source = str(path)
+    try:
+        value = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise FactoryError(f"invalid sanitized input JSON from {source}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise FactoryError("sanitized input root must be a JSON object")
+    return value
+
+
+def validate_splunk_sanitized_input(candidate: dict[str, Any]) -> None:
+    blocked = sorted(set(candidate) & SPLUNK_SANITIZED_INPUT_BLOCKED_KEYS)
+    if blocked:
+        raise FactoryError(f"sanitized Splunk input contains blocked raw/private fields: {', '.join(blocked)}")
+    unknown = sorted(set(candidate) - SPLUNK_SANITIZED_INPUT_ALLOWED_KEYS)
+    if unknown:
+        raise FactoryError(f"sanitized Splunk input contains unsupported fields: {', '.join(unknown)}")
+    if candidate.get("detection_id") != "HO-DET-001":
+        raise FactoryError("sanitized Splunk input detection_id must be HO-DET-001")
+    if candidate.get("source_system") != "Splunk":
+        raise FactoryError("sanitized Splunk input source_system must be Splunk")
+    for key, value in candidate.items():
+        if value is not None and not isinstance(value, str):
+            raise FactoryError(f"sanitized Splunk input {key} must be a string or null")
+    fingerprint = candidate.get("sanitized_event_fingerprint")
+    if not isinstance(fingerprint, str) or not fingerprint.strip():
+        raise FactoryError("sanitized Splunk input requires sanitized_event_fingerprint")
+    case_id = candidate.get("case_id")
+    if case_id is not None and (not isinstance(case_id, str) or not case_id.startswith("AUTOSOC-RUNTIME-SPLUNK-HO-DET-001-")):
+        raise FactoryError("sanitized Splunk input case_id must start with AUTOSOC-RUNTIME-SPLUNK-HO-DET-001-")
+    scan_private_markers("sanitized Splunk input", candidate)
+    scan_text = json.dumps(candidate, sort_keys=True)
+    for pattern in SPLUNK_SANITIZED_VALUE_PATTERNS:
+        if pattern.search(scan_text):
+            raise FactoryError(f"sanitized Splunk input contains blocked raw/private value: {pattern.pattern}")
+
+
+def validate_runtime_ledger_path(ledger_path: Path) -> None:
+    resolved = ledger_path.resolve()
+    repo_root = PLATFORM_ROOT.parent.parent.resolve()
+    try:
+        resolved.relative_to(repo_root)
+    except ValueError:
+        pass
+    else:
+        raise FactoryError(f"runtime ledger path must be outside repo root: {resolved}")
+    if not resolved.is_file():
+        raise FactoryError(f"runtime ledger file is missing: {resolved}")
+
+
+def connect_read_only_ledger(path: Path) -> sqlite3.Connection:
+    return sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True)
+
+
+def build_splunk_ho_det_001_runtime_candidate(sanitized_input: dict[str, Any]) -> dict[str, Any]:
+    validate_splunk_sanitized_input(sanitized_input)
+    observed_time = str(sanitized_input.get("observed_time_utc") or "not_provided")
+    case_id = str(
+        sanitized_input.get("case_id")
+        or f"AUTOSOC-RUNTIME-SPLUNK-HO-DET-001-{hashlib.sha256(stable_json(sanitized_input).encode('utf-8')).hexdigest()[:12].upper()}"
+    )
+    payload = {
+        "case_factory_version": "AUTOSOC_CASE_FACTORY_V0",
+        "case_state": "SPLUNK_LIVE_INGESTION_DRY_RUN_ONLY",
+        "case_source": "splunk_sanitized_result_candidate",
+        "source_system": "Splunk",
+        "observed_time_utc": observed_time,
+        "splunk_result_ref": sanitized_input.get("splunk_result_ref"),
+        "sanitized_event_fingerprint": sanitized_input["sanitized_event_fingerprint"],
+        "rule_match_name": sanitized_input.get("rule_match_name"),
+        "rule_match_version": sanitized_input.get("rule_match_version"),
+        "supported_claim": "A sanitized Splunk HO-DET-001 candidate was prepared for human review.",
+        "issue_plan_mode": "dry_run_only",
+        "close_rule_result": "BLOCKED_HUMAN_REVIEW_REQUIRED",
+        "truth_boundary": (
+            "Dry-run candidate only. Not appended, not proof promotion, not public-safe approval, "
+            "not GitHub Issue mutation, not case closure, and not public runtime proof."
+        ),
+    }
+    event = {
+        "inserted_at": observed_time,
+        "ledger_version": CASE_LEDGER_VERSION,
+        "case_id": case_id,
+        "detection_id": "HO-DET-001",
+        "truth_class": "FORWARD_GOVERNED_CASE",
+        "case_status": "HUMAN_REVIEW_REQUIRED",
+        "proof_ceiling": "CONTROLLED_TEST_VALIDATED",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "ai_support_mode": "AI_SUPPORT_ONLY",
+        "ai_decided_disposition": False,
+        "recommended_disposition": None,
+        "deterministic_close_eligible": False,
+        "deterministic_close_blocked": True,
+        "human_review_required": True,
+        "gpu_supported": False,
+        "public_safe": False,
+        "proof_blocked": True,
+        "github_issue_mutation_allowed": False,
+        "case_closed": False,
+        "legacy_import_count": 0,
+        "payload_json": payload,
+        "source_packet_ref": "splunk-ho-det-001-sanitized-dry-run/no-raw-export",
+    }
+    event_hash_input = dict(event)
+    event_hash_input["payload_json"] = payload
+    event["event_hash"] = hashlib.sha256(stable_json(event_hash_input).encode("utf-8")).hexdigest()
+    scan_private_markers("sanitized Splunk runtime candidate", event)
+    return event
+
+
+def metrics_after_candidate(before: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
+    after = json.loads(json.dumps(before))
+    after["total_cases"] = int(after["total_cases"]) + 1
+    for key, event_field in (
+        ("cases_by_detection", "detection_id"),
+        ("cases_by_truth_class", "truth_class"),
+        ("cases_by_status", "case_status"),
+    ):
+        group = dict(after[key])
+        value = str(event[event_field])
+        group[value] = int(group.get(value, 0)) + 1
+        after[key] = group
+    after["deterministic_close_blocked_count"] = int(after["deterministic_close_blocked_count"]) + 1
+    after["human_review_required_count"] = int(after["human_review_required_count"]) + 1
+    after["proof_blocked_count"] = int(after["proof_blocked_count"]) + 1
+    return after
+
+
+def runtime_splunk_ho_det_001_dry_run(ledger_path: Path, sanitized_input: dict[str, Any]) -> dict[str, Any]:
+    validate_runtime_ledger_path(ledger_path)
+    candidate = build_splunk_ho_det_001_runtime_candidate(sanitized_input)
+    with connect_read_only_ledger(ledger_path) as conn:
+        verification = verify_ledger(conn)
+        metadata = dict(conn.execute("SELECT key, value FROM ledger_metadata ORDER BY key").fetchall())
+        for key in (
+            "live_ingestion_allowed",
+            "splunk_ingestion_allowed",
+            "github_issue_mutation_allowed",
+            "proof_promotion_allowed",
+            "public_safe_promotion_allowed",
+        ):
+            if metadata.get(key) != "false":
+                raise FactoryError(f"runtime ledger metadata {key} must remain false for dry-run")
+        before_metrics = ledger_metrics(conn)
+        duplicate_event_hash_count = int(
+            conn.execute("SELECT COUNT(*) FROM case_events WHERE event_hash = ?", (candidate["event_hash"],)).fetchone()[0]
+        )
+        duplicate_case_id_count = int(
+            conn.execute("SELECT COUNT(*) FROM case_events WHERE case_id = ?", (candidate["case_id"],)).fetchone()[0]
+        )
+    return {
+        "mode": "runtime-ledger-ingest-splunk-ho-det-001",
+        "dry_run": True,
+        "ledger_path": str(ledger_path.resolve()),
+        "runtime_ledger_open_mode": "read_only",
+        "source_system": "Splunk",
+        "detection_id": "HO-DET-001",
+        "candidate_event": candidate,
+        "dedupe": {
+            "duplicate_event_hash_count": duplicate_event_hash_count,
+            "duplicate_case_id_count": duplicate_case_id_count,
+            "append_would_be_blocked": duplicate_event_hash_count != 0 or duplicate_case_id_count != 0,
+        },
+        "before_metrics": before_metrics,
+        "expected_after_metrics": metrics_after_candidate(before_metrics, candidate),
+        "verification": verification,
+        "approval_required_before_append": SPLUNK_HO_DET_001_APPEND_APPROVAL,
+        "boundaries": {
+            "database_modified": False,
+            "splunk_connected": False,
+            "github_issue_mutation_allowed": False,
+            "proof_promotion_allowed": False,
+            "public_safe_promotion_allowed": False,
+            "ai_disposition_authority": False,
+            "case_closure_allowed": False,
+        },
+    }
 
 
 def build_sample_case_event(repo_root: Path) -> dict[str, Any]:
@@ -942,14 +1182,19 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
         sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
         sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("runtime-ledger-ingest-splunk-ho-det-001")
+    sub.add_argument("--mode", dest="ingest_mode", required=True, choices=("dry-run",))
+    sub.add_argument("--ledger", required=True)
+    sub.add_argument("--sanitized-input", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
-    repo_root = Path(args.repo_root).resolve()
 
     if args.mode in {"ledger-init-sample", "ledger-verify", "ledger-metrics"}:
+        repo_root = Path(args.repo_root).resolve()
         ledger_path = Path(args.ledger_path).resolve()
         if ledger_path != DEFAULT_CASE_LEDGER.resolve():
             raise FactoryError(f"Case Ledger v0 seed path is not approved for this scope: {ledger_path}")
@@ -987,6 +1232,13 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
+    if args.mode == "runtime-ledger-ingest-splunk-ho-det-001":
+        sanitized_input = load_sanitized_input(args.sanitized_input)
+        output = runtime_splunk_ho_det_001_dry_run(Path(args.ledger).resolve(), sanitized_input)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    repo_root = Path(args.repo_root).resolve()
     detection_ids = sorted(SPECS) if args.detection == "all" else [args.detection]
 
     packets = [build_packet(repo_root, SPECS[detection_id]) for detection_id in detection_ids]
