@@ -552,9 +552,12 @@ def runtime_ledger_review_case(ledger_path: Path, case_id: str) -> dict[str, Any
     with connect_read_only_ledger(ledger_path) as conn:
         verification = verify_ledger(conn)
         metadata = dict(conn.execute("SELECT key, value FROM ledger_metadata ORDER BY key").fetchall())
-        row = conn.execute("SELECT * FROM case_events WHERE case_id = ?", (case_id,)).fetchone()
-        if row is None:
+        rows = conn.execute("SELECT * FROM case_events WHERE case_id = ? ORDER BY event_id", (case_id,)).fetchall()
+        if not rows:
             raise FactoryError(f"runtime ledger case not found: {case_id}")
+        if len(rows) > 1:
+            raise FactoryError(f"runtime ledger case_id is not unique: {case_id} matched {len(rows)} rows")
+        row = rows[0]
         event = row_to_event(conn, row)
         payload = scan_ledger_event_text_fields(event)
 
