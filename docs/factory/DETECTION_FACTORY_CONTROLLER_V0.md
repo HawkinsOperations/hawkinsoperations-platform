@@ -210,6 +210,47 @@ The metrics output includes:
 Ledger metrics count ledger rows only. They do not import or claim legacy/V1
 historical counts as current governed proof.
 
+### Splunk HO-DET-001 Runtime Ingest Dry Run
+
+The controller includes a bounded dry-run adapter for sanitized Splunk
+`HO-DET-001` runtime candidates:
+
+```powershell
+python -B scripts\ho_factory.py runtime-ledger-ingest-splunk-ho-det-001 --mode dry-run --ledger "<APPROVED_RUNTIME_LEDGER>" --sanitized-input - --format json
+```
+
+The adapter does not connect to Splunk, run Splunk searches, mutate GitHub
+Issues, append ledger rows, close cases, promote proof, or promote public-safe
+status. It opens the runtime ledger read-only, parses sanitized JSON from stdin
+or an existing approved input path, builds one candidate case packet in memory,
+computes the deterministic `event_hash`, checks duplicate `event_hash` and
+`case_id`, and prints before/expected-after metrics.
+
+Allowed sanitized input fields:
+
+- `case_id`
+- `detection_id`
+- `source_system`
+- `observed_time_utc`
+- `splunk_result_ref`
+- `sanitized_event_fingerprint`
+- `rule_match_name`
+- `rule_match_version`
+
+Blocked input fields include raw Splunk `_raw`, raw event payloads, raw command
+lines, hostnames, usernames, LAN IPs, MAC addresses, VM IDs, private paths,
+private evidence filenames, secrets, tokens, credentials, and internal service
+details. The dry-run candidate preserves `AI_SUPPORT_ONLY`,
+`human_review_required=true`, `deterministic_close_eligible=false`,
+`deterministic_close_blocked=true`, `github_issue_mutation_allowed=false`,
+`public_safe=false`, `proof_blocked=true`, and `case_closed=false`.
+
+The exact approval phrase required before any later append is:
+
+```text
+APPEND_ONE_SANITIZED_SPLUNK_HO_DET_001_RUNTIME_CASE_APPROVED
+```
+
 ## Fail Closed Rules
 
 The controller must fail closed if:
