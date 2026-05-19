@@ -105,7 +105,10 @@
       "additionalProperties": false,
       "properties": {
         "record_path": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "card_path": {
           "type": [
@@ -262,7 +265,8 @@
         "detection_id": {
           "enum": [
             "HO-DET-001",
-            "HO-DET-011"
+            "HO-DET-011",
+            "HO-DET-012"
           ]
         },
         "current_state": {
