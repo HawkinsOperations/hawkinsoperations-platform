@@ -188,6 +188,13 @@ Only `ledger-init-sample` may create the approved ledger parent directory.
 `ledger-verify` and `ledger-metrics` require the seed ledger file to exist and
 fail closed if it is missing.
 
+`ledger-verify` and `ledger-metrics` may also inspect an approved external
+runtime ledger path outside this repository. In that mode the controller opens
+SQLite with `mode=ro`, reports `ledger_scope: external_runtime_ledger`, and
+keeps the truth boundary at private runtime review only. `ledger-init-sample`
+remains limited to the repository seed ledger and must not initialize or append
+to the runtime ledger.
+
 The sample insert path reads the sanitized HO-DET-001 case-factory packet from
 the validation repo and inserts one `SYNTHETIC_TEST_CASE` seed event. It does not
 copy raw event fields, private paths, hostnames, LAN IPs, usernames, VM IDs, MAC
@@ -258,20 +265,28 @@ runtime ledger case:
 
 ```powershell
 python -B scripts\ho_factory.py runtime-ledger-review-case --ledger "<APPROVED_RUNTIME_LEDGER>" --case-id "<CASE_ID>" --format json
+python -B scripts\ho_factory.py runtime-ledger-review-case --ledger "<APPROVED_RUNTIME_LEDGER>" --case-id "<CASE_ID>" --self-test --format json
 ```
 
 The review command opens the approved runtime ledger read-only, verifies the
 target case exists, runs the ledger verifier, inspects append-only trigger
 definitions, scans the stored case text fields for private markers, prints a
-metrics snapshot, and returns the blocked claims and supported internal claim.
+metrics snapshot, and returns the blocked claims, supported internal claim, and
+next allowed move. `--self-test` runs in-memory negative checks only; it creates
+no files, appends no ledger rows, and performs no runtime or GitHub mutation.
 
 The command must fail closed if the target case is missing, if append-only
 triggers are missing or non-aborting, if a private marker appears in stored
 case text fields, or if any reviewed boundary field is promoted. The reviewed
 case must preserve `github_issue_mutation_allowed=false`, `case_closed=false`,
 `ai_decided_disposition=false`, `deterministic_close_eligible=false`,
-`human_review_required=true`, `proof_promotion_allowed=false`, and
-`public_safe_promotion_allowed=false`.
+`human_review_required=true`, `public_safe=false`, `proof_blocked=true`,
+`proof_promotion_allowed=false`, and `public_safe_promotion_allowed=false`.
+
+The runtime review self-tests must fail closed for missing case IDs, private
+markers in reviewed case text, raw Splunk `_raw`, host fields, username fields,
+LAN IPs, local paths, token or secret markers, public-safe promotion, proof
+promotion, case closure authority, and AI disposition authority.
 
 The review command does not append ledger rows, connect to Splunk, run Splunk
 searches, mutate GitHub Issues, close cases, promote proof, promote public-safe
