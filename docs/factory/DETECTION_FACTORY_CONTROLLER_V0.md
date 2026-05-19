@@ -264,16 +264,20 @@ The controller includes a repeatable read-only review command for a single
 runtime ledger case:
 
 ```powershell
+python -B scripts\ho_factory.py runtime-ledger-review-case --self-test --format json
 python -B scripts\ho_factory.py runtime-ledger-review-case --ledger "<APPROVED_RUNTIME_LEDGER>" --case-id "<CASE_ID>" --format json
 python -B scripts\ho_factory.py runtime-ledger-review-case --ledger "<APPROVED_RUNTIME_LEDGER>" --case-id "<CASE_ID>" --self-test --format json
 ```
 
-The review command opens the approved runtime ledger read-only, verifies the
-target case exists, runs the ledger verifier, inspects append-only trigger
-definitions, scans the stored case text fields for private markers, prints a
-metrics snapshot, and returns the blocked claims, supported internal claim, and
-next allowed move. `--self-test` runs in-memory negative checks only; it creates
-no files, appends no ledger rows, and performs no runtime or GitHub mutation.
+The standalone `--self-test` command runs in-memory negative checks only and
+does not open an external runtime ledger or require a target case. The review
+command opens the approved runtime ledger read-only, verifies the target case
+exists, runs the ledger verifier, inspects append-only trigger definitions,
+scans the stored case text fields for private markers, prints a metrics
+snapshot, and returns the blocked claims, supported internal claim, and next
+allowed move. The combined form runs the same runtime ledger review and attaches
+the in-memory self-test result. Self-tests create no files, append no ledger
+rows, and perform no runtime or GitHub mutation.
 
 The command must fail closed if the target case is missing, if append-only
 triggers are missing or non-aborting, if a private marker appears in stored

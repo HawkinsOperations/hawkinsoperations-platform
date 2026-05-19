@@ -1513,8 +1513,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--sanitized-input", required=True)
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("runtime-ledger-review-case")
-    sub.add_argument("--ledger", required=True)
-    sub.add_argument("--case-id", required=True)
+    sub.add_argument("--ledger")
+    sub.add_argument("--case-id")
     sub.add_argument("--self-test", action="store_true")
     sub.add_argument("--format", default="json", choices=("json",))
     return parser.parse_args(argv)
@@ -1584,6 +1584,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.mode == "runtime-ledger-review-case":
+        has_ledger = bool(args.ledger)
+        has_case_id = bool(args.case_id)
+        if has_ledger != has_case_id:
+            raise FactoryError("runtime-ledger-review-case requires both --ledger and --case-id when either is provided")
+        if args.self_test and not has_ledger:
+            print(json.dumps(runtime_review_self_tests(), indent=2, sort_keys=True))
+            return 0
+        if not has_ledger:
+            raise FactoryError("runtime-ledger-review-case requires --self-test or both --ledger and --case-id")
         output = runtime_ledger_review_case(Path(args.ledger).resolve(), args.case_id)
         if args.self_test:
             output["self_tests"] = runtime_review_self_tests()
