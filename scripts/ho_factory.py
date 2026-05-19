@@ -117,6 +117,21 @@ SPLUNK_SANITIZED_VALUE_PATTERNS = (
     re.compile(r"(?i)\binternal\s+service\b"),
 )
 
+RUNTIME_CASE_REVIEW_BLOCKED_CLAIMS = (
+    "Splunk connection proof",
+    "live Splunk query proof",
+    "raw event proof",
+    "public proof",
+    "public-safe",
+    "proof promotion",
+    "GitHub Issue mutation",
+    "case closure",
+    "AI-approved disposition",
+    "analyst-approved disposition",
+    "production SOC",
+    "autonomous SOC",
+)
+
 
 class FactoryError(RuntimeError):
     """Fail-closed controller error."""
@@ -518,6 +533,106 @@ def runtime_splunk_ho_det_001_dry_run(ledger_path: Path, sanitized_input: dict[s
             "ai_disposition_authority": False,
             "case_closure_allowed": False,
         },
+    }
+
+
+def row_to_event(conn: sqlite3.Connection, row: sqlite3.Row | tuple[Any, ...]) -> dict[str, Any]:
+    columns = [item[1] for item in conn.execute("PRAGMA table_info(case_events)").fetchall()]
+    if isinstance(row, sqlite3.Row):
+        return {column: row[column] for column in columns}
+    return dict(zip(columns, row))
+
+
+def bool_from_int_field(event: dict[str, Any], field: str) -> bool:
+    return bool(int(event[field]))
+
+
+def runtime_ledger_review_case(ledger_path: Path, case_id: str) -> dict[str, Any]:
+    validate_runtime_ledger_path(ledger_path)
+    with connect_read_only_ledger(ledger_path) as conn:
+        verification = verify_ledger(conn)
+        metadata = dict(conn.execute("SELECT key, value FROM ledger_metadata ORDER BY key").fetchall())
+        rows = conn.execute("SELECT * FROM case_events WHERE case_id = ? ORDER BY event_id", (case_id,)).fetchall()
+        if not rows:
+            raise FactoryError(f"runtime ledger case not found: {case_id}")
+        if len(rows) > 1:
+            raise FactoryError(f"runtime ledger case_id is not unique: {case_id} matched {len(rows)} rows")
+        row = rows[0]
+        event = row_to_event(conn, row)
+        payload = scan_ledger_event_text_fields(event)
+
+    required_false_fields = (
+        "github_issue_mutation_allowed",
+        "case_closed",
+        "ai_decided_disposition",
+        "deterministic_close_eligible",
+    )
+    for field in required_false_fields:
+        if bool_from_int_field(event, field):
+            raise FactoryError(f"runtime case review field must remain false: {field}")
+    if not bool_from_int_field(event, "human_review_required"):
+        raise FactoryError("runtime case review human_review_required must remain true")
+    if not bool_from_int_field(event, "deterministic_close_blocked"):
+        raise FactoryError("runtime case review deterministic_close_blocked must remain true")
+    if event.get("ai_support_mode") != "AI_SUPPORT_ONLY":
+        raise FactoryError("runtime case review ai_support_mode must be AI_SUPPORT_ONLY")
+    for key in ("proof_promotion_allowed", "public_safe_promotion_allowed", "github_issue_mutation_allowed"):
+        if metadata.get(key) != "false":
+            raise FactoryError(f"runtime ledger metadata {key} must remain false")
+
+    case_summary = {
+        "case_id": event["case_id"],
+        "detection_id": event["detection_id"],
+        "truth_class": event["truth_class"],
+        "case_status": event["case_status"],
+        "event_hash": event["event_hash"],
+        "proof_ceiling": event["proof_ceiling"],
+        "public_safe_status": event["public_safe_status"],
+        "ai_support_mode": event["ai_support_mode"],
+        "human_review_required": bool_from_int_field(event, "human_review_required"),
+        "deterministic_close_eligible": bool_from_int_field(event, "deterministic_close_eligible"),
+        "deterministic_close_blocked": bool_from_int_field(event, "deterministic_close_blocked"),
+        "github_issue_mutation_allowed": bool_from_int_field(event, "github_issue_mutation_allowed"),
+        "case_closed": bool_from_int_field(event, "case_closed"),
+        "ai_decided_disposition": bool_from_int_field(event, "ai_decided_disposition"),
+        "source_packet_ref": event["source_packet_ref"],
+        "payload_json": payload,
+    }
+    return {
+        "mode": "runtime-ledger-review-case",
+        "ledger_path": str(ledger_path.resolve()),
+        "runtime_ledger_open_mode": "read_only",
+        "case": case_summary,
+        "metrics_snapshot": verification["metrics"],
+        "append_only_trigger_inspection": {
+            "status": "pass",
+            "mode": verification["append_only_triggers"],
+            "trigger_names": verification["append_only_trigger_names"],
+        },
+        "private_marker_scan": {
+            "status": "pass",
+            "scanned_fields": list(CASE_LEDGER_TEXT_SCAN_FIELDS),
+        },
+        "verification": verification,
+        "supported_internal_claim": (
+            f"Sanitized runtime ledger case {event['case_id']} exists for human review under "
+            f"{event['truth_class']} with {event['case_status']} status."
+        ),
+        "blocked_claims": list(RUNTIME_CASE_REVIEW_BLOCKED_CLAIMS),
+        "boundary_confirmations": {
+            "github_issue_mutation_allowed": False,
+            "case_closed": False,
+            "ai_decided_disposition": False,
+            "deterministic_close_eligible": False,
+            "human_review_required": True,
+            "proof_promotion_allowed": False,
+            "public_safe_promotion_allowed": False,
+            "ai_disposition_authority": False,
+        },
+        "proof_boundary": (
+            "Local runtime ledger review only. Not proof promotion, not public-safe approval, "
+            "not GitHub Issue mutation, not case closure, and not AI disposition authority."
+        ),
     }
 
 
@@ -1187,6 +1302,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--ledger", required=True)
     sub.add_argument("--sanitized-input", required=True)
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("runtime-ledger-review-case")
+    sub.add_argument("--ledger", required=True)
+    sub.add_argument("--case-id", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
     return parser.parse_args(argv)
 
 
@@ -1235,6 +1354,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode == "runtime-ledger-ingest-splunk-ho-det-001":
         sanitized_input = load_sanitized_input(args.sanitized_input)
         output = runtime_splunk_ho_det_001_dry_run(Path(args.ledger).resolve(), sanitized_input)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "runtime-ledger-review-case":
+        output = runtime_ledger_review_case(Path(args.ledger).resolve(), args.case_id)
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
