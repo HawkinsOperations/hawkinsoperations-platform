@@ -24,6 +24,11 @@ PLATFORM_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO_ROOT = PLATFORM_ROOT.parent
 DEFAULT_CASE_LEDGER = PLATFORM_ROOT / "evidence" / "autosoc-case-ledger-v0.sqlite"
 SPLUNK_HO_DET_001_APPEND_APPROVAL = "APPEND_ONE_SANITIZED_SPLUNK_HO_DET_001_RUNTIME_CASE_APPROVED"
+RUNTIME_LEDGER_TRUTH_BOUNDARY = "private_runtime_review_only_not_public_proof_not_public_safe"
+RUNTIME_REVIEW_NEXT_ALLOWED_MOVE = (
+    "Review the sanitized runtime case packet and metrics snapshot. Any append remains blocked unless "
+    f"{SPLUNK_HO_DET_001_APPEND_APPROVAL} is explicitly provided."
+)
 
 CASE_LEDGER_TRUTH_CLASSES = (
     "FORWARD_GOVERNED_CASE",
@@ -489,7 +494,7 @@ def runtime_splunk_ho_det_001_dry_run(ledger_path: Path, sanitized_input: dict[s
     validate_runtime_ledger_path(ledger_path)
     candidate = build_splunk_ho_det_001_runtime_candidate(sanitized_input)
     with connect_read_only_ledger(ledger_path) as conn:
-        verification = verify_ledger(conn)
+        verification = verify_ledger(conn, RUNTIME_LEDGER_TRUTH_BOUNDARY)
         metadata = dict(conn.execute("SELECT key, value FROM ledger_metadata ORDER BY key").fetchall())
         for key in (
             "live_ingestion_allowed",
@@ -500,7 +505,7 @@ def runtime_splunk_ho_det_001_dry_run(ledger_path: Path, sanitized_input: dict[s
         ):
             if metadata.get(key) != "false":
                 raise FactoryError(f"runtime ledger metadata {key} must remain false for dry-run")
-        before_metrics = ledger_metrics(conn)
+        before_metrics = ledger_metrics(conn, RUNTIME_LEDGER_TRUTH_BOUNDARY)
         duplicate_event_hash_count = int(
             conn.execute("SELECT COUNT(*) FROM case_events WHERE event_hash = ?", (candidate["event_hash"],)).fetchone()[0]
         )
@@ -547,25 +552,24 @@ def bool_from_int_field(event: dict[str, Any], field: str) -> bool:
     return bool(int(event[field]))
 
 
-def runtime_ledger_review_case(ledger_path: Path, case_id: str) -> dict[str, Any]:
-    validate_runtime_ledger_path(ledger_path)
-    with connect_read_only_ledger(ledger_path) as conn:
-        verification = verify_ledger(conn)
-        metadata = dict(conn.execute("SELECT key, value FROM ledger_metadata ORDER BY key").fetchall())
-        rows = conn.execute("SELECT * FROM case_events WHERE case_id = ? ORDER BY event_id", (case_id,)).fetchall()
-        if not rows:
-            raise FactoryError(f"runtime ledger case not found: {case_id}")
-        if len(rows) > 1:
-            raise FactoryError(f"runtime ledger case_id is not unique: {case_id} matched {len(rows)} rows")
-        row = rows[0]
-        event = row_to_event(conn, row)
-        payload = scan_ledger_event_text_fields(event)
+def runtime_ledger_review_case_from_conn(conn: sqlite3.Connection, ledger_label: str, case_id: str) -> dict[str, Any]:
+    verification = verify_ledger(conn, RUNTIME_LEDGER_TRUTH_BOUNDARY)
+    metadata = dict(conn.execute("SELECT key, value FROM ledger_metadata ORDER BY key").fetchall())
+    rows = conn.execute("SELECT * FROM case_events WHERE case_id = ? ORDER BY event_id", (case_id,)).fetchall()
+    if not rows:
+        raise FactoryError(f"runtime ledger case not found: {case_id}")
+    if len(rows) > 1:
+        raise FactoryError(f"runtime ledger case_id is not unique: {case_id} matched {len(rows)} rows")
+    row = rows[0]
+    event = row_to_event(conn, row)
+    payload = scan_ledger_event_text_fields(event)
 
     required_false_fields = (
         "github_issue_mutation_allowed",
         "case_closed",
         "ai_decided_disposition",
         "deterministic_close_eligible",
+        "public_safe",
     )
     for field in required_false_fields:
         if bool_from_int_field(event, field):
@@ -574,11 +578,22 @@ def runtime_ledger_review_case(ledger_path: Path, case_id: str) -> dict[str, Any
         raise FactoryError("runtime case review human_review_required must remain true")
     if not bool_from_int_field(event, "deterministic_close_blocked"):
         raise FactoryError("runtime case review deterministic_close_blocked must remain true")
+    if not bool_from_int_field(event, "proof_blocked"):
+        raise FactoryError("runtime case review proof_blocked must remain true")
+    if event.get("public_safe_status") != "NOT_PUBLIC_SAFE":
+        raise FactoryError("runtime case review public_safe_status must remain NOT_PUBLIC_SAFE")
     if event.get("ai_support_mode") != "AI_SUPPORT_ONLY":
         raise FactoryError("runtime case review ai_support_mode must be AI_SUPPORT_ONLY")
-    for key in ("proof_promotion_allowed", "public_safe_promotion_allowed", "github_issue_mutation_allowed"):
+    for key in (
+        "proof_promotion_allowed",
+        "public_safe_promotion_allowed",
+        "github_issue_mutation_allowed",
+        "case_closure_allowed",
+    ):
         if metadata.get(key) != "false":
             raise FactoryError(f"runtime ledger metadata {key} must remain false")
+    if metadata.get("ai_support_mode") != "AI_SUPPORT_ONLY":
+        raise FactoryError("runtime ledger metadata ai_support_mode must remain AI_SUPPORT_ONLY")
 
     case_summary = {
         "case_id": event["case_id"],
@@ -595,12 +610,14 @@ def runtime_ledger_review_case(ledger_path: Path, case_id: str) -> dict[str, Any
         "github_issue_mutation_allowed": bool_from_int_field(event, "github_issue_mutation_allowed"),
         "case_closed": bool_from_int_field(event, "case_closed"),
         "ai_decided_disposition": bool_from_int_field(event, "ai_decided_disposition"),
+        "public_safe": bool_from_int_field(event, "public_safe"),
+        "proof_blocked": bool_from_int_field(event, "proof_blocked"),
         "source_packet_ref": event["source_packet_ref"],
         "payload_json": payload,
     }
     return {
         "mode": "runtime-ledger-review-case",
-        "ledger_path": str(ledger_path.resolve()),
+        "ledger_path": ledger_label,
         "runtime_ledger_open_mode": "read_only",
         "case": case_summary,
         "metrics_snapshot": verification["metrics"],
@@ -628,12 +645,22 @@ def runtime_ledger_review_case(ledger_path: Path, case_id: str) -> dict[str, Any
             "proof_promotion_allowed": False,
             "public_safe_promotion_allowed": False,
             "ai_disposition_authority": False,
+            "public_safe": False,
+            "proof_blocked": True,
         },
+        "next_allowed_move": RUNTIME_REVIEW_NEXT_ALLOWED_MOVE,
+        "append_required_before_next_case": SPLUNK_HO_DET_001_APPEND_APPROVAL,
         "proof_boundary": (
             "Local runtime ledger review only. Not proof promotion, not public-safe approval, "
             "not GitHub Issue mutation, not case closure, and not AI disposition authority."
         ),
     }
+
+
+def runtime_ledger_review_case(ledger_path: Path, case_id: str) -> dict[str, Any]:
+    validate_runtime_ledger_path(ledger_path)
+    with connect_read_only_ledger(ledger_path) as conn:
+        return runtime_ledger_review_case_from_conn(conn, str(ledger_path.resolve()), case_id)
 
 
 def build_sample_case_event(repo_root: Path) -> dict[str, Any]:
@@ -745,7 +772,10 @@ def insert_case_event(conn: sqlite3.Connection, event: dict[str, Any]) -> str:
     return "inserted"
 
 
-def ledger_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
+def ledger_metrics(
+    conn: sqlite3.Connection,
+    truth_boundary: str = "seed_sample_only_not_live_runtime_ledger_not_proof",
+) -> dict[str, Any]:
     def grouped(column: str) -> dict[str, int]:
         rows = conn.execute(f"SELECT {column}, COUNT(*) FROM case_events GROUP BY {column} ORDER BY {column}").fetchall()
         return {str(key): int(count) for key, count in rows}
@@ -775,7 +805,7 @@ def ledger_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
         "human_review_required_count": int(counts[4]),
         "public_safe_count": int(counts[5]),
         "proof_blocked_count": int(counts[6]),
-        "truth_boundary": "seed_sample_only_not_live_runtime_ledger_not_proof",
+        "truth_boundary": truth_boundary,
     }
 
 
@@ -796,7 +826,10 @@ def verify_append_only_triggers(conn: sqlite3.Connection) -> list[str]:
     return sorted(CASE_LEDGER_APPEND_ONLY_TRIGGERS)
 
 
-def verify_ledger(conn: sqlite3.Connection) -> dict[str, Any]:
+def verify_ledger(
+    conn: sqlite3.Connection,
+    metrics_truth_boundary: str = "seed_sample_only_not_live_runtime_ledger_not_proof",
+) -> dict[str, Any]:
     metadata = dict(conn.execute("SELECT key, value FROM ledger_metadata").fetchall())
     required_metadata = {
         "ledger_version": CASE_LEDGER_VERSION,
@@ -852,7 +885,184 @@ def verify_ledger(conn: sqlite3.Connection) -> dict[str, Any]:
         "append_only_triggers": "sqlite_master_trigger_inspection_no_dml",
         "append_only_trigger_names": trigger_names,
         "event_count": len(rows),
-        "metrics": ledger_metrics(conn),
+        "metrics": ledger_metrics(conn, metrics_truth_boundary),
+    }
+
+
+def sql_bool(value: Any) -> int:
+    if isinstance(value, bool):
+        return bool_int(value)
+    return int(value)
+
+
+def insert_case_event_unchecked(conn: sqlite3.Connection, event: dict[str, Any]) -> None:
+    payload = event["payload_json"]
+    payload_json = stable_json(payload) if isinstance(payload, dict) else str(payload)
+    conn.execute(
+        """
+        INSERT INTO case_events (
+          event_hash, parent_event_hash, inserted_at, ledger_version, case_id,
+          detection_id, truth_class, case_status, proof_ceiling, public_safe_status,
+          ai_support_mode, ai_decided_disposition, recommended_disposition,
+          deterministic_close_eligible, deterministic_close_blocked,
+          human_review_required, gpu_supported, public_safe, proof_blocked,
+          github_issue_mutation_allowed, case_closed, legacy_import_count,
+          payload_json, source_packet_ref
+        ) VALUES (
+          :event_hash, NULL, :inserted_at, :ledger_version, :case_id,
+          :detection_id, :truth_class, :case_status, :proof_ceiling, :public_safe_status,
+          :ai_support_mode, :ai_decided_disposition, :recommended_disposition,
+          :deterministic_close_eligible, :deterministic_close_blocked,
+          :human_review_required, :gpu_supported, :public_safe, :proof_blocked,
+          :github_issue_mutation_allowed, :case_closed, :legacy_import_count,
+          :payload_json, :source_packet_ref
+        )
+        """,
+        {
+            **event,
+            "payload_json": payload_json,
+            "ai_decided_disposition": sql_bool(event["ai_decided_disposition"]),
+            "deterministic_close_eligible": sql_bool(event["deterministic_close_eligible"]),
+            "deterministic_close_blocked": sql_bool(event["deterministic_close_blocked"]),
+            "human_review_required": sql_bool(event["human_review_required"]),
+            "gpu_supported": sql_bool(event["gpu_supported"]),
+            "public_safe": sql_bool(event["public_safe"]),
+            "proof_blocked": sql_bool(event["proof_blocked"]),
+            "github_issue_mutation_allowed": sql_bool(event["github_issue_mutation_allowed"]),
+            "case_closed": sql_bool(event["case_closed"]),
+        },
+    )
+
+
+def self_test_runtime_event(
+    *,
+    event_updates: dict[str, Any] | None = None,
+    payload_updates: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    event = build_splunk_ho_det_001_runtime_candidate(
+        {
+            "case_id": "AUTOSOC-RUNTIME-SPLUNK-HO-DET-001-SELFTEST",
+            "detection_id": "HO-DET-001",
+            "source_system": "Splunk",
+            "observed_time_utc": "2026-05-19T00:00:00Z",
+            "splunk_result_ref": "sanitized-self-test-ref",
+            "sanitized_event_fingerprint": "sanitized-self-test-fingerprint",
+            "rule_match_name": "HO-DET-001 self-test",
+            "rule_match_version": "v0",
+        }
+    )
+    if payload_updates:
+        event["payload_json"] = {**event["payload_json"], **payload_updates}
+    if event_updates:
+        event.update(event_updates)
+    event_hash_input = dict(event)
+    event_hash_input["payload_json"] = event["payload_json"]
+    event["event_hash"] = hashlib.sha256(stable_json(event_hash_input).encode("utf-8")).hexdigest()
+    return event
+
+
+def self_test_runtime_conn(
+    *,
+    event_updates: dict[str, Any] | None = None,
+    payload_updates: dict[str, Any] | None = None,
+    metadata_updates: dict[str, str] | None = None,
+) -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    initialize_ledger_schema(conn)
+    if metadata_updates:
+        conn.executemany(
+            "INSERT OR REPLACE INTO ledger_metadata(key, value) VALUES (?, ?)",
+            sorted(metadata_updates.items()),
+        )
+    event = self_test_runtime_event(event_updates=event_updates, payload_updates=payload_updates)
+    conn.execute("PRAGMA ignore_check_constraints = ON")
+    insert_case_event_unchecked(conn, event)
+    conn.execute("PRAGMA ignore_check_constraints = OFF")
+    conn.commit()
+    return conn
+
+
+def expect_factory_error(name: str, callback: Any) -> str:
+    try:
+        callback()
+    except FactoryError:
+        return name
+    raise FactoryError(f"runtime review negative self-test did not fail closed: {name}")
+
+
+def runtime_review_self_tests() -> dict[str, Any]:
+    valid_input = {
+        "detection_id": "HO-DET-001",
+        "source_system": "Splunk",
+        "sanitized_event_fingerprint": "sanitized-self-test-fingerprint",
+    }
+    passed = [
+        expect_factory_error(
+            "missing case ID fails closed",
+            lambda: runtime_ledger_review_case_from_conn(
+                self_test_runtime_conn(), "memory:self-test", "AUTOSOC-RUNTIME-SPLUNK-HO-DET-001-MISSING"
+            ),
+        ),
+        expect_factory_error(
+            "private marker in reviewed case fails closed",
+            lambda: runtime_ledger_review_case_from_conn(
+                self_test_runtime_conn(payload_updates={"private_marker": "C:\\private\\case.txt"}),
+                "memory:self-test",
+                "AUTOSOC-RUNTIME-SPLUNK-HO-DET-001-SELFTEST",
+            ),
+        ),
+        expect_factory_error("raw Splunk _raw field fails closed", lambda: validate_splunk_sanitized_input({**valid_input, "_raw": "blocked"})),
+        expect_factory_error("host field fails closed", lambda: validate_splunk_sanitized_input({**valid_input, "host": "blocked-host"})),
+        expect_factory_error("username field fails closed", lambda: validate_splunk_sanitized_input({**valid_input, "username": "blocked-user"})),
+        expect_factory_error(
+            "LAN IP fails closed",
+            lambda: validate_splunk_sanitized_input({**valid_input, "sanitized_event_fingerprint": "192.168.1.10"}),
+        ),
+        expect_factory_error(
+            "local path fails closed",
+            lambda: validate_splunk_sanitized_input({**valid_input, "sanitized_event_fingerprint": "C:\\private\\case.txt"}),
+        ),
+        expect_factory_error(
+            "token or secret marker fails closed",
+            lambda: validate_splunk_sanitized_input({**valid_input, "sanitized_event_fingerprint": "token marker"}),
+        ),
+        expect_factory_error(
+            "public-safe promotion fails closed",
+            lambda: runtime_ledger_review_case_from_conn(
+                self_test_runtime_conn(event_updates={"public_safe": True}),
+                "memory:self-test",
+                "AUTOSOC-RUNTIME-SPLUNK-HO-DET-001-SELFTEST",
+            ),
+        ),
+        expect_factory_error(
+            "proof promotion fails closed",
+            lambda: runtime_ledger_review_case_from_conn(
+                self_test_runtime_conn(event_updates={"proof_blocked": False}),
+                "memory:self-test",
+                "AUTOSOC-RUNTIME-SPLUNK-HO-DET-001-SELFTEST",
+            ),
+        ),
+        expect_factory_error(
+            "case closure authority fails closed",
+            lambda: runtime_ledger_review_case_from_conn(
+                self_test_runtime_conn(event_updates={"case_closed": True}),
+                "memory:self-test",
+                "AUTOSOC-RUNTIME-SPLUNK-HO-DET-001-SELFTEST",
+            ),
+        ),
+        expect_factory_error(
+            "AI disposition authority fails closed",
+            lambda: runtime_ledger_review_case_from_conn(
+                self_test_runtime_conn(event_updates={"ai_decided_disposition": True}),
+                "memory:self-test",
+                "AUTOSOC-RUNTIME-SPLUNK-HO-DET-001-SELFTEST",
+            ),
+        ),
+    ]
+    return {
+        "status": "pass",
+        "mode": "in_memory_no_files_no_runtime_mutation",
+        "negative_checks": passed,
     }
 
 
@@ -1303,8 +1513,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--sanitized-input", required=True)
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("runtime-ledger-review-case")
-    sub.add_argument("--ledger", required=True)
-    sub.add_argument("--case-id", required=True)
+    sub.add_argument("--ledger")
+    sub.add_argument("--case-id")
+    sub.add_argument("--self-test", action="store_true")
     sub.add_argument("--format", default="json", choices=("json",))
     return parser.parse_args(argv)
 
@@ -1315,21 +1526,32 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode in {"ledger-init-sample", "ledger-verify", "ledger-metrics"}:
         repo_root = Path(args.repo_root).resolve()
         ledger_path = Path(args.ledger_path).resolve()
-        if ledger_path != DEFAULT_CASE_LEDGER.resolve():
-            raise FactoryError(f"Case Ledger v0 seed path is not approved for this scope: {ledger_path}")
+        seed_ledger = ledger_path == DEFAULT_CASE_LEDGER.resolve()
         if args.mode == "ledger-init-sample":
+            if not seed_ledger:
+                raise FactoryError(f"Case Ledger v0 seed init path is not approved for this scope: {ledger_path}")
             ledger_path.parent.mkdir(parents=True, exist_ok=True)
         elif not ledger_path.is_file():
             raise FactoryError(f"Case Ledger v0 seed file is missing: {ledger_path}")
-        with connect_ledger(ledger_path) as conn:
+        if not seed_ledger:
+            validate_runtime_ledger_path(ledger_path)
+        ledger_scope = "repo_seed_ledger" if seed_ledger else "external_runtime_ledger"
+        open_mode = "read_write_seed_scope" if args.mode == "ledger-init-sample" else ("read_only" if not seed_ledger else "read_write_seed_scope")
+        metrics_truth_boundary = (
+            "seed_sample_only_not_live_runtime_ledger_not_proof" if seed_ledger else RUNTIME_LEDGER_TRUTH_BOUNDARY
+        )
+        connector = connect_ledger if seed_ledger else connect_read_only_ledger
+        with connector(ledger_path) as conn:
             if args.mode == "ledger-init-sample":
                 initialize_ledger_schema(conn)
                 insert_status = insert_case_event(conn, build_sample_case_event(repo_root))
-                verification = verify_ledger(conn)
+                verification = verify_ledger(conn, metrics_truth_boundary)
                 output = {
                     "ledger_version": CASE_LEDGER_VERSION,
                     "mode": args.mode,
                     "ledger_path": str(ledger_path),
+                    "ledger_scope": ledger_scope,
+                    "open_mode": open_mode,
                     "sqlite_choice": "SQLite is used for v0 because CHECK constraints, append-only triggers, unique event hashes, and metrics queries can be verified deterministically without a new dependency.",
                     "sample_insert_status": insert_status,
                     "verification": verification,
@@ -1339,14 +1561,18 @@ def main(argv: list[str] | None = None) -> int:
                     "ledger_version": CASE_LEDGER_VERSION,
                     "mode": args.mode,
                     "ledger_path": str(ledger_path),
-                    "verification": verify_ledger(conn),
+                    "ledger_scope": ledger_scope,
+                    "open_mode": open_mode,
+                    "verification": verify_ledger(conn, metrics_truth_boundary),
                 }
             else:
                 output = {
                     "ledger_version": CASE_LEDGER_VERSION,
                     "mode": args.mode,
                     "ledger_path": str(ledger_path),
-                    "metrics": ledger_metrics(conn),
+                    "ledger_scope": ledger_scope,
+                    "open_mode": open_mode,
+                    "metrics": ledger_metrics(conn, metrics_truth_boundary),
                 }
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
@@ -1358,7 +1584,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.mode == "runtime-ledger-review-case":
+        has_ledger = bool(args.ledger)
+        has_case_id = bool(args.case_id)
+        if has_ledger != has_case_id:
+            raise FactoryError("runtime-ledger-review-case requires both --ledger and --case-id when either is provided")
+        if args.self_test and not has_ledger:
+            print(json.dumps(runtime_review_self_tests(), indent=2, sort_keys=True))
+            return 0
+        if not has_ledger:
+            raise FactoryError("runtime-ledger-review-case requires --self-test or both --ledger and --case-id")
         output = runtime_ledger_review_case(Path(args.ledger).resolve(), args.case_id)
+        if args.self_test:
+            output["self_tests"] = runtime_review_self_tests()
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
