@@ -381,13 +381,13 @@ def validate_splunk_sanitized_input(candidate: dict[str, Any]) -> None:
 
 def validate_runtime_ledger_path(ledger_path: Path) -> None:
     resolved = ledger_path.resolve()
-    repo_root = PLATFORM_ROOT.parent.parent.resolve()
+    platform_root = PLATFORM_ROOT.resolve()
     try:
-        resolved.relative_to(repo_root)
+        resolved.relative_to(platform_root)
     except ValueError:
         pass
     else:
-        raise FactoryError(f"runtime ledger path must be outside repo root: {resolved}")
+        raise FactoryError(f"runtime ledger path must be outside platform repo: {resolved}")
     if not resolved.is_file():
         raise FactoryError(f"runtime ledger file is missing: {resolved}")
 
