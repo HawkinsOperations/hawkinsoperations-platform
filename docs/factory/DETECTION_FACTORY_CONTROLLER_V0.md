@@ -251,6 +251,32 @@ The exact approval phrase required before any later append is:
 APPEND_ONE_SANITIZED_SPLUNK_HO_DET_001_RUNTIME_CASE_APPROVED
 ```
 
+### Runtime Case Review
+
+The controller includes a repeatable read-only review command for a single
+runtime ledger case:
+
+```powershell
+python -B scripts\ho_factory.py runtime-ledger-review-case --ledger "<APPROVED_RUNTIME_LEDGER>" --case-id "<CASE_ID>" --format json
+```
+
+The review command opens the approved runtime ledger read-only, verifies the
+target case exists, runs the ledger verifier, inspects append-only trigger
+definitions, scans the stored case text fields for private markers, prints a
+metrics snapshot, and returns the blocked claims and supported internal claim.
+
+The command must fail closed if the target case is missing, if append-only
+triggers are missing or non-aborting, if a private marker appears in stored
+case text fields, or if any reviewed boundary field is promoted. The reviewed
+case must preserve `github_issue_mutation_allowed=false`, `case_closed=false`,
+`ai_decided_disposition=false`, `deterministic_close_eligible=false`,
+`human_review_required=true`, `proof_promotion_allowed=false`, and
+`public_safe_promotion_allowed=false`.
+
+The review command does not append ledger rows, connect to Splunk, run Splunk
+searches, mutate GitHub Issues, close cases, promote proof, promote public-safe
+status, or grant AI close, approval, or disposition authority.
+
 ## Fail Closed Rules
 
 The controller must fail closed if:
