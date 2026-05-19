@@ -160,10 +160,10 @@ class DetectionSpec:
     validation_result: str
     validation_expected: dict[str, int]
     validation_claim: str
-    proof_record: str
+    proof_record: str | None
     proof_card: str | None
     proof_state: str
-    platform_sample: str
+    platform_sample: str | None
     platform_sample_expected_total: int
     required_blocked_claims: tuple[str, ...]
     supported_claims: tuple[str, ...]
@@ -1241,6 +1241,93 @@ SPECS: dict[str, DetectionSpec] = {
             Surface("hawkinsoperations-platform", "scripts/verify-ho-det-011-case-packet.py"),
         ),
     ),
+    "HO-DET-012": DetectionSpec(
+        detection_id="HO-DET-012",
+        current_state="CONTROLLED_TEST_VALIDATED",
+        public_proof_ceiling="CONTROLLED_TEST_VALIDATED",
+        private_evidence_state="NOT_CAPTURED",
+        public_safe_status="NOT_PUBLIC_SAFE",
+        platform_guardrail_status="STATUS_VISIBILITY_ONLY",
+        validation_result="hawkinsoperations-validation/reports/ho-det-012/validation-result.json",
+        validation_expected={
+            "total_cases": 8,
+            "positive_cases": 4,
+            "negative_cases": 4,
+            "missed_positive_count": 0,
+            "false_positive_negative_count": 0,
+        },
+        validation_claim="HO-DET-012 passed controlled-test validation against scheduled-task creation and update fixtures.",
+        proof_record=None,
+        proof_card=None,
+        proof_state="NO_PROOF_RECORD_NOT_PROMOTED",
+        platform_sample=None,
+        platform_sample_expected_total=0,
+        required_blocked_claims=(
+            *COMMON_BLOCKED,
+            "evidence-linked public proof",
+            "live Splunk fired",
+            "Splunk-fired",
+            "Wazuh-routed",
+            "Cribl-routed",
+            "Security Onion observed",
+            "scheduled-task coverage completeness",
+        ),
+        supported_claims=(
+            "HO-DET-012 source artifacts exist.",
+            "HO-DET-012 passed controlled-test validation against 8 controlled scheduled-task creation and update fixtures.",
+            "HO-DET-012 remains not public-safe and not runtime-active.",
+        ),
+        next_allowed_move="Review controlled-test validation packet only; runtime evidence, proof promotion, routed telemetry, and public-safe wording remain blocked until separate approval.",
+        decision_status="READY_FOR_REVIEW",
+        decision_reason="Controller v0 reports HO-DET-012 controlled-test validation state only and preserves runtime and proof boundaries.",
+        truth_boundary={
+            "source_truth": "reported",
+            "validation_truth": "controlled-test validated",
+            "platform_truth": "status visibility only",
+            "proof_truth": "not promoted",
+            "runtime_truth": "not public proven",
+            "signal_truth": "not public proven",
+            "public_proof": "not public safe",
+        },
+        stop_conditions=(
+            "Do not promote proof.",
+            "Do not claim public-safe status.",
+            "Do not claim runtime-active or signal-observed public proof.",
+            "Do not claim scheduled-task coverage completeness.",
+            "Do not create generated output files.",
+        ),
+        state_consistency=("STATE_CONSISTENT_WITH_V0_BOUNDARY",),
+        does_not_prove=(
+            "runtime activity",
+            "signal observation",
+            "public-safe status",
+            "production deployment",
+            "fleet-wide coverage",
+            "live Splunk firing",
+            "Wazuh routing",
+            "Cribl routing",
+            "Security Onion observation",
+            "scheduled-task coverage completeness",
+            "AI-approved disposition",
+            "analyst-approved disposition",
+        ),
+        surfaces=(
+            Surface("hawkinsoperations-detections", "detections/successor/ho-det-012/status.yml"),
+            Surface("hawkinsoperations-detections", "detections/successor/ho-det-012/rule.yml"),
+            Surface("hawkinsoperations-detections", "detections/successor/ho-det-012/splunk.spl"),
+            Surface("hawkinsoperations-detections", "detections/successor/ho-det-012/wazuh.xml"),
+            Surface("hawkinsoperations-detections", "detections/successor/ho-det-012/event-mapping.yml"),
+            Surface("hawkinsoperations-detections", "detections/DETECTION_FACTORY_INDEX.md"),
+            Surface("hawkinsoperations-validation", "reports/ho-det-012/validation-result.json"),
+            Surface("hawkinsoperations-validation", "reports/ho-det-012/validation-result.md"),
+            Surface("hawkinsoperations-validation", "validation/successor/ho-det-012/validation-cases.json"),
+            Surface("hawkinsoperations-validation", "scripts/validate-ho-det-012.py"),
+            Surface("hawkinsoperations-validation", "scripts/verify-ho-det-012-result-parity.py"),
+            Surface("hawkinsoperations-validation", "scripts/scan-ho-det-012-claim-boundaries.py"),
+            Surface("hawkinsoperations-platform", "scripts/ho_factory.py"),
+            Surface("hawkinsoperations-platform", "docs/factory/DETECTION_FACTORY_CONTROLLER_V0.md"),
+        ),
+    ),
 }
 
 
@@ -1332,6 +1419,8 @@ def validation_summary(spec: DetectionSpec, validation: dict[str, Any]) -> dict[
 
 
 def platform_sample_claims(spec: DetectionSpec, sample: dict[str, Any]) -> list[str]:
+    if spec.platform_sample is None:
+        return list(spec.required_blocked_claims)
     require_detection_id(sample, spec.detection_id, spec.platform_sample)
     if sample.get("public_safe_status") != "NOT_PUBLIC_SAFE":
         raise FactoryError(f"{spec.platform_sample} public_safe_status must be NOT_PUBLIC_SAFE")
@@ -1368,6 +1457,8 @@ def group_found_surfaces(repo_root: Path, spec: DetectionSpec) -> tuple[list[dic
 
 
 def assert_proof_record(repo_root: Path, spec: DetectionSpec) -> tuple[bool, bool]:
+    if spec.proof_record is None:
+        return False, False
     record_path = repo_root / spec.proof_record
     record_text = load_text(record_path)
     for required_text in (spec.detection_id, "NOT_PUBLIC_SAFE", "Blocked Claims"):
@@ -1385,6 +1476,14 @@ def assert_proof_record(repo_root: Path, spec: DetectionSpec) -> tuple[bool, boo
 
 
 def gate_summary(spec: DetectionSpec) -> list[dict[str, Any]]:
+    platform_claim = "platform guardrail reported"
+    if spec.platform_sample is None:
+        platform_claim = "platform status visibility only"
+    proof_status = "FOUND"
+    proof_claim = "proof state reported, not promoted"
+    if spec.proof_record is None:
+        proof_status = "NOT_REQUIRED_FOR_CONTROLLED_TEST_VALIDATION"
+        proof_claim = "no proof record required or promoted for controlled-test validation"
     return [
         {
             "gate": "source",
@@ -1404,14 +1503,14 @@ def gate_summary(spec: DetectionSpec) -> list[dict[str, Any]]:
             "gate": "platform_guardrail",
             "status": spec.platform_guardrail_status,
             "owner_repo": "hawkinsoperations-platform",
-            "claim": "platform guardrail reported",
+            "claim": platform_claim,
             "promotion_allowed": False,
         },
         {
             "gate": "proof_record",
-            "status": "FOUND",
+            "status": proof_status,
             "owner_repo": "hawkinsoperations-proof",
-            "claim": "proof state reported, not promoted",
+            "claim": proof_claim,
             "promotion_allowed": False,
         },
         {
@@ -1450,7 +1549,10 @@ def build_packet(repo_root: Path, spec: DetectionSpec) -> dict[str, Any]:
     )
     require_blocked_claims(validation_blocked, validation_required, spec.validation_result)
 
-    platform_claims = platform_sample_claims(spec, load_json(repo_root / spec.platform_sample))
+    platform_claims = platform_sample_claims(
+        spec,
+        {} if spec.platform_sample is None else load_json(repo_root / spec.platform_sample),
+    )
     record_exists, card_exists = assert_proof_record(repo_root, spec)
 
     return {
@@ -1499,7 +1601,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="mode", required=True)
     for mode in ("status", "plan"):
         sub = subparsers.add_parser(mode)
-        sub.add_argument("--detection", required=True, choices=("HO-DET-001", "HO-DET-011", "all"))
+        sub.add_argument("--detection", required=True, choices=("HO-DET-001", "HO-DET-011", "HO-DET-012", "all"))
         sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
         sub.add_argument("--format", default="json", choices=("json",))
     for mode in ("ledger-init-sample", "ledger-verify", "ledger-metrics"):

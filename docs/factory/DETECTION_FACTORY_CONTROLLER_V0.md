@@ -7,7 +7,7 @@ for reading HawkinsOperations detection state across the local organization
 mirror.
 
 The v0 controller is intentionally narrow. It produces reviewer packets for
-`HO-DET-001` and `HO-DET-011` from existing repo surfaces. It does not promote
+`HO-DET-001`, `HO-DET-011`, and `HO-DET-012` from existing repo surfaces. It does not promote
 proof, publish evidence, update the website, create pull requests, merge
 changes, or write generated output files.
 
@@ -33,6 +33,7 @@ v0 supports:
 
 - `HO-DET-001`
 - `HO-DET-011`
+- `HO-DET-012`
 
 Any other detection ID must fail closed as unsupported.
 
@@ -79,6 +80,12 @@ The existing platform `HO-DET-011` case-packet guardrail is pinned to an older
 controlled-test fixtures. v0 must not repair that drift. It must report
 `STATE_DRIFT_REVIEW_REQUIRED` in `state_consistency`.
 
+`HO-DET-012` must report `CONTROLLED_TEST_VALIDATED` for controlled scheduled
+task creation and update fixtures only. It has no proof record in v0, no
+platform sample guardrail in v0, and no runtime-active, signal-observed,
+public-safe, or scheduled-task coverage completeness claim. The platform entry
+is status visibility only.
+
 ## CLI Contract
 
 Entry point:
@@ -86,6 +93,8 @@ Entry point:
 ```powershell
 python -B scripts\ho_factory.py status --detection HO-DET-001 --repo-root "<ORG_REPO_ROOT>" --format json
 python -B scripts\ho_factory.py status --detection HO-DET-011 --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py status --detection HO-DET-012 --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py plan --detection HO-DET-012 --repo-root "<ORG_REPO_ROOT>" --format json
 python -B scripts\ho_factory.py plan --detection all --repo-root "<ORG_REPO_ROOT>" --format json
 ```
 
