@@ -367,6 +367,46 @@
           "items": {
             "type": "string"
           }
+        },
+        "current_phase": {
+          "type": "string"
+        },
+        "next_gates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "purpose",
+              "claim_ceiling",
+              "boundary"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "purpose": {
+                "type": "string"
+              },
+              "claim_ceiling": {
+                "type": "string"
+              },
+              "boundary": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "not_claimed_here": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     }

@@ -178,6 +178,8 @@ class DetectionSpec:
     state_consistency: tuple[str, ...]
     does_not_prove: tuple[str, ...]
     surfaces: tuple[Surface, ...]
+    next_gates: tuple[dict[str, str], ...] = ()
+    not_claimed_here: tuple[str, ...] = ()
 
 
 COMMON_BLOCKED = (
@@ -1448,6 +1450,47 @@ SPECS: dict[str, DetectionSpec] = {
             Surface("hawkinsoperations-platform", "scripts/ho_factory.py"),
             Surface("hawkinsoperations-platform", "docs/factory/DETECTION_FACTORY_CONTROLLER_V0.md"),
         ),
+        next_gates=(
+            {
+                "id": "ID-RUNTIME-001",
+                "name": "private runtime receipt",
+                "purpose": "Proxmox and Windows identity private runtime receipt with approved metadata and count-only Wazuh/Splunk receipt review.",
+                "claim_ceiling": "PRIVATE_RUNTIME_METADATA_CAPTURED",
+                "boundary": "Not public proof. Not production coverage. Not public-safe.",
+            },
+            {
+                "id": "ID-CLOUD-001",
+                "name": "IdP export/log review",
+                "purpose": "Approved Entra-style or Okta-style identity log export review after a separate gate.",
+                "claim_ceiling": "CONTROLLED_TEST_VALIDATED first, then PRIVATE_RUNTIME_METADATA_CAPTURED only if approved sanitized export review exists.",
+                "boundary": "No live IdP proof in this PR. No production tenant claim.",
+            },
+            {
+                "id": "ID-AGENT-001",
+                "name": "AI or machine identity tool-scope validation",
+                "purpose": "Validate AI or machine identity behavior where observed action is outside approved tool or resource scope.",
+                "claim_ceiling": "CONTROLLED_TEST_VALIDATED",
+                "boundary": "No autonomous SOC claim. No AI disposition authority.",
+            },
+            {
+                "id": "ID-ROUTE-001",
+                "name": "SIEM/NDR route receipt",
+                "purpose": "Count-only Wazuh, Splunk, Cribl, and Security Onion route checks after separate approval.",
+                "claim_ceiling": "PRIVATE_RUNTIME_METADATA_CAPTURED if receipt exists.",
+                "boundary": "No live SIEM/NDR public proof in this PR. No full route proof unless separately captured and reviewed.",
+            },
+        ),
+        not_claimed_here=(
+            "live IdP proof",
+            "live SIEM/NDR observation",
+            "production identity coverage",
+            "complete identity-attack coverage",
+            "autonomous SOC operation",
+            "disposition authority",
+            "proof promotion",
+            "public-safe status",
+            "website/public-surface publication",
+        ),
     ),
     "HO-DET-012": DetectionSpec(
         detection_id="HO-DET-012",
@@ -1763,7 +1806,7 @@ def build_packet(repo_root: Path, spec: DetectionSpec) -> dict[str, Any]:
     )
     record_exists, card_exists = assert_proof_record(repo_root, spec)
 
-    return {
+    packet = {
         "controller_version": CONTROLLER_VERSION,
         "detection_id": spec.detection_id,
         "current_state": spec.current_state,
@@ -1802,6 +1845,11 @@ def build_packet(repo_root: Path, spec: DetectionSpec) -> dict[str, Any]:
         "state_consistency": list(spec.state_consistency),
         "does_not_prove": list(spec.does_not_prove),
     }
+    if spec.next_gates or spec.not_claimed_here:
+        packet["current_phase"] = spec.current_state
+        packet["next_gates"] = list(spec.next_gates)
+        packet["not_claimed_here"] = list(spec.not_claimed_here)
+    return packet
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:

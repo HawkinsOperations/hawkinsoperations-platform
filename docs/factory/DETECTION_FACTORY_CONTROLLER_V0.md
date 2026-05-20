@@ -93,6 +93,23 @@ guardrail in v0, and no runtime-active, signal-observed, public-safe, live IdP,
 production identity coverage, impossible-travel completeness, or session
 hijacking completeness claim. The platform entry is status/plan visibility only.
 
+The `ID-DET-001` packet also reports the next gated phases without claiming they
+are complete:
+
+- `ID-RUNTIME-001`: Proxmox and Windows private runtime identity receipt with
+  approved metadata, Wazuh count-only receipt, Splunk count-only receipt, and
+  platform private ledger review.
+- `ID-CLOUD-001`: IdP export/log review lane for approved Entra-style or
+  Okta-style identity log exports.
+- `ID-AGENT-001`: AI or machine identity tool-scope validation lane.
+- `ID-ROUTE-001`: SIEM/NDR route receipt lane for count-only Wazuh, Splunk,
+  Cribl, and Security Onion route checks.
+
+These are future gates only. The current controller packet does not claim live
+IdP proof, live SIEM/NDR observation, production identity coverage, complete
+identity-attack coverage, autonomous SOC operation, disposition authority, proof
+promotion, public-safe status, or website/public-surface publication.
+
 ## CLI Contract
 
 Entry point:
