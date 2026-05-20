@@ -25,9 +25,12 @@ DEFAULT_REPO_ROOT = PLATFORM_ROOT.parent
 DEFAULT_CASE_LEDGER = PLATFORM_ROOT / "evidence" / "autosoc-case-ledger-v0.sqlite"
 SPLUNK_HO_DET_001_APPEND_APPROVAL = "APPEND_ONE_SANITIZED_SPLUNK_HO_DET_001_RUNTIME_CASE_APPROVED"
 RUNTIME_LEDGER_TRUTH_BOUNDARY = "private_runtime_review_only_not_public_proof_not_public_safe"
+RUNTIME_REVIEW_SUPPORTED_CLAIM = "PRIVATE_RUNTIME_REVIEW_SUPPORT_ONLY"
+RUNTIME_REVIEW_APPEND_APPROVAL = "SEPARATE_RUNTIME_LEDGER_APPEND_APPROVAL_REQUIRED"
 RUNTIME_REVIEW_NEXT_ALLOWED_MOVE = (
-    "Review the sanitized runtime case packet and metrics snapshot. Any append remains blocked unless "
-    f"{SPLUNK_HO_DET_001_APPEND_APPROVAL} is explicitly provided."
+    "Review the sanitized runtime case packet and metrics snapshot. Runtime append, proof promotion, "
+    "public-safe promotion, GitHub Issue mutation, case closure, and AI or analyst disposition authority "
+    f"remain blocked unless a separate scoped approval such as {RUNTIME_REVIEW_APPEND_APPROVAL} is provided."
 )
 
 CASE_LEDGER_TRUTH_CLASSES = (
@@ -631,6 +634,7 @@ def runtime_ledger_review_case_from_conn(conn: sqlite3.Connection, ledger_label:
             "scanned_fields": list(CASE_LEDGER_TEXT_SCAN_FIELDS),
         },
         "verification": verification,
+        "supported_claim": RUNTIME_REVIEW_SUPPORTED_CLAIM,
         "supported_internal_claim": (
             f"Sanitized runtime ledger case {event['case_id']} exists for human review under "
             f"{event['truth_class']} with {event['case_status']} status."
@@ -649,7 +653,7 @@ def runtime_ledger_review_case_from_conn(conn: sqlite3.Connection, ledger_label:
             "proof_blocked": True,
         },
         "next_allowed_move": RUNTIME_REVIEW_NEXT_ALLOWED_MOVE,
-        "append_required_before_next_case": SPLUNK_HO_DET_001_APPEND_APPROVAL,
+        "append_required_before_next_case": RUNTIME_REVIEW_APPEND_APPROVAL,
         "proof_boundary": (
             "Local runtime ledger review only. Not proof promotion, not public-safe approval, "
             "not GitHub Issue mutation, not case closure, and not AI disposition authority."
@@ -961,6 +965,48 @@ def self_test_runtime_event(
     return event
 
 
+def self_test_ho_det_012_private_receipt_event() -> dict[str, Any]:
+    payload = {
+        "marker_family": "batch002_self_test_marker",
+        "splunk_sysmon_count": 13,
+        "wazuh_alert_count": 87,
+        "cribl_status": "service_metadata_ready_route_receipt_not_proven",
+        "security_onion_status": "route_ready_status_sudo_blocked_marker_not_proven",
+        "truth_boundary": (
+            "Sanitized private runtime metadata receipt for review support only. "
+            "Not public proof, not public-safe, not route-complete, and not case closure."
+        ),
+    }
+    event = {
+        "inserted_at": "2026-05-19T00:00:00Z",
+        "ledger_version": CASE_LEDGER_VERSION,
+        "case_id": "HO-DET-012-PRIVATE-RUNTIME-RECEIPT-SELFTEST",
+        "detection_id": "HO-DET-012",
+        "truth_class": "PRIVATE_RUNTIME_EVIDENCE",
+        "case_status": "HUMAN_REVIEW_REQUIRED",
+        "proof_ceiling": "PRIVATE_RUNTIME_METADATA_CAPTURED",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "ai_support_mode": "AI_SUPPORT_ONLY",
+        "ai_decided_disposition": False,
+        "recommended_disposition": None,
+        "deterministic_close_eligible": False,
+        "deterministic_close_blocked": True,
+        "human_review_required": True,
+        "gpu_supported": False,
+        "public_safe": False,
+        "proof_blocked": True,
+        "github_issue_mutation_allowed": False,
+        "case_closed": False,
+        "legacy_import_count": 0,
+        "payload_json": payload,
+        "source_packet_ref": "private-runtime-receipt:self-test",
+    }
+    event_hash_input = dict(event)
+    event_hash_input["payload_json"] = payload
+    event["event_hash"] = hashlib.sha256(stable_json(event_hash_input).encode("utf-8")).hexdigest()
+    return event
+
+
 def self_test_runtime_conn(
     *,
     event_updates: dict[str, Any] | None = None,
@@ -978,6 +1024,15 @@ def self_test_runtime_conn(
     conn.execute("PRAGMA ignore_check_constraints = ON")
     insert_case_event_unchecked(conn, event)
     conn.execute("PRAGMA ignore_check_constraints = OFF")
+    conn.commit()
+    return conn
+
+
+def self_test_ho_det_012_private_receipt_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    initialize_ledger_schema(conn)
+    event = self_test_ho_det_012_private_receipt_event()
+    insert_case_event_unchecked(conn, event)
     conn.commit()
     return conn
 
@@ -1059,10 +1114,57 @@ def runtime_review_self_tests() -> dict[str, Any]:
             ),
         ),
     ]
+    ho_det_012_review = runtime_ledger_review_case_from_conn(
+        self_test_ho_det_012_private_receipt_conn(),
+        "memory:self-test",
+        "HO-DET-012-PRIVATE-RUNTIME-RECEIPT-SELFTEST",
+    )
+    ho_det_012_case = ho_det_012_review["case"]
+    if ho_det_012_case["detection_id"] != "HO-DET-012":
+        raise FactoryError("HO-DET-012 private receipt self-test reviewed the wrong detection")
+    if ho_det_012_case["truth_class"] != "PRIVATE_RUNTIME_EVIDENCE":
+        raise FactoryError("HO-DET-012 private receipt self-test must remain private runtime evidence")
+    if ho_det_012_case["case_status"] != "HUMAN_REVIEW_REQUIRED":
+        raise FactoryError("HO-DET-012 private receipt self-test must require human review")
+    if ho_det_012_case["proof_ceiling"] != "PRIVATE_RUNTIME_METADATA_CAPTURED":
+        raise FactoryError("HO-DET-012 private receipt self-test must keep private metadata ceiling")
+    if ho_det_012_case["public_safe_status"] != "NOT_PUBLIC_SAFE":
+        raise FactoryError("HO-DET-012 private receipt self-test must remain NOT_PUBLIC_SAFE")
+    expected_boundary = {
+        "github_issue_mutation_allowed": False,
+        "case_closed": False,
+        "ai_decided_disposition": False,
+        "deterministic_close_eligible": False,
+        "human_review_required": True,
+        "proof_promotion_allowed": False,
+        "public_safe_promotion_allowed": False,
+        "ai_disposition_authority": False,
+        "public_safe": False,
+        "proof_blocked": True,
+    }
+    if ho_det_012_review["boundary_confirmations"] != expected_boundary:
+        raise FactoryError("HO-DET-012 private receipt self-test boundary confirmations changed")
     return {
         "status": "pass",
         "mode": "in_memory_no_files_no_runtime_mutation",
         "negative_checks": passed,
+        "positive_checks": [
+            {
+                "name": "HO-DET-012 private runtime receipt review support",
+                "case_id": ho_det_012_case["case_id"],
+                "detection_id": ho_det_012_case["detection_id"],
+                "truth_class": ho_det_012_case["truth_class"],
+                "case_status": ho_det_012_case["case_status"],
+                "proof_ceiling": ho_det_012_case["proof_ceiling"],
+                "public_safe_status": ho_det_012_case["public_safe_status"],
+                "human_review_required": ho_det_012_case["human_review_required"],
+                "proof_promotion_allowed": ho_det_012_review["boundary_confirmations"]["proof_promotion_allowed"],
+                "public_safe_promotion_allowed": ho_det_012_review["boundary_confirmations"]["public_safe_promotion_allowed"],
+                "github_issue_mutation_allowed": ho_det_012_review["boundary_confirmations"]["github_issue_mutation_allowed"],
+                "case_closed": ho_det_012_review["boundary_confirmations"]["case_closed"],
+                "ai_decided_disposition": ho_det_012_review["boundary_confirmations"]["ai_decided_disposition"],
+            }
+        ],
     }
 
 
