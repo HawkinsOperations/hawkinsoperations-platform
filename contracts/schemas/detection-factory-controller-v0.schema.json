@@ -130,6 +130,95 @@
         }
       }
     },
+    "proof_status_index_visibility": {
+      "type": "object",
+      "required": [
+        "index_path",
+        "truth_owner",
+        "visibility_owner",
+        "visibility_status",
+        "detection_id",
+        "source_status",
+        "validation_status",
+        "proof_ceiling",
+        "runtime_status",
+        "signal_status",
+        "public_safe_status",
+        "website_status",
+        "promotion_allowed",
+        "proof_promotion_allowed",
+        "runtime_signal_promotion_allowed",
+        "public_safe_promotion_allowed",
+        "website_proof_claim_allowed",
+        "claim_boundary"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "index_path": {
+          "const": "hawkinsoperations-proof/proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml"
+        },
+        "truth_owner": {
+          "const": "hawkinsoperations-proof"
+        },
+        "visibility_owner": {
+          "const": "hawkinsoperations-platform"
+        },
+        "visibility_status": {
+          "const": "STATUS_VISIBILITY_ONLY_NON_AUTHORITATIVE"
+        },
+        "detection_id": {
+          "type": "string"
+        },
+        "source_status": {
+          "type": "string"
+        },
+        "validation_status": {
+          "type": "string"
+        },
+        "proof_ceiling": {
+          "enum": [
+            "NO_PROOF_RECORD",
+            "CONTROLLED_TEST_VALIDATED",
+            "PRIVATE_RUNTIME_EVIDENCE_CAPTURED",
+            "CROSS_SOURCE_CORROBORATION_CONTRACT_DEFINED"
+          ]
+        },
+        "runtime_status": {
+          "enum": [
+            "NOT_PROVEN",
+            "PRIVATE_RUNTIME_BOUNDARY_CONTEXT_ONLY",
+            "PRIVATE_RUNTIME_EVIDENCE_CAPTURED"
+          ]
+        },
+        "signal_status": {
+          "const": "NOT_PROVEN"
+        },
+        "public_safe_status": {
+          "const": "NOT_PUBLIC_SAFE"
+        },
+        "website_status": {
+          "const": "WEBSITE_UNTOUCHED_NOT_PROOF"
+        },
+        "promotion_allowed": {
+          "const": false
+        },
+        "proof_promotion_allowed": {
+          "const": false
+        },
+        "runtime_signal_promotion_allowed": {
+          "const": false
+        },
+        "public_safe_promotion_allowed": {
+          "const": false
+        },
+        "website_proof_claim_allowed": {
+          "const": false
+        },
+        "claim_boundary": {
+          "type": "string"
+        }
+      }
+    },
     "gate_summary_item": {
       "type": "object",
       "required": [
@@ -370,6 +459,9 @@
         },
         "proof_state": {
           "$ref": "#/$defs/proof_state"
+        },
+        "proof_status_index_visibility": {
+          "$ref": "#/$defs/proof_status_index_visibility"
         },
         "platform_guardrail_status": {
           "type": "string"

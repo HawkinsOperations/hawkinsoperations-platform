@@ -12,6 +12,13 @@ The v0 controller is intentionally narrow. It produces reviewer packets for
 visibility inputs. It does not promote proof, publish evidence, update the
 website, create pull requests, merge changes, or write generated output files.
 
+After Phase 2D, the controller also reads
+`hawkinsoperations-proof/proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml` and
+emits `proof_status_index_visibility` as platform visibility metadata only. The
+proof index remains owned by `hawkinsoperations-proof`; platform output does not
+become proof truth and does not promote runtime, signal, public-safe, or website
+status.
+
 ## Controller Boundary
 
 The controller is source and contract truth for a read-only platform view.
@@ -23,6 +30,8 @@ Required boundary statements:
 - Website and GitHub rendering are not proof.
 - AI output is labor only.
 - Evidence and human review authorize claims.
+- The proof status index is proof-owned truth; platform reports it as
+  non-authoritative visibility only.
 - Public-safe status remains `NOT_PUBLIC_SAFE` unless separately approved.
 - Runtime-active, signal-observed, production-ready, fleet-wide, autonomous SOC,
   live Splunk, Cribl-routed, Wazuh-routed, AWS-live, AI-approved, and
@@ -70,6 +79,7 @@ Each reviewer packet must include:
 - `required_surfaces_missing`
 - `validation_state`
 - `proof_state`
+- `proof_status_index_visibility`
 - `platform_guardrail_status`
 - `blocked_claims`
 - `supported_claims`
@@ -87,6 +97,13 @@ signal-observed, or public-safe proof.
 
 `HO-DET-011` must report `PRIVATE_RUNTIME_EVIDENCE_CAPTURED` where supported by
 the proof record. Public-safe status remains `NOT_PUBLIC_SAFE`.
+
+`proof_status_index_visibility` must fail closed if the proof index is missing,
+malformed, missing the requested detection ID, or attempts to promote
+`public_safe_status`, `signal_status`, website proof, or unsupported proof
+ceilings. Private runtime boundary values may be reported only as proof-index
+visibility metadata and only where the existing proof record supports that
+private boundary status.
 
 The existing platform `HO-DET-011` case-packet guardrail is pinned to an older
 6-case sample. Current detection, validation, and proof surfaces record 17
