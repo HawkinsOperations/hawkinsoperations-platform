@@ -1,0 +1,213 @@
+{
+  "packet_id": "SOAR-CASE-PACKET-V0-SAMPLE-001",
+  "packet_type": "soar_style_analyst_support_case_packet",
+  "contract_version": "soar-case-packet-v0",
+  "workflow_model": "deterministic_analyst_support_only",
+  "claim_ceiling": "SOAR_STYLE_ANALYST_SUPPORT_CONTRACT_WITH_DETERMINISTIC_VALIDATION",
+  "detection_id": "HO-DET-001",
+  "technique_id": "T1059.001",
+  "tactic_id": "TA0002",
+  "alert_summary": {
+    "title": "Encoded PowerShell process creation controlled-test alert",
+    "severity": "medium",
+    "summary": "Sanitized process facts indicate a controlled-test encoded PowerShell candidate that should be handed to a human analyst with required context checks.",
+    "supported_scope": "controlled analyst-support workflow modeling only",
+    "validation_basis": "committed sanitized sample plus deterministic verifier"
+  },
+  "source_event_refs": [
+    {
+      "ref_id": "sanitized-ref-001",
+      "source_type": "controlled_process_creation_fixture",
+      "sanitized": true,
+      "raw_event_included": false,
+      "reference": "hawkinsoperations-validation/validation/successor/ho-det-001/case-packet.json"
+    }
+  ],
+  "enrichment": {
+    "detection_context": "Encoded command feature matched a controlled process-creation fixture.",
+    "validation_context": "Controlled positive and negative fixture behavior is the only validation basis represented here.",
+    "known_false_positive_notes": [
+      "Administrative scripts can use encoded command arguments.",
+      "Deployment tooling can launch shell commands with encoded content."
+    ],
+    "risk_indicators": [
+      "encoded command feature present",
+      "PowerShell process family",
+      "script execution tactic mapping"
+    ],
+    "missing_context": [
+      "human business justification review",
+      "approved change or automation record",
+      "separate evidence route for any response decision"
+    ]
+  },
+  "entities": {
+    "user": {
+      "value": "CONTROLLED_TEST_USER",
+      "sanitized": true,
+      "raw_value_included": false
+    },
+    "host": {
+      "value": "CONTROLLED_TEST_ENDPOINT",
+      "sanitized": true,
+      "raw_value_included": false
+    },
+    "process": {
+      "image": "powershell.exe",
+      "command_line_features": [
+        "encoded_command_feature",
+        "controlled_test_marker"
+      ],
+      "sanitized": true,
+      "raw_command_line_included": false
+    },
+    "parent_process": {
+      "image": "cmd.exe",
+      "command_line_features": [
+        "launches_child_process"
+      ],
+      "sanitized": true,
+      "raw_command_line_included": false
+    },
+    "source": {
+      "value": "controlled_fixture_source",
+      "sanitized": true,
+      "raw_value_included": false
+    },
+    "destination": {
+      "value": "not_applicable_for_process_fixture",
+      "sanitized": true,
+      "raw_value_included": false
+    },
+    "risk_indicators": [
+      "encoded command feature present",
+      "script interpreter process",
+      "human review required before response"
+    ]
+  },
+  "analyst_checklist": [
+    {
+      "step_id": "check-001",
+      "question": "Does the sanitized process context match the detection's expected field requirements?",
+      "required_before_action": true
+    },
+    {
+      "step_id": "check-002",
+      "question": "Is there a known approved automation or change record that explains the encoded command feature?",
+      "required_before_action": true
+    },
+    {
+      "step_id": "check-003",
+      "question": "Are required source, user, host, process, and parent-process fields present after sanitization?",
+      "required_before_action": true
+    },
+    {
+      "step_id": "check-004",
+      "question": "Has a human reviewer approved any response action through a separate evidence route?",
+      "required_before_action": true
+    }
+  ],
+  "recommended_next_questions": [
+    "What approved automation or change context explains this process pattern?",
+    "Which fields are missing before a human can review the case?",
+    "What separate evidence route would be required before any response action?"
+  ],
+  "response_gates": {
+    "containment": {
+      "status": "blocked",
+      "requires_human_approval": true,
+      "executed": false
+    },
+    "closure": {
+      "status": "blocked",
+      "requires_human_approval": true,
+      "executed": false
+    },
+    "suppression": {
+      "status": "blocked",
+      "requires_human_approval": true,
+      "executed": false
+    },
+    "account_disable": {
+      "status": "blocked",
+      "requires_human_approval": true,
+      "executed": false
+    },
+    "public_proof": {
+      "status": "blocked",
+      "requires_human_approval": true,
+      "executed": false
+    }
+  },
+  "blocked_actions": [
+    "contain host",
+    "close case",
+    "suppress detection",
+    "disable account",
+    "isolate endpoint",
+    "declare compromise",
+    "mark malicious",
+    "approve public proof"
+  ],
+  "automation_metrics": {
+    "checklist_steps": 4,
+    "blocked_action_count": 8,
+    "human_gate_count": 5,
+    "sanitized_event_ref_count": 1,
+    "deterministic_validation": true
+  },
+  "ai_support_summary": {
+    "mode": "AI_SUPPORT_ONLY",
+    "allowed_outputs": [
+      "summarize sanitized facts",
+      "identify missing context",
+      "draft questions for human review",
+      "map relevant fields to checklist steps"
+    ],
+    "authority_boundary": "AI output may support review, but it cannot decide disposition, execute response, approve proof, or close the case."
+  },
+  "human_review_required": true,
+  "ai_decided_disposition": false,
+  "recommended_disposition": null,
+  "public_safe": false,
+  "claim_boundary": {
+    "supported_claim": "SOAR-style analyst-support case packet contract with deterministic validation.",
+    "not_supported": [
+      "live Torq",
+      "live SOAR",
+      "production SOC",
+      "production response automation",
+      "runtime-active proof",
+      "signal-observed public proof",
+      "evidence-linked public proof",
+      "public-safe proof",
+      "autonomous SOC",
+      "AI-approved disposition",
+      "analyst-approved disposition",
+      "containment execution",
+      "closure execution",
+      "suppression execution",
+      "bank-grade deployment",
+      "SOCaaS availability"
+    ],
+    "public_claim_allowed": false
+  },
+  "does_not_prove": [
+    "live Torq",
+    "live SOAR",
+    "production SOC",
+    "production response automation",
+    "runtime-active proof",
+    "signal-observed public proof",
+    "evidence-linked public proof",
+    "public-safe proof",
+    "autonomous SOC",
+    "AI-approved disposition",
+    "analyst-approved disposition",
+    "containment execution",
+    "closure execution",
+    "suppression execution",
+    "bank-grade deployment",
+    "SOCaaS availability"
+  ]
+}
