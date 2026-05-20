@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import re
 import sys
@@ -158,6 +160,10 @@ def validate_schema_if_possible(sample: dict[str, Any], schema: dict[str, Any]) 
         fail(f"schema validation failed: {exc}")
 
 
+def is_json_schema_integer(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def validate_schema_subset(
     value: Any,
     schema: dict[str, Any],
@@ -214,7 +220,7 @@ def validate_schema_subset(
             fail(f"schema validation failed: {path} must not be empty")
     elif schema_type == "boolean" and not isinstance(value, bool):
         fail(f"schema validation failed: {path} must be boolean")
-    elif schema_type == "integer" and not isinstance(value, int):
+    elif schema_type == "integer" and not is_json_schema_integer(value):
         fail(f"schema validation failed: {path} must be integer")
     elif schema_type == "null" and value is not None:
         fail(f"schema validation failed: {path} must be null")
@@ -225,7 +231,7 @@ def validate_schema_subset(
     if isinstance(enum, list) and value not in enum:
         fail(f"schema validation failed: {path} is not an allowed value: {value!r}")
     minimum = schema.get("minimum")
-    if isinstance(minimum, int) and isinstance(value, int) and value < minimum:
+    if isinstance(minimum, int) and is_json_schema_integer(value) and value < minimum:
         fail(f"schema validation failed: {path} must be at least {minimum}")
 
 
@@ -385,10 +391,29 @@ def require_metric_consistency(sample: dict[str, Any]) -> None:
         fail("automation_metrics.deterministic_validation must be true")
 
 
+def schema_subset_rejects(value: Any, schema: dict[str, Any]) -> bool:
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            validate_schema_subset(value, schema, "$.integer_regression")
+    except SystemExit:
+        return True
+    return False
+
+
+def require_integer_fallback_regression() -> None:
+    integer_schema = {"type": "integer", "minimum": 1}
+    if not schema_subset_rejects(True, integer_schema):
+        fail("integer fallback accepted boolean true")
+    if not schema_subset_rejects(False, integer_schema):
+        fail("integer fallback accepted boolean false")
+    validate_schema_subset(1, integer_schema, "$.integer_regression")
+
+
 def main() -> int:
     sample = load_json(SAMPLE_PATH)
     schema = load_json(SCHEMA_PATH)
 
+    require_integer_fallback_regression()
     validate_schema_if_possible(sample, schema)
     require_expected_values(sample)
     require_blocked_actions(sample)
