@@ -266,7 +266,8 @@
           "enum": [
             "HO-DET-001",
             "HO-DET-011",
-            "HO-DET-012"
+            "HO-DET-012",
+            "ID-DET-001"
           ]
         },
         "current_state": {
