@@ -63,11 +63,11 @@ The controller entry point is:
 
 - `scripts/ho_factory.py`
 
-v0 supports status and plan reviewer packets for `HO-DET-001` and
-`HO-DET-011`. It is read-only and stdout-only. It does not create generated
-output files, promote proof, publish evidence, update website wording, create
-pull requests, merge changes, or claim public-safe/runtime-active/signal-
-observed status.
+v0 supports status and plan reviewer packets for `HO-DET-001`, `HO-DET-011`,
+`HO-DET-012`, `ID-DET-001`, `ID-DET-002`, `ID-DET-003`, and `ID-DET-004`.
+It is read-only and stdout-only. It does not create generated output files,
+promote proof, publish evidence, update website wording, create pull requests,
+merge changes, or claim public-safe/runtime-active/signal-observed status.
 
 Reviewer packets include `gate_summary`, `decision`, and `truth_boundary`
 fields so reviewers can see the source, validation, platform guardrail, proof
@@ -77,6 +77,11 @@ record, blocked-claim, and next-legal-move chain without inferring promotion.
 platform case-packet guardrail sample remains pinned to an earlier 6-case shape
 while current detection, validation, and proof surfaces record 17 controlled-
 test fixtures. v0 reports that drift; it does not repair it.
+
+`ID-DET-002`, `ID-DET-003`, and `ID-DET-004` are validation-backed platform
+visibility packets after `hawkinsoperations-validation` PR #46. They report
+controlled-test validation visibility only and keep proof, runtime, signal,
+public-safe, production identity coverage, and live IdP/SIEM/NDR claims blocked.
 
 ## Local GPU Triage Pipeline v0
 

@@ -238,8 +238,15 @@
       "required": [
         "controller_version",
         "detection_id",
+        "detection_title",
         "current_state",
+        "source_status",
+        "validation_status",
+        "runtime_status",
+        "signal_status",
+        "evidence_status",
         "public_proof_ceiling",
+        "proof_ceiling",
         "private_evidence_state",
         "public_safe_status",
         "runtime_active",
@@ -257,6 +264,7 @@
         "blocked_claims",
         "supported_claims",
         "next_allowed_move",
+        "next_gate",
         "stop_conditions",
         "state_consistency",
         "does_not_prove"
@@ -271,13 +279,39 @@
             "HO-DET-001",
             "HO-DET-011",
             "HO-DET-012",
-            "ID-DET-001"
+            "ID-DET-001",
+            "ID-DET-002",
+            "ID-DET-003",
+            "ID-DET-004"
           ]
+        },
+        "detection_title": {
+          "type": "string"
         },
         "current_state": {
           "type": "string"
         },
+        "source_status": {
+          "type": "string"
+        },
+        "validation_status": {
+          "type": "string"
+        },
+        "runtime_status": {
+          "type": "string"
+        },
+        "signal_status": {
+          "type": "string"
+        },
+        "evidence_status": {
+          "type": "string"
+        },
         "public_proof_ceiling": {
+          "enum": [
+            "CONTROLLED_TEST_VALIDATED"
+          ]
+        },
+        "proof_ceiling": {
           "enum": [
             "CONTROLLED_TEST_VALIDATED"
           ]
@@ -362,6 +396,9 @@
           ]
         },
         "next_allowed_move": {
+          "type": "string"
+        },
+        "next_gate": {
           "type": "string"
         },
         "stop_conditions": {
