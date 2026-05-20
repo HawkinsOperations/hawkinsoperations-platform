@@ -212,6 +212,173 @@ PLATFORM_SAMPLE_BLOCKED = (
     "AI-approved disposition",
 )
 
+DETECTION_TITLES = {
+    "HO-DET-001": "Suspicious PowerShell EncodedCommand",
+    "HO-DET-011": "Windows service persistence",
+    "HO-DET-012": "Suspicious scheduled task creation",
+    "ID-DET-001": "Suspicious identity session context",
+    "ID-DET-002": "Suspicious MFA fatigue or repeated MFA failure patterns",
+    "ID-DET-003": "Privileged role assignment or admin group change behavior",
+    "ID-DET-004": "Impossible travel or anomalous session context",
+}
+
+IDENTITY_EXPANSION_BLOCKED = (
+    *COMMON_BLOCKED,
+    "evidence-linked public proof",
+    "live Okta proof",
+    "live Entra proof",
+    "live IdP proof",
+    "live Splunk proof",
+    "Wazuh-routed proof",
+    "Cribl-routed proof",
+    "Security Onion observed proof",
+    "production identity coverage",
+    "full identity attack coverage",
+    "proof promotion",
+    "website/public-surface promotion",
+)
+
+IDENTITY_EXPANSION_NEXT_GATES = (
+    {
+        "id": "ID-RUNTIME-001",
+        "name": "private runtime receipt",
+        "purpose": "Private identity runtime receipt with approved metadata and count-only Wazuh/Splunk receipt review.",
+        "claim_ceiling": "PRIVATE_RUNTIME_METADATA_CAPTURED only if separately approved and reviewed",
+        "boundary": "Not public proof. Not production coverage. Not public-safe.",
+    },
+    {
+        "id": "ID-CLOUD-001",
+        "name": "IdP export/log review",
+        "purpose": "Approved Entra-style or Okta-style identity log export review after a separate gate.",
+        "claim_ceiling": "CONTROLLED_TEST_VALIDATED first, then PRIVATE_RUNTIME_METADATA_CAPTURED only if approved sanitized export review exists.",
+        "boundary": "No live IdP proof in this PR. No production tenant claim.",
+    },
+    {
+        "id": "ID-ROUTE-001",
+        "name": "SIEM/NDR route receipt",
+        "purpose": "Count-only Wazuh, Splunk, Cribl, and Security Onion route checks after separate approval.",
+        "claim_ceiling": "PRIVATE_RUNTIME_METADATA_CAPTURED if a scoped receipt exists.",
+        "boundary": "No live SIEM/NDR public proof in this PR. No full route proof unless separately captured and reviewed.",
+    },
+)
+
+IDENTITY_EXPANSION_NOT_CLAIMED = (
+    "live IdP proof",
+    "live SIEM/NDR observation",
+    "production identity coverage",
+    "complete identity-attack coverage",
+    "autonomous SOC operation",
+    "disposition authority",
+    "proof promotion",
+    "public-safe status",
+    "website/public-surface publication",
+)
+
+
+def identity_expansion_spec(
+    detection_id: str,
+    validation_claim: str,
+    validation_rel: str,
+    scanner_rel: str,
+    parity_rel: str,
+    validator_rel: str,
+    extra_blocked_claims: tuple[str, ...] = (),
+) -> DetectionSpec:
+    lower_id = detection_id.lower()
+    return DetectionSpec(
+        detection_id=detection_id,
+        current_state="CONTROLLED_TEST_VALIDATED",
+        public_proof_ceiling="CONTROLLED_TEST_VALIDATED",
+        private_evidence_state="NOT_CAPTURED",
+        public_safe_status="NOT_PUBLIC_SAFE",
+        platform_guardrail_status="STATUS_VISIBILITY_ONLY",
+        validation_result=f"hawkinsoperations-validation/reports/{lower_id}/validation-result.json",
+        validation_expected={
+            "total_cases": 10,
+            "positive_cases": 5,
+            "negative_cases": 5,
+            "missed_positive_count": 0,
+            "false_positive_negative_count": 0,
+        },
+        validation_claim=validation_claim,
+        proof_record=None,
+        proof_card=None,
+        proof_state="NO_PROOF_RECORD_NOT_PROMOTED",
+        platform_sample=None,
+        platform_sample_expected_total=0,
+        required_blocked_claims=(*IDENTITY_EXPANSION_BLOCKED, *extra_blocked_claims),
+        supported_claims=(
+            f"{detection_id} validation coverage exists from hawkinsoperations-validation PR #46.",
+            f"{detection_id} passed controlled-test validation against 10 controlled identity-event fixtures.",
+            f"{detection_id} has platform status/plan visibility for controlled-test validation only.",
+            f"{detection_id} remains not public-safe and not runtime-active.",
+        ),
+        next_allowed_move=(
+            "Review validation-backed platform visibility only; source expansion, live IdP access, runtime evidence, "
+            "proof promotion, routed telemetry, website output, and public-safe wording remain blocked until separate approval."
+        ),
+        decision_status="READY_FOR_REVIEW",
+        decision_reason=(
+            f"Controller v0 reports {detection_id} validation-backed status/plan visibility after validation PR #46 "
+            "and preserves runtime, live IdP, proof, and public-surface boundaries."
+        ),
+        truth_boundary={
+            "source_truth": "not inspected in this platform window",
+            "validation_truth": "controlled-test validated",
+            "platform_truth": "status visibility only",
+            "proof_truth": "not promoted",
+            "runtime_truth": "not public proven",
+            "signal_truth": "not public proven",
+            "public_proof": "not public safe",
+        },
+        stop_conditions=(
+            "Do not promote proof.",
+            "Do not claim public-safe status.",
+            "Do not claim runtime-active or signal-observed public proof.",
+            "Do not claim live Okta, Entra, or IdP proof.",
+            "Do not claim production identity coverage.",
+            "Do not create generated output files.",
+        ),
+        state_consistency=(
+            "STATE_CONSISTENT_WITH_VALIDATION_PR_46",
+            "Validation coverage is upstream truth for this platform visibility update.",
+            "Detection source, proof, runtime, route, website, and public-safe promotion remain outside this platform window.",
+        ),
+        does_not_prove=(
+            "source repository state",
+            "runtime activity",
+            "signal observation",
+            "public-safe status",
+            "production deployment",
+            "fleet-wide coverage",
+            "live Okta proof",
+            "live Entra proof",
+            "live IdP proof",
+            "live Splunk proof",
+            "Wazuh routing",
+            "Cribl routing",
+            "Security Onion observation",
+            "production identity coverage",
+            "machine identity production governance",
+            "AI agent production governance",
+            "full identity attack coverage",
+            "AI-approved disposition",
+            "analyst-approved disposition",
+        ),
+        surfaces=(
+            Surface("hawkinsoperations-validation", f"reports/{lower_id}/validation-result.json"),
+            Surface("hawkinsoperations-validation", f"reports/{lower_id}/validation-result.md"),
+            Surface("hawkinsoperations-validation", validation_rel),
+            Surface("hawkinsoperations-validation", scanner_rel),
+            Surface("hawkinsoperations-validation", parity_rel),
+            Surface("hawkinsoperations-validation", validator_rel),
+            Surface("hawkinsoperations-platform", "scripts/ho_factory.py"),
+            Surface("hawkinsoperations-platform", "docs/factory/DETECTION_FACTORY_CONTROLLER_V0.md"),
+        ),
+        next_gates=IDENTITY_EXPANSION_NEXT_GATES,
+        not_claimed_here=IDENTITY_EXPANSION_NOT_CLAIMED,
+    )
+
 
 def case_factory_issue_plan(spec: DetectionSpec) -> dict[str, Any]:
     labels = [
@@ -1502,6 +1669,40 @@ SPECS: dict[str, DetectionSpec] = {
             "website/public-surface publication",
         ),
     ),
+    "ID-DET-002": identity_expansion_spec(
+        detection_id="ID-DET-002",
+        validation_claim=(
+            "ID-DET-002 passed controlled-test validation against 10 controlled identity-event fixtures "
+            "for suspicious MFA fatigue or repeated MFA failure patterns."
+        ),
+        validation_rel="validation/identity/id-det-002/validation-cases.json",
+        scanner_rel="scripts/scan-id-det-002-claim-boundaries.py",
+        parity_rel="scripts/verify-id-det-002-result-parity.py",
+        validator_rel="scripts/validate-id-det-002.py",
+    ),
+    "ID-DET-003": identity_expansion_spec(
+        detection_id="ID-DET-003",
+        validation_claim=(
+            "ID-DET-003 passed controlled-test validation against 10 controlled identity administration fixtures "
+            "for privileged role assignment or admin group change behavior."
+        ),
+        validation_rel="validation/identity/id-det-003/validation-cases.json",
+        scanner_rel="scripts/scan-id-det-003-claim-boundaries.py",
+        parity_rel="scripts/verify-id-det-003-result-parity.py",
+        validator_rel="scripts/validate-id-det-003.py",
+    ),
+    "ID-DET-004": identity_expansion_spec(
+        detection_id="ID-DET-004",
+        validation_claim=(
+            "ID-DET-004 passed controlled-test validation against 10 controlled identity-event fixtures "
+            "for impossible travel or anomalous session context."
+        ),
+        validation_rel="validation/identity/id-det-004/validation-cases.json",
+        scanner_rel="scripts/scan-id-det-004-claim-boundaries.py",
+        parity_rel="scripts/verify-id-det-004-result-parity.py",
+        validator_rel="scripts/validate-id-det-004.py",
+        extra_blocked_claims=("impossible-travel completeness", "session hijacking completeness"),
+    ),
     "HO-DET-012": DetectionSpec(
         detection_id="HO-DET-012",
         current_state="CONTROLLED_TEST_VALIDATED",
@@ -1740,6 +1941,11 @@ def gate_summary(spec: DetectionSpec) -> list[dict[str, Any]]:
     platform_claim = "platform guardrail reported"
     if spec.platform_sample is None:
         platform_claim = "platform status visibility only"
+    source_status = "FOUND"
+    source_claim = "source exists"
+    if not any(surface.repo == "hawkinsoperations-detections" for surface in spec.surfaces):
+        source_status = "NOT_INSPECTED_IN_THIS_PLATFORM_WINDOW"
+        source_claim = "source repo state was outside this platform window; validation PR #46 is upstream truth"
     proof_status = "FOUND"
     proof_claim = "proof state reported, not promoted"
     if spec.proof_record is None:
@@ -1748,9 +1954,9 @@ def gate_summary(spec: DetectionSpec) -> list[dict[str, Any]]:
     return [
         {
             "gate": "source",
-            "status": "FOUND",
+            "status": source_status,
             "owner_repo": "hawkinsoperations-detections",
-            "claim": "source exists",
+            "claim": source_claim,
             "promotion_allowed": False,
         },
         {
@@ -1843,14 +2049,25 @@ def build_dependency_missing_packet(
     found: list[dict[str, Any]],
     missing: list[str],
 ) -> dict[str, Any]:
-    if spec.detection_id != "ID-DET-001":
+    if not spec.detection_id.startswith("ID-DET-"):
         raise DependencySurfacesMissing(spec.detection_id, found, missing)
+    reason = (
+        f"{spec.detection_id} dependency surfaces are unavailable in this repo-root revision; "
+        "all-plan output remains bounded and non-promotional."
+    )
     return {
         "controller_version": CONTROLLER_VERSION,
         "detection_id": spec.detection_id,
+        "detection_title": DETECTION_TITLES.get(spec.detection_id, spec.detection_id),
         "current_state": "DEPENDENCY_SURFACES_MISSING",
         "current_phase": "DEPENDENCY_SURFACES_MISSING",
+        "source_status": "DEPENDENCY_SURFACES_MISSING",
+        "validation_status": "DEPENDENCY_SURFACES_MISSING",
+        "runtime_status": "NOT_PROVEN",
+        "signal_status": "NOT_PROVEN",
+        "evidence_status": spec.private_evidence_state,
         "public_proof_ceiling": spec.public_proof_ceiling,
+        "proof_ceiling": spec.public_proof_ceiling,
         "claim_ceiling": "CONTROLLED_TEST_VALIDATED",
         "private_evidence_state": spec.private_evidence_state,
         "public_safe_status": spec.public_safe_status,
@@ -1864,10 +2081,7 @@ def build_dependency_missing_packet(
             "merge_recommendation": "REVIEW_REQUIRED",
             "proof_promotion_allowed": False,
             "public_rendering_allowed": False,
-            "reason": (
-                "ID-DET-001 dependency surfaces are unavailable in this repo-root revision; "
-                "all-plan output remains bounded and non-promotional."
-            ),
+            "reason": reason,
         },
         "decision_status": "BLOCKED_DEPENDENCY_SURFACES",
         "truth_boundary": spec.truth_boundary,
@@ -1895,10 +2109,11 @@ def build_dependency_missing_packet(
         "supported_claims": [],
         "case_factory": case_factory_issue_plan(spec),
         "next_allowed_move": "merge/sync validation and detections surfaces first",
+        "next_gate": "merge/sync validation and detections surfaces first",
         "stop_conditions": list(spec.stop_conditions),
         "state_consistency": [
-            "ID-DET-001 dependency surfaces are unavailable in this repo-root revision.",
-            "Direct ID-DET-001 status/plan remains fail-closed until dependencies are present.",
+            f"{spec.detection_id} dependency surfaces are unavailable in this repo-root revision.",
+            f"Direct {spec.detection_id} status/plan remains fail-closed until dependencies are present.",
             "All-plan output reports a bounded dependency-missing state without promotion.",
         ],
         "does_not_prove": list(spec.does_not_prove),
@@ -1935,8 +2150,19 @@ def build_packet(repo_root: Path, spec: DetectionSpec) -> dict[str, Any]:
     packet = {
         "controller_version": CONTROLLER_VERSION,
         "detection_id": spec.detection_id,
+        "detection_title": DETECTION_TITLES.get(spec.detection_id, spec.detection_id),
         "current_state": spec.current_state,
+        "source_status": (
+            "FOUND"
+            if any(surface.repo == "hawkinsoperations-detections" for surface in spec.surfaces)
+            else "NOT_INSPECTED_IN_THIS_PLATFORM_WINDOW"
+        ),
+        "validation_status": spec.current_state,
+        "runtime_status": "NOT_PROVEN",
+        "signal_status": "NOT_PROVEN",
+        "evidence_status": spec.private_evidence_state,
         "public_proof_ceiling": spec.public_proof_ceiling,
+        "proof_ceiling": spec.public_proof_ceiling,
         "private_evidence_state": spec.private_evidence_state,
         "public_safe_status": spec.public_safe_status,
         "runtime_active": False,
@@ -1967,6 +2193,7 @@ def build_packet(repo_root: Path, spec: DetectionSpec) -> dict[str, Any]:
         "supported_claims": list(spec.supported_claims),
         "case_factory": case_factory_issue_plan(spec),
         "next_allowed_move": spec.next_allowed_move,
+        "next_gate": spec.next_allowed_move,
         "stop_conditions": list(spec.stop_conditions),
         "state_consistency": list(spec.state_consistency),
         "does_not_prove": list(spec.does_not_prove),
@@ -2021,7 +2248,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="mode", required=True)
     for mode in ("status", "plan"):
         sub = subparsers.add_parser(mode)
-        sub.add_argument("--detection", required=True, choices=("HO-DET-001", "HO-DET-011", "HO-DET-012", "ID-DET-001", "all"))
+        sub.add_argument(
+            "--detection",
+            required=True,
+            choices=("HO-DET-001", "HO-DET-011", "HO-DET-012", "ID-DET-001", "ID-DET-002", "ID-DET-003", "ID-DET-004", "all"),
+        )
         sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
         sub.add_argument("--format", default="json", choices=("json",))
     for mode in ("ledger-init-sample", "ledger-verify", "ledger-metrics"):

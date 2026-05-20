@@ -7,9 +7,10 @@ for reading HawkinsOperations detection state across the local organization
 mirror.
 
 The v0 controller is intentionally narrow. It produces reviewer packets for
-`HO-DET-001`, `HO-DET-011`, `HO-DET-012`, and `ID-DET-001` from existing repo surfaces. It does not promote
-proof, publish evidence, update the website, create pull requests, merge
-changes, or write generated output files.
+`HO-DET-001`, `HO-DET-011`, `HO-DET-012`, `ID-DET-001`, `ID-DET-002`,
+`ID-DET-003`, and `ID-DET-004` from existing repo surfaces or validation-backed
+visibility inputs. It does not promote proof, publish evidence, update the
+website, create pull requests, merge changes, or write generated output files.
 
 ## Controller Boundary
 
@@ -35,6 +36,9 @@ v0 supports:
 - `HO-DET-011`
 - `HO-DET-012`
 - `ID-DET-001`
+- `ID-DET-002`
+- `ID-DET-003`
+- `ID-DET-004`
 
 Any other detection ID must fail closed as unsupported.
 
@@ -44,8 +48,15 @@ Each reviewer packet must include:
 
 - `controller_version`
 - `detection_id`
+- `detection_title`
 - `current_state`
+- `source_status`
+- `validation_status`
+- `runtime_status`
+- `signal_status`
+- `evidence_status`
 - `public_proof_ceiling`
+- `proof_ceiling`
 - `private_evidence_state`
 - `public_safe_status`
 - `runtime_active`
@@ -63,6 +74,7 @@ Each reviewer packet must include:
 - `blocked_claims`
 - `supported_claims`
 - `next_allowed_move`
+- `next_gate`
 - `stop_conditions`
 - `state_consistency`
 - `does_not_prove`
@@ -110,9 +122,39 @@ IdP proof, live SIEM/NDR observation, production identity coverage, complete
 identity-attack coverage, autonomous SOC operation, disposition authority, proof
 promotion, public-safe status, or website/public-surface publication.
 
+`ID-DET-002`, `ID-DET-003`, and `ID-DET-004` must report validation-backed
+`CONTROLLED_TEST_VALIDATED` status only after validation PR #46 merge commit
+`d9d1c7e5f8aca6f72417964aa3fefae9531618ff` is present in
+`hawkinsoperations-validation`. These packets are platform-side status/plan
+visibility only. This platform window did not inspect or modify the detections
+repo, so the packet `source_status` is
+`NOT_INSPECTED_IN_THIS_PLATFORM_WINDOW` and validation PR #46 remains the
+upstream truth for this update.
+
+The identity expansion packets use these validation-backed titles and scopes:
+
+| Detection | Platform visibility scope | Validation source |
+| --- | --- | --- |
+| `ID-DET-002` | Suspicious MFA fatigue or repeated MFA failure patterns | `hawkinsoperations-validation/reports/id-det-002/validation-result.json` |
+| `ID-DET-003` | Privileged role assignment or admin group change behavior | `hawkinsoperations-validation/reports/id-det-003/validation-result.json` |
+| `ID-DET-004` | Impossible travel or anomalous session context | `hawkinsoperations-validation/reports/id-det-004/validation-result.json` |
+
+Each identity expansion packet must keep:
+
+- `public_safe_status: NOT_PUBLIC_SAFE`
+- `runtime_status: NOT_PROVEN`
+- `signal_status: NOT_PROVEN`
+- `proof_ceiling: CONTROLLED_TEST_VALIDATED`
+- `human_review_required: true`
+
+The identity expansion packets do not claim source repo state, live IdP proof,
+live SIEM/NDR observation, proof promotion, public-safe status, production
+identity coverage, autonomous SOC operation, AI-approved disposition, or
+analyst-approved disposition.
+
 ### Mixed-Revision Plan Behavior
 
-Direct `ID-DET-001` status and plan requests remain fail-closed when the
+Direct `ID-DET-*` status and plan requests remain fail-closed when the
 required validation or detection surfaces are unavailable. That keeps direct
 review from treating an incomplete repo-root revision as controlled-test
 validated.
@@ -120,7 +162,8 @@ validated.
 `plan --detection all` may run in mirrors where the platform branch is present
 before the validation and detections branches are merged and synced. In that
 mixed-revision case, the controller must not fail the whole all-plan output for
-`ID-DET-001`. It reports a bounded `DEPENDENCY_SURFACES_MISSING` packet with:
+identity detections. It reports a bounded `DEPENDENCY_SURFACES_MISSING` packet
+with:
 
 - `decision_status: BLOCKED_DEPENDENCY_SURFACES`
 - `public_safe_status: NOT_PUBLIC_SAFE`
@@ -143,8 +186,14 @@ python -B scripts\ho_factory.py status --detection HO-DET-001 --repo-root "<ORG_
 python -B scripts\ho_factory.py status --detection HO-DET-011 --repo-root "<ORG_REPO_ROOT>" --format json
 python -B scripts\ho_factory.py status --detection HO-DET-012 --repo-root "<ORG_REPO_ROOT>" --format json
 python -B scripts\ho_factory.py status --detection ID-DET-001 --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py status --detection ID-DET-002 --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py status --detection ID-DET-003 --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py status --detection ID-DET-004 --repo-root "<ORG_REPO_ROOT>" --format json
 python -B scripts\ho_factory.py plan --detection HO-DET-012 --repo-root "<ORG_REPO_ROOT>" --format json
 python -B scripts\ho_factory.py plan --detection ID-DET-001 --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py plan --detection ID-DET-002 --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py plan --detection ID-DET-003 --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py plan --detection ID-DET-004 --repo-root "<ORG_REPO_ROOT>" --format json
 python -B scripts\ho_factory.py plan --detection all --repo-root "<ORG_REPO_ROOT>" --format json
 python -B scripts\ho_factory.py self-test-id-det-001-missing-surfaces --format json
 ```
