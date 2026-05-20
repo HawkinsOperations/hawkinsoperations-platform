@@ -126,6 +126,26 @@
         "card_exists": true,
         "state": "CONTROLLED_TEST_VALIDATED_WITH_PRIVATE_INTERNAL_BOUNDARY_CONTEXT"
       },
+      "proof_status_index_visibility": {
+        "index_path": "hawkinsoperations-proof/proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml",
+        "truth_owner": "hawkinsoperations-proof",
+        "visibility_owner": "hawkinsoperations-platform",
+        "visibility_status": "STATUS_VISIBILITY_ONLY_NON_AUTHORITATIVE",
+        "detection_id": "HO-DET-001",
+        "source_status": "SOURCE_EXISTS",
+        "validation_status": "CONTROLLED_TEST_VALIDATED",
+        "proof_ceiling": "CONTROLLED_TEST_VALIDATED",
+        "runtime_status": "PRIVATE_RUNTIME_BOUNDARY_CONTEXT_ONLY",
+        "signal_status": "NOT_PROVEN",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "website_status": "WEBSITE_UNTOUCHED_NOT_PROOF",
+        "promotion_allowed": false,
+        "proof_promotion_allowed": false,
+        "runtime_signal_promotion_allowed": false,
+        "public_safe_promotion_allowed": false,
+        "website_proof_claim_allowed": false,
+        "claim_boundary": "Platform reports proof-index status metadata only. Proof truth remains owned by hawkinsoperations-proof, and this visibility field does not promote proof, runtime, signal, public-safe, or website status."
+      },
       "platform_guardrail_status": "SATISFIED_NON_PROMOTIONAL_BOUNDARY",
       "blocked_claims": [
         "runtime-active",

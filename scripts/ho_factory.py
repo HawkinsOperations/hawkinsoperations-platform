@@ -17,12 +17,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+try:
+    import yaml  # type: ignore
+except ImportError:  # pragma: no cover - absence is handled as fail-closed runtime state.
+    yaml = None
+
 
 CONTROLLER_VERSION = "0.1.0"
 CASE_LEDGER_VERSION = "AUTOSOC_CASE_LEDGER_V0"
 PLATFORM_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO_ROOT = PLATFORM_ROOT.parent
 DEFAULT_CASE_LEDGER = PLATFORM_ROOT / "evidence" / "autosoc-case-ledger-v0.sqlite"
+PROOF_STATUS_INDEX_REL = "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml"
+PROOF_STATUS_INDEX_OWNER = "hawkinsoperations-proof"
+PROOF_STATUS_INDEX_VISIBILITY_STATUS = "STATUS_VISIBILITY_ONLY_NON_AUTHORITATIVE"
+PROOF_STATUS_INDEX_BOUNDARY = (
+    "Platform reports proof-index status metadata only. Proof truth remains owned by "
+    "hawkinsoperations-proof, and this visibility field does not promote proof, runtime, "
+    "signal, public-safe, or website status."
+)
 SPLUNK_HO_DET_001_APPEND_APPROVAL = "APPEND_ONE_SANITIZED_SPLUNK_HO_DET_001_RUNTIME_CASE_APPROVED"
 RUNTIME_LEDGER_TRUTH_BOUNDARY = "private_runtime_review_only_not_public_proof_not_public_safe"
 RUNTIME_REVIEW_SUPPORTED_CLAIM = "PRIVATE_RUNTIME_REVIEW_SUPPORT_ONLY"
@@ -201,6 +214,19 @@ COMMON_BLOCKED = (
     "autonomous SOC",
     "AI-approved disposition",
     "analyst-approved disposition",
+)
+
+PROOF_INDEX_ALLOWED_CEILINGS = (
+    "NO_PROOF_RECORD",
+    "CONTROLLED_TEST_VALIDATED",
+    "PRIVATE_RUNTIME_EVIDENCE_CAPTURED",
+    "CROSS_SOURCE_CORROBORATION_CONTRACT_DEFINED",
+)
+
+PROOF_INDEX_ALLOWED_RUNTIME_STATUSES = (
+    "NOT_PROVEN",
+    "PRIVATE_RUNTIME_BOUNDARY_CONTEXT_ONLY",
+    "PRIVATE_RUNTIME_EVIDENCE_CAPTURED",
 )
 
 PLATFORM_SAMPLE_BLOCKED = (
@@ -1937,6 +1963,105 @@ def assert_proof_record(repo_root: Path, spec: DetectionSpec) -> tuple[bool, boo
     return True, card_exists
 
 
+def load_proof_status_index(repo_root: Path) -> dict[str, Any]:
+    if yaml is None:
+        raise FactoryError("PyYAML is required to read the proof status index")
+    path = repo_path(repo_root, PROOF_STATUS_INDEX_OWNER, PROOF_STATUS_INDEX_REL)
+    if not path.is_file():
+        raise FactoryError(f"missing proof status index: {PROOF_STATUS_INDEX_OWNER}/{PROOF_STATUS_INDEX_REL}")
+    try:
+        value = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - fail closed on parser boundary.
+        raise FactoryError(f"invalid proof status index YAML: {exc}") from exc
+    if not isinstance(value, dict):
+        raise FactoryError("proof status index root must be an object")
+    if value.get("owner_repo") != PROOF_STATUS_INDEX_OWNER:
+        raise FactoryError("proof status index owner_repo must be hawkinsoperations-proof")
+    if value.get("truth_surface") != "proof_boundary_index":
+        raise FactoryError("proof status index truth_surface must be proof_boundary_index")
+    entries = value.get("entries")
+    if not isinstance(entries, list) or not entries:
+        raise FactoryError("proof status index entries must be a non-empty list")
+    return value
+
+
+def proof_index_entries_by_id(repo_root: Path) -> dict[str, dict[str, Any]]:
+    index = load_proof_status_index(repo_root)
+    entries_by_id: dict[str, dict[str, Any]] = {}
+    for raw in index["entries"]:
+        if not isinstance(raw, dict):
+            raise FactoryError("proof status index entry must be an object")
+        detection_id = raw.get("detection_id")
+        if not isinstance(detection_id, str) or not detection_id:
+            raise FactoryError("proof status index entry detection_id must be a non-empty string")
+        if detection_id in entries_by_id:
+            raise FactoryError(f"duplicate detection_id in proof status index: {detection_id}")
+        entries_by_id[detection_id] = raw
+    return entries_by_id
+
+
+def proof_status_index_visibility(repo_root: Path, spec: DetectionSpec) -> dict[str, Any]:
+    entries = proof_index_entries_by_id(repo_root)
+    entry = entries.get(spec.detection_id)
+    if entry is None:
+        raise FactoryError(f"{spec.detection_id} missing from proof status index")
+
+    proof_ceiling = entry.get("proof_ceiling")
+    runtime_status = entry.get("runtime_status")
+    signal_status = entry.get("signal_status")
+    public_safe_status = entry.get("public_safe_status")
+    website_status = entry.get("website_status")
+
+    if proof_ceiling not in PROOF_INDEX_ALLOWED_CEILINGS:
+        raise FactoryError(f"{spec.detection_id} proof index has unsupported proof_ceiling: {proof_ceiling}")
+    if runtime_status not in PROOF_INDEX_ALLOWED_RUNTIME_STATUSES:
+        raise FactoryError(f"{spec.detection_id} proof index has unsupported runtime_status: {runtime_status}")
+    if signal_status != "NOT_PROVEN":
+        raise FactoryError(f"{spec.detection_id} proof index signal_status must remain NOT_PROVEN")
+    if public_safe_status != "NOT_PUBLIC_SAFE":
+        raise FactoryError(f"{spec.detection_id} proof index public_safe_status must remain NOT_PUBLIC_SAFE")
+    if website_status != "WEBSITE_UNTOUCHED_NOT_PROOF":
+        raise FactoryError(f"{spec.detection_id} proof index website_status must remain WEBSITE_UNTOUCHED_NOT_PROOF")
+    if entry.get("source_truth_owner") != "hawkinsoperations-detections":
+        raise FactoryError(f"{spec.detection_id} proof index source truth owner drifted")
+    if entry.get("validation_truth_owner") != "hawkinsoperations-validation":
+        raise FactoryError(f"{spec.detection_id} proof index validation truth owner drifted")
+    if entry.get("platform_visibility_owner") != "hawkinsoperations-platform":
+        raise FactoryError(f"{spec.detection_id} proof index platform visibility owner drifted")
+
+    expected_record = None if spec.proof_record is None else spec.proof_record.removeprefix("hawkinsoperations-proof/")
+    if entry.get("proof_record_path") != expected_record:
+        raise FactoryError(f"{spec.detection_id} proof index proof_record_path drifted")
+
+    expected_card = None if spec.proof_card is None else spec.proof_card.removeprefix("hawkinsoperations-proof/")
+    if entry.get("proof_card_path") != expected_card:
+        raise FactoryError(f"{spec.detection_id} proof index proof_card_path drifted")
+
+    if runtime_status != "NOT_PROVEN" and spec.proof_record is None:
+        raise FactoryError(f"{spec.detection_id} proof index runtime status requires an existing proof record")
+
+    return {
+        "index_path": f"{PROOF_STATUS_INDEX_OWNER}/{PROOF_STATUS_INDEX_REL}",
+        "truth_owner": PROOF_STATUS_INDEX_OWNER,
+        "visibility_owner": "hawkinsoperations-platform",
+        "visibility_status": PROOF_STATUS_INDEX_VISIBILITY_STATUS,
+        "detection_id": spec.detection_id,
+        "source_status": entry["source_status"],
+        "validation_status": entry["validation_status"],
+        "proof_ceiling": proof_ceiling,
+        "runtime_status": runtime_status,
+        "signal_status": signal_status,
+        "public_safe_status": public_safe_status,
+        "website_status": website_status,
+        "promotion_allowed": False,
+        "proof_promotion_allowed": False,
+        "runtime_signal_promotion_allowed": False,
+        "public_safe_promotion_allowed": False,
+        "website_proof_claim_allowed": False,
+        "claim_boundary": PROOF_STATUS_INDEX_BOUNDARY,
+    }
+
+
 def gate_summary(spec: DetectionSpec) -> list[dict[str, Any]]:
     platform_claim = "platform guardrail reported"
     if spec.platform_sample is None:
@@ -2188,6 +2313,7 @@ def build_packet(repo_root: Path, spec: DetectionSpec) -> dict[str, Any]:
             "card_exists": card_exists,
             "state": spec.proof_state,
         },
+        "proof_status_index_visibility": proof_status_index_visibility(repo_root, spec),
         "platform_guardrail_status": spec.platform_guardrail_status,
         "blocked_claims": sorted(set(platform_claims)),
         "supported_claims": list(spec.supported_claims),
