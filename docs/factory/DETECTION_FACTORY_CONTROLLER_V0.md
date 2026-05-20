@@ -278,15 +278,16 @@ python -B scripts\ho_factory.py runtime-ledger-review-case --ledger "<APPROVED_R
 python -B scripts\ho_factory.py runtime-ledger-review-case --ledger "<APPROVED_RUNTIME_LEDGER>" --case-id "<CASE_ID>" --self-test --format json
 ```
 
-The standalone `--self-test` command runs in-memory negative checks only and
-does not open an external runtime ledger or require a target case. The review
-command opens the approved runtime ledger read-only, verifies the target case
-exists, runs the ledger verifier, inspects append-only trigger definitions,
-scans the stored case text fields for private markers, prints a metrics
-snapshot, and returns the blocked claims, supported internal claim, and next
-allowed move. The combined form runs the same runtime ledger review and attaches
-the in-memory self-test result. Self-tests create no files, append no ledger
-rows, and perform no runtime or GitHub mutation.
+The standalone `--self-test` command runs in-memory negative checks and one
+bounded HO-DET-012 private runtime receipt positive check. It does not open an
+external runtime ledger or require a target case. The review command opens the
+approved runtime ledger read-only, verifies the target case exists, runs the
+ledger verifier, inspects append-only trigger definitions, scans the stored
+case text fields for private markers, prints a metrics snapshot, and returns
+the blocked claims, supported claim, supported internal claim, and next allowed
+move. The combined form runs the same runtime ledger review and attaches the
+in-memory self-test result. Self-tests create no files, append no ledger rows,
+and perform no runtime or GitHub mutation.
 
 The command must fail closed if the target case is missing, if append-only
 triggers are missing or non-aborting, if a private marker appears in stored
@@ -299,11 +300,41 @@ case must preserve `github_issue_mutation_allowed=false`, `case_closed=false`,
 The runtime review self-tests must fail closed for missing case IDs, private
 markers in reviewed case text, raw Splunk `_raw`, host fields, username fields,
 LAN IPs, local paths, token or secret markers, public-safe promotion, proof
-promotion, case closure authority, and AI disposition authority.
+promotion, case closure authority, and AI disposition authority. They must also
+prove that a sanitized HO-DET-012 private runtime receipt row remains bounded
+as `PRIVATE_RUNTIME_EVIDENCE`, `HUMAN_REVIEW_REQUIRED`,
+`PRIVATE_RUNTIME_METADATA_CAPTURED`, and `NOT_PUBLIC_SAFE`.
 
 The review command does not append ledger rows, connect to Splunk, run Splunk
 searches, mutate GitHub Issues, close cases, promote proof, promote public-safe
 status, or grant AI close, approval, or disposition authority.
+
+### HO-DET-012 Private Runtime Receipt Review Support
+
+`runtime-ledger-review-case` supports HO-DET-012 private runtime receipt rows
+through the same generic read-only external ledger review path. It does not need
+HO-DET-012-specific live Splunk, Wazuh, Security Onion, or Cribl access. The
+supported claim is `PRIVATE_RUNTIME_REVIEW_SUPPORT_ONLY`: platform can inspect a
+sanitized private runtime receipt row by case ID and emit a bounded review
+packet while preserving human review and all promotion blockers.
+
+The HO-DET-012 private receipt review support must preserve:
+
+- `case_status=HUMAN_REVIEW_REQUIRED`
+- `truth_class=PRIVATE_RUNTIME_EVIDENCE`
+- `proof_ceiling=PRIVATE_RUNTIME_METADATA_CAPTURED`
+- `public_safe_status=NOT_PUBLIC_SAFE`
+- `github_issue_mutation_allowed=false`
+- `case_closed=false`
+- `ai_decided_disposition=false`
+- `proof_promotion_allowed=false`
+- `public_safe_promotion_allowed=false`
+
+This support does not commit the private runtime ledger, raw events, screenshots,
+private hostnames, IP addresses, private paths, or raw evidence. It is not proof
+repo promotion, not website material, not public-safe approval, not runtime-active
+public proof, not signal-observed public proof, not Cribl-routed proof, not
+Security Onion observed proof, and not AI or analyst disposition authority.
 
 ## Fail Closed Rules
 
