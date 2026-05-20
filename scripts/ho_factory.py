@@ -145,6 +145,16 @@ class FactoryError(RuntimeError):
     """Fail-closed controller error."""
 
 
+class DependencySurfacesMissing(FactoryError):
+    """Required dependency surfaces are unavailable in this repo-root revision."""
+
+    def __init__(self, detection_id: str, found: list[dict[str, Any]], missing: list[str]) -> None:
+        self.detection_id = detection_id
+        self.found = found
+        self.missing = missing
+        super().__init__(f"{detection_id} required surfaces missing: {', '.join(missing)}")
+
+
 @dataclass(frozen=True)
 class Surface:
     repo: str
@@ -178,6 +188,8 @@ class DetectionSpec:
     state_consistency: tuple[str, ...]
     does_not_prove: tuple[str, ...]
     surfaces: tuple[Surface, ...]
+    next_gates: tuple[dict[str, str], ...] = ()
+    not_claimed_here: tuple[str, ...] = ()
 
 
 COMMON_BLOCKED = (
@@ -1343,6 +1355,153 @@ SPECS: dict[str, DetectionSpec] = {
             Surface("hawkinsoperations-platform", "scripts/verify-ho-det-011-case-packet.py"),
         ),
     ),
+    "ID-DET-001": DetectionSpec(
+        detection_id="ID-DET-001",
+        current_state="CONTROLLED_TEST_VALIDATED",
+        public_proof_ceiling="CONTROLLED_TEST_VALIDATED",
+        private_evidence_state="NOT_CAPTURED",
+        public_safe_status="NOT_PUBLIC_SAFE",
+        platform_guardrail_status="STATUS_VISIBILITY_ONLY",
+        validation_result="hawkinsoperations-validation/reports/id-det-001/validation-result.json",
+        validation_expected={
+            "total_cases": 10,
+            "positive_cases": 5,
+            "negative_cases": 5,
+            "missed_positive_count": 0,
+            "false_positive_negative_count": 0,
+        },
+        validation_claim="ID-DET-001 passed controlled-test validation against 10 controlled identity-event fixtures for suspicious identity session context.",
+        proof_record=None,
+        proof_card=None,
+        proof_state="NO_PROOF_RECORD_NOT_PROMOTED",
+        platform_sample=None,
+        platform_sample_expected_total=0,
+        required_blocked_claims=(
+            *COMMON_BLOCKED,
+            "evidence-linked public proof",
+            "live Okta proof",
+            "live Entra proof",
+            "live IdP proof",
+            "live Splunk proof",
+            "Wazuh-routed proof",
+            "Cribl-routed proof",
+            "Security Onion observed proof",
+            "production identity coverage",
+            "machine identity production governance",
+            "AI agent production governance",
+            "full identity attack coverage",
+            "impossible-travel completeness",
+            "session hijacking completeness",
+            "proof promotion",
+            "website/public-surface promotion",
+        ),
+        supported_claims=(
+            "ID-DET-001 source artifacts exist.",
+            "ID-DET-001 passed controlled-test validation against 10 controlled identity-event fixtures.",
+            "ID-DET-001 has platform status/plan visibility for controlled-test validation only.",
+            "ID-DET-001 remains not public-safe and not runtime-active.",
+        ),
+        next_allowed_move="Review controlled-test validation packet only; live IdP access, runtime evidence, proof promotion, routed telemetry, website output, and public-safe wording remain blocked until separate approval.",
+        decision_status="READY_FOR_REVIEW",
+        decision_reason="Controller v0 reports ID-DET-001 controlled-test validation state only and preserves runtime, live IdP, proof, and public-surface boundaries.",
+        truth_boundary={
+            "source_truth": "reported",
+            "validation_truth": "controlled-test validated",
+            "platform_truth": "status visibility only",
+            "proof_truth": "not promoted",
+            "runtime_truth": "not public proven",
+            "signal_truth": "not public proven",
+            "public_proof": "not public safe",
+        },
+        stop_conditions=(
+            "Do not promote proof.",
+            "Do not claim public-safe status.",
+            "Do not claim runtime-active or signal-observed public proof.",
+            "Do not claim live Okta, Entra, or IdP proof.",
+            "Do not claim production identity coverage.",
+            "Do not claim impossible-travel or session hijacking completeness.",
+            "Do not create generated output files.",
+        ),
+        state_consistency=("STATE_CONSISTENT_WITH_V0_BOUNDARY",),
+        does_not_prove=(
+            "runtime activity",
+            "signal observation",
+            "public-safe status",
+            "production deployment",
+            "fleet-wide coverage",
+            "live Okta proof",
+            "live Entra proof",
+            "live IdP proof",
+            "live Splunk proof",
+            "Wazuh routing",
+            "Cribl routing",
+            "Security Onion observation",
+            "production identity coverage",
+            "machine identity production governance",
+            "AI agent production governance",
+            "full identity attack coverage",
+            "impossible-travel completeness",
+            "session hijacking completeness",
+            "AI-approved disposition",
+            "analyst-approved disposition",
+        ),
+        surfaces=(
+            Surface("hawkinsoperations-detections", "detections/identity/id-det-001/status.yml"),
+            Surface("hawkinsoperations-detections", "detections/identity/id-det-001/rule.yml"),
+            Surface("hawkinsoperations-detections", "detections/identity/id-det-001/splunk.spl"),
+            Surface("hawkinsoperations-detections", "detections/identity/id-det-001/event-mapping.yml"),
+            Surface("hawkinsoperations-detections", "detections/DETECTION_FACTORY_INDEX.md"),
+            Surface("hawkinsoperations-validation", "reports/id-det-001/validation-result.json"),
+            Surface("hawkinsoperations-validation", "reports/id-det-001/validation-result.md"),
+            Surface("hawkinsoperations-validation", "validation/identity/id-det-001/validation-cases.json"),
+            Surface("hawkinsoperations-validation", "scripts/validate-id-det-001.py"),
+            Surface("hawkinsoperations-validation", "scripts/verify-id-det-001-result-parity.py"),
+            Surface("hawkinsoperations-validation", "scripts/scan-id-det-001-claim-boundaries.py"),
+            Surface("hawkinsoperations-platform", "scripts/ho_factory.py"),
+            Surface("hawkinsoperations-platform", "docs/factory/DETECTION_FACTORY_CONTROLLER_V0.md"),
+        ),
+        next_gates=(
+            {
+                "id": "ID-RUNTIME-001",
+                "name": "private runtime receipt",
+                "purpose": "Proxmox and Windows identity private runtime receipt with approved metadata and count-only Wazuh/Splunk receipt review.",
+                "claim_ceiling": "PRIVATE_RUNTIME_METADATA_CAPTURED",
+                "boundary": "Not public proof. Not production coverage. Not public-safe.",
+            },
+            {
+                "id": "ID-CLOUD-001",
+                "name": "IdP export/log review",
+                "purpose": "Approved Entra-style or Okta-style identity log export review after a separate gate.",
+                "claim_ceiling": "CONTROLLED_TEST_VALIDATED first, then PRIVATE_RUNTIME_METADATA_CAPTURED only if approved sanitized export review exists.",
+                "boundary": "No live IdP proof in this PR. No production tenant claim.",
+            },
+            {
+                "id": "ID-AGENT-001",
+                "name": "AI or machine identity tool-scope validation",
+                "purpose": "Validate AI or machine identity behavior where observed action is outside approved tool or resource scope.",
+                "claim_ceiling": "CONTROLLED_TEST_VALIDATED",
+                "boundary": "No autonomous SOC claim. No AI disposition authority.",
+            },
+            {
+                "id": "ID-ROUTE-001",
+                "name": "SIEM/NDR route receipt",
+                "purpose": "Count-only Wazuh, Splunk, Cribl, and Security Onion route checks after separate approval.",
+                "claim_ceiling": "PRIVATE_RUNTIME_METADATA_CAPTURED if receipt exists.",
+                "boundary": "No live SIEM/NDR public proof in this PR. No full route proof unless separately captured and reviewed.",
+            },
+        ),
+        not_claimed_here=(
+            "live IdP proof",
+            "live SIEM/NDR observation",
+            "production identity coverage",
+            "complete identity-attack coverage",
+            "autonomous SOC operation",
+            "disposition authority",
+            "proof promotion",
+            "public-safe status",
+            "website/public-surface publication",
+        ),
+    ),
     "HO-DET-012": DetectionSpec(
         detection_id="HO-DET-012",
         current_state="CONTROLLED_TEST_VALIDATED",
@@ -1632,10 +1791,126 @@ def gate_summary(spec: DetectionSpec) -> list[dict[str, Any]]:
     ]
 
 
+def dependency_missing_gate_summary(spec: DetectionSpec) -> list[dict[str, Any]]:
+    return [
+        {
+            "gate": "source",
+            "status": "DEPENDENCY_SURFACES_MISSING",
+            "owner_repo": "hawkinsoperations-detections",
+            "claim": "source dependency is unavailable in this repo-root revision",
+            "promotion_allowed": False,
+        },
+        {
+            "gate": "validation",
+            "status": "DEPENDENCY_SURFACES_MISSING",
+            "owner_repo": "hawkinsoperations-validation",
+            "claim": "validation dependency is unavailable in this repo-root revision",
+            "promotion_allowed": False,
+        },
+        {
+            "gate": "platform_guardrail",
+            "status": spec.platform_guardrail_status,
+            "owner_repo": "hawkinsoperations-platform",
+            "claim": "bounded dependency-missing packet only",
+            "promotion_allowed": False,
+        },
+        {
+            "gate": "proof_record",
+            "status": "NOT_REQUIRED_FOR_CONTROLLED_TEST_VALIDATION",
+            "owner_repo": "hawkinsoperations-proof",
+            "claim": "no proof record required or promoted for controlled-test validation",
+            "promotion_allowed": False,
+        },
+        {
+            "gate": "blocked_claims",
+            "status": "PRESENT",
+            "owner_repo": "hawkinsoperations-platform",
+            "claim": "blocked claims inventory present",
+            "promotion_allowed": False,
+        },
+        {
+            "gate": "next_legal_move",
+            "status": "BLOCKED_DEPENDENCY_SURFACES",
+            "owner_repo": "hawkinsoperations-platform",
+            "claim": "merge/sync validation and detections surfaces first",
+            "promotion_allowed": False,
+        },
+    ]
+
+
+def build_dependency_missing_packet(
+    spec: DetectionSpec,
+    found: list[dict[str, Any]],
+    missing: list[str],
+) -> dict[str, Any]:
+    if spec.detection_id != "ID-DET-001":
+        raise DependencySurfacesMissing(spec.detection_id, found, missing)
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "detection_id": spec.detection_id,
+        "current_state": "DEPENDENCY_SURFACES_MISSING",
+        "current_phase": "DEPENDENCY_SURFACES_MISSING",
+        "public_proof_ceiling": spec.public_proof_ceiling,
+        "claim_ceiling": "CONTROLLED_TEST_VALIDATED",
+        "private_evidence_state": spec.private_evidence_state,
+        "public_safe_status": spec.public_safe_status,
+        "runtime_active": False,
+        "signal_observed": False,
+        "ai_decided_disposition": False,
+        "human_review_required": True,
+        "gate_summary": dependency_missing_gate_summary(spec),
+        "decision": {
+            "status": "BLOCKED_DEPENDENCY_SURFACES",
+            "merge_recommendation": "REVIEW_REQUIRED",
+            "proof_promotion_allowed": False,
+            "public_rendering_allowed": False,
+            "reason": (
+                "ID-DET-001 dependency surfaces are unavailable in this repo-root revision; "
+                "all-plan output remains bounded and non-promotional."
+            ),
+        },
+        "decision_status": "BLOCKED_DEPENDENCY_SURFACES",
+        "truth_boundary": spec.truth_boundary,
+        "repo_surfaces_found": found,
+        "required_surfaces_missing": missing,
+        "dependency_surfaces_missing": missing,
+        "validation_state": {
+            "status": "dependency_surfaces_missing",
+            "total_cases": 0,
+            "positive_cases": 0,
+            "negative_cases": 0,
+            "missed_positive_count": 0,
+            "false_positive_negative_count": 0,
+            "exact_claim_supported": "",
+        },
+        "proof_state": {
+            "record_path": spec.proof_record,
+            "card_path": spec.proof_card,
+            "record_exists": False,
+            "card_exists": False,
+            "state": spec.proof_state,
+        },
+        "platform_guardrail_status": spec.platform_guardrail_status,
+        "blocked_claims": sorted(set(spec.required_blocked_claims)),
+        "supported_claims": [],
+        "case_factory": case_factory_issue_plan(spec),
+        "next_allowed_move": "merge/sync validation and detections surfaces first",
+        "stop_conditions": list(spec.stop_conditions),
+        "state_consistency": [
+            "ID-DET-001 dependency surfaces are unavailable in this repo-root revision.",
+            "Direct ID-DET-001 status/plan remains fail-closed until dependencies are present.",
+            "All-plan output reports a bounded dependency-missing state without promotion.",
+        ],
+        "does_not_prove": list(spec.does_not_prove),
+        "next_gates": list(spec.next_gates),
+        "not_claimed_here": list(spec.not_claimed_here),
+    }
+
+
 def build_packet(repo_root: Path, spec: DetectionSpec) -> dict[str, Any]:
     found, missing = group_found_surfaces(repo_root, spec)
     if missing:
-        raise FactoryError(f"{spec.detection_id} required surfaces missing: {', '.join(missing)}")
+        raise DependencySurfacesMissing(spec.detection_id, found, missing)
 
     validation = load_json(repo_root / spec.validation_result)
     summary = validation_summary(spec, validation)
@@ -1657,7 +1932,7 @@ def build_packet(repo_root: Path, spec: DetectionSpec) -> dict[str, Any]:
     )
     record_exists, card_exists = assert_proof_record(repo_root, spec)
 
-    return {
+    packet = {
         "controller_version": CONTROLLER_VERSION,
         "detection_id": spec.detection_id,
         "current_state": spec.current_state,
@@ -1696,6 +1971,49 @@ def build_packet(repo_root: Path, spec: DetectionSpec) -> dict[str, Any]:
         "state_consistency": list(spec.state_consistency),
         "does_not_prove": list(spec.does_not_prove),
     }
+    if spec.next_gates or spec.not_claimed_here:
+        packet["current_phase"] = spec.current_state
+        packet["next_gates"] = list(spec.next_gates)
+        packet["not_claimed_here"] = list(spec.not_claimed_here)
+    return packet
+
+
+def build_plan_packet(repo_root: Path, spec: DetectionSpec, tolerate_id_dependency_missing: bool) -> dict[str, Any]:
+    try:
+        return build_packet(repo_root, spec)
+    except DependencySurfacesMissing as exc:
+        if tolerate_id_dependency_missing and exc.detection_id == "ID-DET-001":
+            return build_dependency_missing_packet(spec, exc.found, exc.missing)
+        raise
+
+
+def id_det_001_missing_surface_self_test() -> dict[str, Any]:
+    spec = SPECS["ID-DET-001"]
+    missing = [
+        f"{surface.repo}/{surface.path}"
+        for surface in spec.surfaces
+        if surface.required and surface.repo in {"hawkinsoperations-detections", "hawkinsoperations-validation"}
+    ]
+    packet = build_dependency_missing_packet(spec, [], missing)
+    checks = {
+        "detection_id": packet["detection_id"] == "ID-DET-001",
+        "current_state": packet["current_state"] == "DEPENDENCY_SURFACES_MISSING",
+        "decision_status": packet["decision_status"] == "BLOCKED_DEPENDENCY_SURFACES",
+        "public_safe_status": packet["public_safe_status"] == "NOT_PUBLIC_SAFE",
+        "claim_ceiling": packet["claim_ceiling"] == "CONTROLLED_TEST_VALIDATED",
+        "supported_claims_empty": packet["supported_claims"] == [],
+        "missing_surfaces_reported": bool(packet["required_surfaces_missing"]),
+        "next_allowed_move": packet["next_allowed_move"] == "merge/sync validation and detections surfaces first",
+        "no_promotion": not any(item["promotion_allowed"] for item in packet["gate_summary"]),
+    }
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "self-test-id-det-001-missing-surfaces",
+        "generated_output_files": False,
+        "status": "pass" if all(checks.values()) else "fail",
+        "checks": checks,
+        "packet": packet,
+    }
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -1703,7 +2021,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="mode", required=True)
     for mode in ("status", "plan"):
         sub = subparsers.add_parser(mode)
-        sub.add_argument("--detection", required=True, choices=("HO-DET-001", "HO-DET-011", "HO-DET-012", "all"))
+        sub.add_argument("--detection", required=True, choices=("HO-DET-001", "HO-DET-011", "HO-DET-012", "ID-DET-001", "all"))
         sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
         sub.add_argument("--format", default="json", choices=("json",))
     for mode in ("ledger-init-sample", "ledger-verify", "ledger-metrics"):
@@ -1720,6 +2038,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--ledger")
     sub.add_argument("--case-id")
     sub.add_argument("--self-test", action="store_true")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("self-test-id-det-001-missing-surfaces")
     sub.add_argument("--format", default="json", choices=("json",))
     return parser.parse_args(argv)
 
@@ -1803,10 +2123,19 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
+    if args.mode == "self-test-id-det-001-missing-surfaces":
+        output = id_det_001_missing_surface_self_test()
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
     repo_root = Path(args.repo_root).resolve()
     detection_ids = sorted(SPECS) if args.detection == "all" else [args.detection]
+    tolerate_id_dependency_missing = args.mode == "plan" and args.detection == "all"
 
-    packets = [build_packet(repo_root, SPECS[detection_id]) for detection_id in detection_ids]
+    packets = [
+        build_plan_packet(repo_root, SPECS[detection_id], tolerate_id_dependency_missing)
+        for detection_id in detection_ids
+    ]
     output = {
         "controller_version": CONTROLLER_VERSION,
         "mode": args.mode,

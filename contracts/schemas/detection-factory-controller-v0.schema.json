@@ -66,7 +66,10 @@
       "additionalProperties": false,
       "properties": {
         "status": {
-          "const": "pass"
+          "enum": [
+            "pass",
+            "dependency_surfaces_missing"
+          ]
         },
         "total_cases": {
           "type": "integer",
@@ -176,7 +179,8 @@
         "status": {
           "enum": [
             "READY_FOR_REVIEW",
-            "DRIFT_REVIEW_REQUIRED"
+            "DRIFT_REVIEW_REQUIRED",
+            "BLOCKED_DEPENDENCY_SURFACES"
           ]
         },
         "merge_recommendation": {
@@ -266,7 +270,8 @@
           "enum": [
             "HO-DET-001",
             "HO-DET-011",
-            "HO-DET-012"
+            "HO-DET-012",
+            "ID-DET-001"
           ]
         },
         "current_state": {
@@ -320,6 +325,12 @@
             "type": "string"
           }
         },
+        "dependency_surfaces_missing": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "validation_state": {
           "$ref": "#/$defs/validation_state"
         },
@@ -338,10 +349,17 @@
         },
         "supported_claims": {
           "type": "array",
-          "minItems": 1,
           "items": {
             "type": "string"
           }
+        },
+        "decision_status": {
+          "type": "string"
+        },
+        "claim_ceiling": {
+          "enum": [
+            "CONTROLLED_TEST_VALIDATED"
+          ]
         },
         "next_allowed_move": {
           "type": "string"
@@ -363,6 +381,46 @@
         "does_not_prove": {
           "type": "array",
           "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "current_phase": {
+          "type": "string"
+        },
+        "next_gates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "purpose",
+              "claim_ceiling",
+              "boundary"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "purpose": {
+                "type": "string"
+              },
+              "claim_ceiling": {
+                "type": "string"
+              },
+              "boundary": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "not_claimed_here": {
+          "type": "array",
           "items": {
             "type": "string"
           }

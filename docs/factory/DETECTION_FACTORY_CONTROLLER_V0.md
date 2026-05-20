@@ -7,7 +7,7 @@ for reading HawkinsOperations detection state across the local organization
 mirror.
 
 The v0 controller is intentionally narrow. It produces reviewer packets for
-`HO-DET-001`, `HO-DET-011`, and `HO-DET-012` from existing repo surfaces. It does not promote
+`HO-DET-001`, `HO-DET-011`, `HO-DET-012`, and `ID-DET-001` from existing repo surfaces. It does not promote
 proof, publish evidence, update the website, create pull requests, merge
 changes, or write generated output files.
 
@@ -34,6 +34,7 @@ v0 supports:
 - `HO-DET-001`
 - `HO-DET-011`
 - `HO-DET-012`
+- `ID-DET-001`
 
 Any other detection ID must fail closed as unsupported.
 
@@ -86,6 +87,53 @@ platform sample guardrail in v0, and no runtime-active, signal-observed,
 public-safe, or scheduled-task coverage completeness claim. The platform entry
 is status visibility only.
 
+`ID-DET-001` must report `CONTROLLED_TEST_VALIDATED` for controlled identity
+session context fixtures only. It has no proof record in v0, no platform sample
+guardrail in v0, and no runtime-active, signal-observed, public-safe, live IdP,
+production identity coverage, impossible-travel completeness, or session
+hijacking completeness claim. The platform entry is status/plan visibility only.
+
+The `ID-DET-001` packet also reports the next gated phases without claiming they
+are complete:
+
+- `ID-RUNTIME-001`: Proxmox and Windows private runtime identity receipt with
+  approved metadata, Wazuh count-only receipt, Splunk count-only receipt, and
+  platform private ledger review.
+- `ID-CLOUD-001`: IdP export/log review lane for approved Entra-style or
+  Okta-style identity log exports.
+- `ID-AGENT-001`: AI or machine identity tool-scope validation lane.
+- `ID-ROUTE-001`: SIEM/NDR route receipt lane for count-only Wazuh, Splunk,
+  Cribl, and Security Onion route checks.
+
+These are future gates only. The current controller packet does not claim live
+IdP proof, live SIEM/NDR observation, production identity coverage, complete
+identity-attack coverage, autonomous SOC operation, disposition authority, proof
+promotion, public-safe status, or website/public-surface publication.
+
+### Mixed-Revision Plan Behavior
+
+Direct `ID-DET-001` status and plan requests remain fail-closed when the
+required validation or detection surfaces are unavailable. That keeps direct
+review from treating an incomplete repo-root revision as controlled-test
+validated.
+
+`plan --detection all` may run in mirrors where the platform branch is present
+before the validation and detections branches are merged and synced. In that
+mixed-revision case, the controller must not fail the whole all-plan output for
+`ID-DET-001`. It reports a bounded `DEPENDENCY_SURFACES_MISSING` packet with:
+
+- `decision_status: BLOCKED_DEPENDENCY_SURFACES`
+- `public_safe_status: NOT_PUBLIC_SAFE`
+- `claim_ceiling: CONTROLLED_TEST_VALIDATED`
+- `supported_claims: []`
+- required dependency paths listed under `required_surfaces_missing`
+- `next_allowed_move: merge/sync validation and detections surfaces first`
+
+The bounded packet is not a validation pass. It preserves blocked claims and does
+not promote proof, runtime, signal, public-safe, live IdP, live SIEM/NDR,
+production identity coverage, disposition authority, or website/public-surface
+claims.
+
 ## CLI Contract
 
 Entry point:
@@ -94,8 +142,11 @@ Entry point:
 python -B scripts\ho_factory.py status --detection HO-DET-001 --repo-root "<ORG_REPO_ROOT>" --format json
 python -B scripts\ho_factory.py status --detection HO-DET-011 --repo-root "<ORG_REPO_ROOT>" --format json
 python -B scripts\ho_factory.py status --detection HO-DET-012 --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py status --detection ID-DET-001 --repo-root "<ORG_REPO_ROOT>" --format json
 python -B scripts\ho_factory.py plan --detection HO-DET-012 --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py plan --detection ID-DET-001 --repo-root "<ORG_REPO_ROOT>" --format json
 python -B scripts\ho_factory.py plan --detection all --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py self-test-id-det-001-missing-surfaces --format json
 ```
 
 Modes:
