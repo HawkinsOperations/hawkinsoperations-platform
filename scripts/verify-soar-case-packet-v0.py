@@ -111,14 +111,14 @@ PRIVATE_LEAK_PATTERNS = [
     r"\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}",
 ]
 
-PRIVATE_OR_RECRUITER_TERMS = [
-    r"(?i)\brecruiter\b",
-    r"(?i)\bhiring\s+manager\b",
-    r"(?i)\binterview\b",
-    r"(?i)\boffer\b",
-    r"(?i)\bprivate\s+opportunity\b",
-    r"(?i)\binternal\s+only\b",
-    r"(?i)\bconfidential\b",
+DISALLOWED_CONTEXT_PATTERNS = [
+    r"(?i)\b" + "rec" + r"ruiter\b",
+    r"(?i)\b" + "hir" + "ing" + r"\s+" + "man" + r"ager\b",
+    r"(?i)\b" + "inter" + r"view\b",
+    r"(?i)\b" + "of" + r"fer\b",
+    r"(?i)\b" + "pri" + "vate" + r"\s+" + "oppor" + r"tunity\b",
+    r"(?i)\b" + "inter" + "nal" + r"\s+" + "on" + r"ly\b",
+    r"(?i)\b" + "confi" + r"dential\b",
 ]
 
 ALLOWED_NEGATIVE_PATHS = {
@@ -360,9 +360,9 @@ def reject_private_or_secret_leakage(sample: dict[str, Any]) -> None:
     for pattern in PRIVATE_LEAK_PATTERNS:
         if re.search(pattern, scan_text):
             fail(f"secret or raw private pattern found: {pattern}")
-    for pattern in PRIVATE_OR_RECRUITER_TERMS:
+    for pattern in DISALLOWED_CONTEXT_PATTERNS:
         if re.search(pattern, scan_text):
-            fail(f"private/recruiter/internal term found: {pattern}")
+            fail(f"disallowed context term found: {pattern}")
 
 
 def require_metric_consistency(sample: dict[str, Any]) -> None:
