@@ -110,6 +110,30 @@ IdP proof, live SIEM/NDR observation, production identity coverage, complete
 identity-attack coverage, autonomous SOC operation, disposition authority, proof
 promotion, public-safe status, or website/public-surface publication.
 
+### Mixed-Revision Plan Behavior
+
+Direct `ID-DET-001` status and plan requests remain fail-closed when the
+required validation or detection surfaces are unavailable. That keeps direct
+review from treating an incomplete repo-root revision as controlled-test
+validated.
+
+`plan --detection all` may run in mirrors where the platform branch is present
+before the validation and detections branches are merged and synced. In that
+mixed-revision case, the controller must not fail the whole all-plan output for
+`ID-DET-001`. It reports a bounded `DEPENDENCY_SURFACES_MISSING` packet with:
+
+- `decision_status: BLOCKED_DEPENDENCY_SURFACES`
+- `public_safe_status: NOT_PUBLIC_SAFE`
+- `claim_ceiling: CONTROLLED_TEST_VALIDATED`
+- `supported_claims: []`
+- required dependency paths listed under `required_surfaces_missing`
+- `next_allowed_move: merge/sync validation and detections surfaces first`
+
+The bounded packet is not a validation pass. It preserves blocked claims and does
+not promote proof, runtime, signal, public-safe, live IdP, live SIEM/NDR,
+production identity coverage, disposition authority, or website/public-surface
+claims.
+
 ## CLI Contract
 
 Entry point:
@@ -122,6 +146,7 @@ python -B scripts\ho_factory.py status --detection ID-DET-001 --repo-root "<ORG_
 python -B scripts\ho_factory.py plan --detection HO-DET-012 --repo-root "<ORG_REPO_ROOT>" --format json
 python -B scripts\ho_factory.py plan --detection ID-DET-001 --repo-root "<ORG_REPO_ROOT>" --format json
 python -B scripts\ho_factory.py plan --detection all --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py self-test-id-det-001-missing-surfaces --format json
 ```
 
 Modes:

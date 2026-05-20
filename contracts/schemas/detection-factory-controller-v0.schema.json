@@ -66,7 +66,10 @@
       "additionalProperties": false,
       "properties": {
         "status": {
-          "const": "pass"
+          "enum": [
+            "pass",
+            "dependency_surfaces_missing"
+          ]
         },
         "total_cases": {
           "type": "integer",
@@ -176,7 +179,8 @@
         "status": {
           "enum": [
             "READY_FOR_REVIEW",
-            "DRIFT_REVIEW_REQUIRED"
+            "DRIFT_REVIEW_REQUIRED",
+            "BLOCKED_DEPENDENCY_SURFACES"
           ]
         },
         "merge_recommendation": {
@@ -321,6 +325,12 @@
             "type": "string"
           }
         },
+        "dependency_surfaces_missing": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "validation_state": {
           "$ref": "#/$defs/validation_state"
         },
@@ -339,10 +349,17 @@
         },
         "supported_claims": {
           "type": "array",
-          "minItems": 1,
           "items": {
             "type": "string"
           }
+        },
+        "decision_status": {
+          "type": "string"
+        },
+        "claim_ceiling": {
+          "enum": [
+            "CONTROLLED_TEST_VALIDATED"
+          ]
         },
         "next_allowed_move": {
           "type": "string"
