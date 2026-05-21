@@ -10,7 +10,7 @@
   "alert_summary": {
     "title": "Encoded PowerShell process creation controlled-test alert",
     "severity": "medium",
-    "summary": "Sanitized process facts indicate a controlled-test encoded PowerShell candidate that should be handed to a human analyst with required context checks.",
+      "summary": "Sanitized process facts indicate a controlled-test encoded PowerShell candidate that can support a reviewer receipt when handed to a human analyst with required context checks.",
     "supported_scope": "controlled analyst-support workflow modeling only",
     "validation_basis": "committed sanitized sample plus deterministic verifier"
   },
