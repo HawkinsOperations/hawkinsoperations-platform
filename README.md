@@ -29,6 +29,7 @@ This repository defines how detection and validation components are wired, promo
 - Platform contract status: non-promotional guardrail; it does not prove live runtime, public-safe signal, public-safe runtime evidence, live Splunk fired, Splunk-proven Runtime Signal 001, Cribl-routed status, Wazuh-routed public proof, AWS-live status, production-ready status, fleet-wide coverage, autonomous SOC operation, AI-approved disposition, or analyst-approved disposition.
 - Next gate: evidence-backed runtime or signal promotion only after separate proof review, privacy review, stale review, wording review, and Raylee approval.
 - Runtime-active and signal-observed claims remain blocked.
+- Cyber Kill Chain coverage: this repo contributes workflow, case-packet, automation, and AI-support boundary truth to the canonical [Cyber Kill Chain coverage map](https://github.com/HawkinsOperations/hawkinsoperations-proof/blob/main/docs/mappings/CYBER_KILL_CHAIN_COVERAGE.md) in `hawkinsoperations-proof`. The map is reviewer navigation, not runtime, signal, production, or public-safe proof authority.
 
 ## Blocked Claims
 
