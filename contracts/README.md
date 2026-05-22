@@ -26,6 +26,7 @@ Any schema-breaking change requires:
 - `contracts/schemas/local-llm-runtime-receipt.schema.json`
 - `contracts/schemas/detection-factory-controller-v0.schema.json`
 - `contracts/schemas/local-gpu-triage-support-v0.schema.json`
+- `contracts/schemas/telemetry-coverage-contract-v0.schema.json`
 
 ## Local LLM Runtime Receipt Boundary
 
@@ -46,6 +47,7 @@ Minimal examples live in:
 - `contracts/examples/detection-factory-controller-v0.ho-det-001.sample.json`
 - `contracts/examples/detection-factory-controller-v0.ho-det-011.sample.json`
 - `contracts/examples/local-gpu-triage-support-v0.sample.json`
+- `contracts/examples/telemetry-coverage-contract-v0.sample.json`
 
 ## Contract Intent
 
@@ -107,3 +109,21 @@ not create generated runtime packets, open SSH, execute model prompts in CI,
 run Ollama prompts in CI, inspect runner settings, promote proof, or claim
 public-safe, runtime-active public proof, signal-observed public proof,
 production, autonomous, AI-approved, or analyst-approved status.
+
+## Telemetry Coverage Contract v0
+
+Telemetry Coverage Contract v0 is documented in:
+
+- `docs/factory/TELEMETRY_COVERAGE_CONTRACT_V0.md`
+
+The deterministic verifier is:
+
+- `scripts/verify-telemetry-coverage-contract.py`
+
+The contract aligns `HO-NDR-001` and `HO-PIPE-001` as Command & Control support
+lane contract truth only. It preserves `VALIDATION_CONTRACT_ENFORCED`,
+`NOT_PUBLIC_SAFE`, `runtime_active=false`, `signal_observed=false`, and human
+review requirements while blocking runtime-active, signal-observed, live Splunk,
+Cribl-routed proof, Wazuh-routed proof, Security Onion observed proof,
+production-ready, public-safe runtime, autonomous SOC, AI-approved, and
+analyst-approved claims.

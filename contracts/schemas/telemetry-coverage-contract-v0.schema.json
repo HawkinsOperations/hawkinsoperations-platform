@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HawkinsOperations/hawkinsoperations-platform/contracts/schemas/telemetry-coverage-contract-v0.schema.json",
+  "title": "Telemetry Coverage Contract v0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "contract_status",
+    "public_safe_status",
+    "runtime_active",
+    "signal_observed",
+    "human_review_required",
+    "lanes",
+    "blocked_claims",
+    "claim_boundary",
+    "next_gate"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "TELEMETRY_COVERAGE_CONTRACT_V0"
+    },
+    "contract_status": {
+      "const": "VALIDATION_CONTRACT_ENFORCED"
+    },
+    "public_safe_status": {
+      "const": "NOT_PUBLIC_SAFE"
+    },
+    "runtime_active": {
+      "const": false
+    },
+    "signal_observed": {
+      "const": false
+    },
+    "human_review_required": {
+      "const": true
+    },
+    "lanes": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/lane"
+      }
+    },
+    "blocked_claims": {
+      "type": "array",
+      "minItems": 11,
+      "items": {
+        "type": "string"
+      }
+    },
+    "claim_boundary": {
+      "type": "string"
+    },
+    "next_gate": {
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "lane": {
+      "type": "object",
+      "required": [
+        "detection_id",
+        "coverage_family",
+        "source_truth",
+        "validation_state",
+        "proof_ceiling",
+        "public_safe_status",
+        "runtime_active",
+        "signal_observed",
+        "validation_owner",
+        "platform_contract_role",
+        "supported_claim",
+        "blocked_claims",
+        "next_gate"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "detection_id": {
+          "enum": [
+            "HO-NDR-001",
+            "HO-PIPE-001"
+          ]
+        },
+        "coverage_family": {
+          "enum": [
+            "ndr_visibility_boundary",
+            "pipeline_route_integrity"
+          ]
+        },
+        "source_truth": {
+          "enum": [
+            "BOUNDARY_CONTRACT_ONLY",
+            "SOURCE_EXISTS"
+          ]
+        },
+        "validation_state": {
+          "const": "VALIDATION_CONTRACT_ENFORCED"
+        },
+        "proof_ceiling": {
+          "enum": [
+            "BOUNDARY_CONTRACT_ONLY",
+            "SOURCE_EXISTS",
+            "VALIDATION_CONTRACT_ENFORCED"
+          ]
+        },
+        "public_safe_status": {
+          "const": "NOT_PUBLIC_SAFE"
+        },
+        "runtime_active": {
+          "const": false
+        },
+        "signal_observed": {
+          "const": false
+        },
+        "validation_owner": {
+          "const": "hawkinsoperations-validation"
+        },
+        "platform_contract_role": {
+          "type": "string"
+        },
+        "supported_claim": {
+          "type": "string"
+        },
+        "blocked_claims": {
+          "type": "array",
+          "minItems": 11,
+          "items": {
+            "type": "string"
+          }
+        },
+        "next_gate": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
