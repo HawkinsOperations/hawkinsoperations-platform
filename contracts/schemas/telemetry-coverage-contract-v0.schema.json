@@ -96,10 +96,7 @@
           ]
         },
         "validation_state": {
-          "enum": [
-            "VALIDATION_CONTRACT_ENFORCED",
-            "BOUNDARY_CONTRACT_ONLY"
-          ]
+          "const": "VALIDATION_CONTRACT_ENFORCED"
         },
         "proof_ceiling": {
           "enum": [
