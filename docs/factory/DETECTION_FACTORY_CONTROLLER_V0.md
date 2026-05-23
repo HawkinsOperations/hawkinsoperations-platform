@@ -105,10 +105,12 @@ ceilings. Private runtime boundary values may be reported only as proof-index
 visibility metadata and only where the existing proof record supports that
 private boundary status.
 
-The existing platform `HO-DET-011` case-packet guardrail is pinned to an older
-6-case sample. Current detection, validation, and proof surfaces record 17
-controlled-test fixtures. v0 must not repair that drift. It must report
-`STATE_DRIFT_REVIEW_REQUIRED` in `state_consistency`.
+The platform `HO-DET-011` case-packet guardrail is aligned to the current 17
+controlled-test fixture validation shape. v0 must keep that alignment
+non-promotional: the proof ceiling remains `CONTROLLED_TEST_VALIDATED`, public-
+safe status remains `NOT_PUBLIC_SAFE`, runtime-active and public/routed
+signal-observed claims remain blocked, and AI remains support-only rather than
+approval authority.
 
 `HO-DET-012` must report `CONTROLLED_TEST_VALIDATED` for controlled scheduled
 task creation and update fixtures only. It has no proof record in v0, no

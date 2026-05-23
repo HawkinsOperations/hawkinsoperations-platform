@@ -75,10 +75,12 @@ Reviewer packets include `gate_summary`, `decision`, and `truth_boundary`
 fields so reviewers can see the source, validation, platform guardrail, proof
 record, blocked-claim, and next-legal-move chain without inferring promotion.
 
-`HO-DET-011` currently reports `STATE_DRIFT_REVIEW_REQUIRED` because the
-platform case-packet guardrail sample remains pinned to an earlier 6-case shape
-while current detection, validation, and proof surfaces record 17 controlled-
-test fixtures. v0 reports that drift; it does not repair it.
+`HO-DET-011` now aligns the platform case-packet guardrail sample, schema,
+verifier, and factory status with the current 17 controlled-test fixture
+validation shape. The update is non-promotional: proof ceiling remains
+`CONTROLLED_TEST_VALIDATED`, public-safe status remains `NOT_PUBLIC_SAFE`, and
+runtime-active, signal-observed, public-safe runtime, production, and AI
+authority claims remain blocked.
 
 `ID-DET-002`, `ID-DET-003`, and `ID-DET-004` are validation-backed platform
 visibility packets after `hawkinsoperations-validation` PR #46. They report

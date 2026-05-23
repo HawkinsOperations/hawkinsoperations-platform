@@ -34,6 +34,7 @@
     "ai_may_promote",
     "ai_may_close",
     "human_review_required",
+    "runtime_readiness_truth",
     "telemetry_boundary",
     "validation_counts",
     "allowed_claims",
@@ -67,10 +68,10 @@
       "const": "hawkinsoperations-validation/validation/successor/ho-det-011/validation-cases.json"
     },
     "validation_pr": {
-      "const": "HawkinsOperations/hawkinsoperations-validation#25"
+      "const": "HawkinsOperations/hawkinsoperations-validation#26"
     },
     "validation_merge_commit": {
-      "const": "4c4bf5a"
+      "const": "4df879ea7b3c4dc8d564596accc2f66a87ede6a6"
     },
     "validation_status": {
       "const": "pass"
@@ -146,6 +147,54 @@
       "type": "boolean",
       "const": true
     },
+    "runtime_readiness_truth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_truth",
+        "validation_truth",
+        "platform_truth",
+        "proof_truth",
+        "runtime_truth",
+        "signal_truth",
+        "evidence_truth",
+        "ai_triage_truth",
+        "public_proof_truth",
+        "human_review_truth"
+      ],
+      "properties": {
+        "source_truth": {
+          "const": "SOURCE_EXISTS"
+        },
+        "validation_truth": {
+          "const": "CONTROLLED_TEST_VALIDATED"
+        },
+        "platform_truth": {
+          "const": "CASE_PACKET_ALIGNED_TO_17_CASE_VALIDATION"
+        },
+        "proof_truth": {
+          "const": "PRIVATE_RUNTIME_EVIDENCE_CAPTURED_NOT_PROMOTED"
+        },
+        "runtime_truth": {
+          "const": "PUBLIC_RUNTIME_BLOCKED"
+        },
+        "signal_truth": {
+          "const": "SIGNAL_NOT_OBSERVED_PUBLIC_OR_ROUTED"
+        },
+        "evidence_truth": {
+          "const": "NO_RAW_PRIVATE_EVIDENCE_IN_PLATFORM_PACKET"
+        },
+        "ai_triage_truth": {
+          "const": "AI_SUPPORT_ONLY_NOT_AUTHORITY"
+        },
+        "public_proof_truth": {
+          "const": "NOT_PUBLIC_SAFE"
+        },
+        "human_review_truth": {
+          "const": "HUMAN_REVIEW_REQUIRED"
+        }
+      }
+    },
     "telemetry_boundary": {
       "type": "object",
       "additionalProperties": false,
@@ -175,26 +224,34 @@
         "negative_cases",
         "pass",
         "fail",
-        "matched_positive_count"
+        "matched_positive_count",
+        "missed_positive_count",
+        "false_positive_negative_count"
       ],
       "properties": {
         "total_cases": {
-          "const": 6
+          "const": 17
         },
         "positive_cases": {
-          "const": 3
+          "const": 7
         },
         "negative_cases": {
-          "const": 3
+          "const": 10
         },
         "pass": {
-          "const": 6
+          "const": 17
         },
         "fail": {
           "const": 0
         },
         "matched_positive_count": {
-          "const": 3
+          "const": 7
+        },
+        "missed_positive_count": {
+          "const": 0
+        },
+        "false_positive_negative_count": {
+          "const": 0
         }
       }
     },
@@ -213,7 +270,7 @@
     },
     "blocked_claims": {
       "type": "array",
-      "minItems": 14,
+      "minItems": 22,
       "uniqueItems": true,
       "items": {
         "enum": [
@@ -221,15 +278,24 @@
           "signal-observed",
           "public-safe",
           "evidence-linked public proof",
+          "public-safe runtime proof",
+          "Splunk-fired",
           "live Splunk fired",
           "Wazuh-routed",
           "Cribl-routed",
+          "Security Onion observed",
+          "Suricata observed",
+          "Zeek observed",
           "AWS-live",
           "production-ready",
+          "production triage",
           "fleet-wide",
+          "autonomous SOC",
           "service-creation coverage completeness",
+          "attack coverage completeness",
           "AI-decided disposition",
           "AI-approved disposition",
+          "analyst-approved disposition",
           "AI-closed disposition"
         ]
       }
