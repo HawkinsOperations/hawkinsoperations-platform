@@ -30,6 +30,59 @@ EXPECTED = {
     "human_review_required": True,
 }
 
+REQUIRED_TRUTH_PLANES = {
+    "source_truth",
+    "validation_truth",
+    "runtime_truth",
+    "signal_truth",
+    "evidence_truth",
+    "ai_triage_truth",
+    "public_proof_truth",
+    "human_review_truth",
+}
+
+TRUTH_PLANE_INVARIANTS = {
+    "source_truth": {
+        "state": "SOURCE_EXISTS",
+        "owner": "hawkinsoperations-detections",
+    },
+    "validation_truth": {
+        "state": "CONTROLLED_TEST_VALIDATED",
+        "owner": "hawkinsoperations-validation",
+    },
+    "runtime_truth": {
+        "state": "RUNTIME_EVIDENCE_VERIFIED_PRIVATE",
+        "public_runtime_claim_status": "PUBLIC_RUNTIME_BLOCKED",
+    },
+    "signal_truth": {
+        "state": "SIGNAL_OBSERVED_PRIVATE",
+        "public_signal_claim_status": "PUBLIC_RUNTIME_BLOCKED",
+    },
+    "evidence_truth": {
+        "state": "RUNTIME_EVIDENCE_VERIFIED_PRIVATE",
+        "raw_private_evidence_public_safe": False,
+        "repo_contains_raw_private_evidence": False,
+        "hash_only_private_refs": True,
+    },
+    "ai_triage_truth": {
+        "support_state": "AI_SUPPORT_ONLY",
+        "triage_output_state": "AI_TRIAGE_OUTPUT_PRIVATE",
+        "authority_state": "AI_NOT_AUTHORITY",
+        "ai_decided_disposition": False,
+        "human_review_required": True,
+    },
+    "public_proof_truth": {
+        "state": "PUBLIC_RUNTIME_BLOCKED",
+        "proof_ceiling": "CONTROLLED_TEST_VALIDATED",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+    },
+    "human_review_truth": {
+        "state": "HUMAN_REVIEW_REQUIRED",
+        "public_runtime_summary_state": "PUBLIC_RUNTIME_BLOCKED",
+        "approval_required_for_public_summary": True,
+    },
+}
+
 BLOCKED_ALLOWED_CLAIM_PATTERNS = [
     r"runtime-active",
     r"signal-observed",
@@ -159,12 +212,60 @@ def require_blocked_claim_inventory(sample: dict) -> None:
         fail(f"missing blocked_claims entries: {', '.join(missing)}")
 
 
+def require_object(value: object, name: str) -> dict:
+    if not isinstance(value, dict):
+        fail(f"{name} must be an object")
+    return value
+
+
+def require_expected_field(container: dict, plane_name: str, field_name: str, expected: object) -> None:
+    actual = container.get(field_name)
+    if actual != expected:
+        fail(f"{plane_name}.{field_name} must remain {expected!r}, got {actual!r}")
+
+
+def require_minimum_refs(container: dict, plane_name: str, field_name: str) -> None:
+    refs = container.get(field_name)
+    if not isinstance(refs, list) or len(refs) < 2:
+        fail(f"{plane_name}.{field_name} requires at least two refs")
+
+
+def require_truth_spine(sample: dict) -> None:
+    spine = require_object(sample.get("runtime_truth_spine"), "runtime_truth_spine")
+    missing = sorted(REQUIRED_TRUTH_PLANES - set(spine))
+    if missing:
+        fail(f"runtime_truth_spine missing truth planes: {', '.join(missing)}")
+
+    planes = {
+        plane_name: require_object(spine.get(plane_name), f"runtime_truth_spine.{plane_name}")
+        for plane_name in sorted(REQUIRED_TRUTH_PLANES)
+    }
+
+    for plane_name, invariants in TRUTH_PLANE_INVARIANTS.items():
+        for field_name, expected in invariants.items():
+            require_expected_field(planes[plane_name], plane_name, field_name, expected)
+
+    require_minimum_refs(planes["source_truth"], "source_truth", "refs")
+    require_minimum_refs(planes["validation_truth"], "validation_truth", "refs")
+    require_minimum_refs(
+        planes["runtime_truth"],
+        "runtime_truth",
+        "verified_runtime_evidence_refs",
+    )
+    require_minimum_refs(
+        planes["signal_truth"],
+        "signal_truth",
+        "verified_signal_record_refs",
+    )
+
+
 def main() -> int:
     sample = load_json(SAMPLE_PATH)
     schema = load_json(SCHEMA_PATH)
 
     validate_schema_if_possible(sample, schema)
     require_expected_values(sample)
+    require_truth_spine(sample)
     require_privacy_boundary(sample)
     require_blocked_claim_inventory(sample)
     reject_promoted_allowed_claims(sample)
@@ -177,6 +278,8 @@ def main() -> int:
     print("PROMOTION_STATUS=BLOCKED")
     print("RUNTIME_ACTIVE=false")
     print("SIGNAL_OBSERVED=false")
+    print("PUBLIC_RUNTIME_CLAIM_STATUS=PUBLIC_RUNTIME_BLOCKED")
+    print("AI_TRIAGE_TRUTH=AI_SUPPORT_ONLY/AI_TRIAGE_OUTPUT_PRIVATE/AI_NOT_AUTHORITY")
     print("AI_DECIDED_DISPOSITION=false")
     return 0
 
