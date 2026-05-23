@@ -31,7 +31,7 @@
         },
         {
           "gate": "platform_guardrail",
-          "status": "STATE_DRIFT_REVIEW_REQUIRED",
+          "status": "SATISFIED_NON_PROMOTIONAL_BOUNDARY",
           "owner_repo": "hawkinsoperations-platform",
           "claim": "platform guardrail reported",
           "promotion_allowed": false
@@ -54,21 +54,21 @@
           "gate": "next_legal_move",
           "status": "REVIEW_REQUIRED",
           "owner_repo": "hawkinsoperations-platform",
-          "claim": "Review platform drift before any guardrail update; routed telemetry or public-safe wording remains blocked until separate evidence linkage, redaction review, stale review, wording review, and Raylee approval.",
+          "claim": "Platform guardrail drift is resolved for the 17-case controlled validation shape; routed telemetry or public-safe wording remains blocked until separate evidence linkage, redaction review, stale review, wording review, and Raylee approval.",
           "promotion_allowed": false
         }
       ],
       "decision": {
-        "status": "DRIFT_REVIEW_REQUIRED",
+        "status": "READY_FOR_REVIEW",
         "merge_recommendation": "REVIEW_REQUIRED",
         "proof_promotion_allowed": false,
         "public_rendering_allowed": false,
-        "reason": "Platform guardrail remains pinned to an earlier 6-case shape while current validation, proof, and detection surfaces record 17 controlled-test fixtures."
+        "reason": "Platform guardrail matches the current 17-case controlled validation shape while preserving proof, runtime, signal, public-safe, and AI authority boundaries."
       },
       "truth_boundary": {
         "source_truth": "reported",
         "validation_truth": "controlled-test validated",
-        "platform_truth": "controller reported drift review required",
+        "platform_truth": "case-packet guardrail aligned to current controlled validation state",
         "proof_truth": "private runtime evidence state reported",
         "runtime_truth": "not public proven",
         "signal_truth": "not public proven",
@@ -145,7 +145,7 @@
         "website_proof_claim_allowed": false,
         "claim_boundary": "Platform reports proof-index status metadata only. Proof truth remains owned by hawkinsoperations-proof, and this visibility field does not promote proof, runtime, signal, public-safe, or website status."
       },
-      "platform_guardrail_status": "STATE_DRIFT_REVIEW_REQUIRED",
+      "platform_guardrail_status": "SATISFIED_NON_PROMOTIONAL_BOUNDARY",
       "blocked_claims": [
         "runtime-active",
         "signal-observed",
@@ -171,17 +171,17 @@
         "HO-DET-011 has sanitized private local Windows runtime evidence captured for one controlled service-creation test.",
         "HO-DET-011 is capped at PRIVATE_RUNTIME_EVIDENCE_CAPTURED for private evidence and NOT_PUBLIC_SAFE for public use."
       ],
-      "next_allowed_move": "Review platform drift before any guardrail update; routed telemetry or public-safe wording remains blocked until separate evidence linkage, redaction review, stale review, wording review, and Raylee approval.",
+      "next_allowed_move": "Platform guardrail drift is resolved for the 17-case controlled validation shape; routed telemetry or public-safe wording remains blocked until separate evidence linkage, redaction review, stale review, wording review, and Raylee approval.",
       "stop_conditions": [
-        "Do not repair the 6-case platform guardrail in v0.",
         "Do not promote proof.",
+        "Do not edit proof, website, detection, validation, workflow, dependency, evidence, or runtime files.",
         "Do not claim public-safe status.",
         "Do not claim runtime-active or signal-observed public proof.",
         "Do not create generated output files."
       ],
       "state_consistency": [
-        "STATE_DRIFT_REVIEW_REQUIRED",
-        "Platform sample and verifier remain pinned to an earlier 6-case guardrail while current validation, proof, and detection facts record 17 controlled-test fixtures."
+        "STATE_CONSISTENT_WITH_17_CASE_VALIDATION",
+        "Platform sample, schema, verifier, and factory status align to the current 17 controlled-test fixtures without promoting proof, runtime-active, signal-observed, or public-safe claims."
       ],
       "does_not_prove": [
         "runtime activity",

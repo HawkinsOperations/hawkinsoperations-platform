@@ -20,8 +20,8 @@ EXPECTED = {
     "promotion_status": "BLOCKED",
     "validation_result_ref": "hawkinsoperations-validation/reports/ho-det-011/validation-result.json",
     "validation_cases_ref": "hawkinsoperations-validation/validation/successor/ho-det-011/validation-cases.json",
-    "validation_pr": "HawkinsOperations/hawkinsoperations-validation#25",
-    "validation_merge_commit": "4c4bf5a",
+    "validation_pr": "HawkinsOperations/hawkinsoperations-validation#26",
+    "validation_merge_commit": "4df879ea7b3c4dc8d564596accc2f66a87ede6a6",
     "validation_status": "pass",
     "controlled_test_validation": True,
     "runtime_active": False,
@@ -43,12 +43,27 @@ EXPECTED = {
 }
 
 EXPECTED_COUNTS = {
-    "total_cases": 6,
-    "positive_cases": 3,
-    "negative_cases": 3,
-    "pass": 6,
+    "total_cases": 17,
+    "positive_cases": 7,
+    "negative_cases": 10,
+    "pass": 17,
     "fail": 0,
-    "matched_positive_count": 3,
+    "matched_positive_count": 7,
+    "missed_positive_count": 0,
+    "false_positive_negative_count": 0,
+}
+
+EXPECTED_RUNTIME_READINESS_TRUTH = {
+    "source_truth": "SOURCE_EXISTS",
+    "validation_truth": "CONTROLLED_TEST_VALIDATED",
+    "platform_truth": "CASE_PACKET_ALIGNED_TO_17_CASE_VALIDATION",
+    "proof_truth": "PRIVATE_RUNTIME_EVIDENCE_CAPTURED_NOT_PROMOTED",
+    "runtime_truth": "PUBLIC_RUNTIME_BLOCKED",
+    "signal_truth": "SIGNAL_NOT_OBSERVED_PUBLIC_OR_ROUTED",
+    "evidence_truth": "NO_RAW_PRIVATE_EVIDENCE_IN_PLATFORM_PACKET",
+    "ai_triage_truth": "AI_SUPPORT_ONLY_NOT_AUTHORITY",
+    "public_proof_truth": "NOT_PUBLIC_SAFE",
+    "human_review_truth": "HUMAN_REVIEW_REQUIRED",
 }
 
 REQUIRED_BLOCKED_CLAIMS = {
@@ -56,15 +71,24 @@ REQUIRED_BLOCKED_CLAIMS = {
     "signal-observed",
     "public-safe",
     "evidence-linked public proof",
+    "public-safe runtime proof",
+    "Splunk-fired",
     "live Splunk fired",
     "Wazuh-routed",
     "Cribl-routed",
+    "Security Onion observed",
+    "Suricata observed",
+    "Zeek observed",
     "AWS-live",
     "production-ready",
+    "production triage",
     "fleet-wide",
+    "autonomous SOC",
     "service-creation coverage completeness",
+    "attack coverage completeness",
     "AI-decided disposition",
     "AI-approved disposition",
+    "analyst-approved disposition",
     "AI-closed disposition",
 }
 
@@ -73,16 +97,25 @@ BLOCKED_ALLOWED_CLAIM_PATTERNS = [
     r"signal[-\s]+observed",
     r"public[-\s]+safe",
     r"evidence[-\s]+linked\s+public\s+proof",
+    r"public[-\s]+safe\s+runtime\s+proof",
+    r"splunk[-\s]+fired",
     r"live\s+splunk\s+fired",
     r"wazuh[-\s]+routed",
     r"cribl[-\s]+routed",
+    r"security\s+onion\s+observed",
+    r"suricata\s+observed",
+    r"zeek\s+observed",
     r"aws[-\s]+live",
     r"production[-\s]+ready",
+    r"production\s+triage",
     r"fleet[-\s]+wide",
+    r"autonomous\s+soc",
     r"service[-\s]+creation\s+coverage\s+complet",
+    r"attack\s+coverage\s+complet",
     r"ai[-\s]+decided",
     r"ai[-\s]+approved",
     r"ai[-\s]+closed",
+    r"analyst[-\s]+approved",
 ]
 
 PRIVATE_LEAK_PATTERNS = [
@@ -186,6 +219,21 @@ def require_validation_counts(sample: dict) -> None:
             fail(f"validation_counts.{key} expected {expected!r}, got {actual!r}")
 
 
+def require_runtime_readiness_truth(sample: dict) -> None:
+    truth = sample.get("runtime_readiness_truth")
+    if not isinstance(truth, dict):
+        fail("runtime_readiness_truth must be an object")
+
+    extra = sorted(set(truth) - set(EXPECTED_RUNTIME_READINESS_TRUTH))
+    if extra:
+        fail(f"runtime_readiness_truth has extra keys: {', '.join(extra)}")
+
+    for key, expected in EXPECTED_RUNTIME_READINESS_TRUTH.items():
+        actual = truth.get(key)
+        if actual != expected:
+            fail(f"runtime_readiness_truth.{key} expected {expected!r}, got {actual!r}")
+
+
 def require_privacy_boundary(sample: dict) -> None:
     boundary = sample.get("privacy_boundary")
     if not isinstance(boundary, dict):
@@ -248,6 +296,7 @@ def main() -> int:
     validate_schema_if_possible(sample, schema)
     require_expected_values(sample)
     require_validation_counts(sample)
+    require_runtime_readiness_truth(sample)
     require_privacy_boundary(sample)
     require_blocked_claim_inventory(sample)
     reject_promoted_allowed_claims(sample)

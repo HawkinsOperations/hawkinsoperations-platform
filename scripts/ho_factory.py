@@ -1463,7 +1463,7 @@ SPECS: dict[str, DetectionSpec] = {
         public_proof_ceiling="CONTROLLED_TEST_VALIDATED",
         private_evidence_state="PRIVATE_RUNTIME_EVIDENCE_CAPTURED",
         public_safe_status="NOT_PUBLIC_SAFE",
-        platform_guardrail_status="STATE_DRIFT_REVIEW_REQUIRED",
+        platform_guardrail_status="SATISFIED_NON_PROMOTIONAL_BOUNDARY",
         validation_result="hawkinsoperations-validation/reports/ho-det-011/validation-result.json",
         validation_expected={
             "total_cases": 17,
@@ -1477,7 +1477,7 @@ SPECS: dict[str, DetectionSpec] = {
         proof_card=None,
         proof_state="PRIVATE_RUNTIME_EVIDENCE_CAPTURED",
         platform_sample="hawkinsoperations-platform/contracts/examples/ho-det-011-case-packet.sample.json",
-        platform_sample_expected_total=6,
+        platform_sample_expected_total=17,
         required_blocked_claims=(
             *COMMON_BLOCKED,
             "evidence-linked public proof",
@@ -1496,28 +1496,28 @@ SPECS: dict[str, DetectionSpec] = {
             "HO-DET-011 has sanitized private local Windows runtime evidence captured for one controlled service-creation test.",
             "HO-DET-011 is capped at PRIVATE_RUNTIME_EVIDENCE_CAPTURED for private evidence and NOT_PUBLIC_SAFE for public use.",
         ),
-        next_allowed_move="Review platform drift before any guardrail update; routed telemetry or public-safe wording remains blocked until separate evidence linkage, redaction review, stale review, wording review, and Raylee approval.",
-        decision_status="DRIFT_REVIEW_REQUIRED",
-        decision_reason="Platform guardrail remains pinned to an earlier 6-case shape while current validation, proof, and detection surfaces record 17 controlled-test fixtures.",
+        next_allowed_move="Platform guardrail drift is resolved for the 17-case controlled validation shape; routed telemetry or public-safe wording remains blocked until separate evidence linkage, redaction review, stale review, wording review, and Raylee approval.",
+        decision_status="READY_FOR_REVIEW",
+        decision_reason="Platform guardrail matches the current 17-case controlled validation shape while preserving proof, runtime, signal, public-safe, and AI authority boundaries.",
         truth_boundary={
             "source_truth": "reported",
             "validation_truth": "controlled-test validated",
-            "platform_truth": "controller reported drift review required",
+            "platform_truth": "case-packet guardrail aligned to current controlled validation state",
             "proof_truth": "private runtime evidence state reported",
             "runtime_truth": "not public proven",
             "signal_truth": "not public proven",
             "public_proof": "not public safe",
         },
         stop_conditions=(
-            "Do not repair the 6-case platform guardrail in v0.",
             "Do not promote proof.",
+            "Do not edit proof, website, detection, validation, workflow, dependency, evidence, or runtime files.",
             "Do not claim public-safe status.",
             "Do not claim runtime-active or signal-observed public proof.",
             "Do not create generated output files.",
         ),
         state_consistency=(
-            "STATE_DRIFT_REVIEW_REQUIRED",
-            "Platform sample and verifier remain pinned to an earlier 6-case guardrail while current validation, proof, and detection facts record 17 controlled-test fixtures.",
+            "STATE_CONSISTENT_WITH_17_CASE_VALIDATION",
+            "Platform sample, schema, verifier, and factory status align to the current 17 controlled-test fixtures without promoting proof, runtime-active, signal-observed, or public-safe claims.",
         ),
         does_not_prove=(
             "runtime activity",
@@ -1924,7 +1924,7 @@ def platform_sample_claims(spec: DetectionSpec, sample: dict[str, Any]) -> list[
         total = counts.get("total_cases")
         if total != spec.platform_sample_expected_total:
             raise FactoryError(
-                f"{spec.platform_sample} expected historical total_cases {spec.platform_sample_expected_total}, got {total}"
+                f"{spec.platform_sample} expected total_cases {spec.platform_sample_expected_total}, got {total}"
             )
 
     require_blocked_claims(sample.get("blocked_claims"), PLATFORM_SAMPLE_BLOCKED, spec.platform_sample)
