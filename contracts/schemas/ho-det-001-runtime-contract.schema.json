@@ -23,6 +23,7 @@
     "ai_may_promote",
     "ai_may_close",
     "human_review_required",
+    "runtime_truth_spine",
     "allowed_claims",
     "blocked_claims",
     "privacy_boundary",
@@ -90,6 +91,181 @@
     "human_review_required": {
       "type": "boolean",
       "const": true
+    },
+    "runtime_truth_spine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_truth",
+        "validation_truth",
+        "runtime_truth",
+        "signal_truth",
+        "evidence_truth",
+        "ai_triage_truth",
+        "public_proof_truth",
+        "human_review_truth"
+      ],
+      "properties": {
+        "source_truth": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "owner", "refs"],
+          "properties": {
+            "state": { "const": "SOURCE_EXISTS" },
+            "owner": { "const": "hawkinsoperations-detections" },
+            "refs": {
+              "type": "array",
+              "minItems": 2,
+              "items": { "type": "string" }
+            }
+          }
+        },
+        "validation_truth": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "owner", "refs"],
+          "properties": {
+            "state": { "const": "CONTROLLED_TEST_VALIDATED" },
+            "owner": { "const": "hawkinsoperations-validation" },
+            "refs": {
+              "type": "array",
+              "minItems": 2,
+              "items": { "type": "string" }
+            }
+          }
+        },
+        "runtime_truth": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "public_runtime_claim_status", "verified_runtime_evidence_refs"],
+          "properties": {
+            "state": {
+              "enum": [
+                "RUNTIME_NOT_CAPTURED",
+                "RUNTIME_CAPTURE_STAGED_PRIVATE",
+                "RUNTIME_EVIDENCE_VERIFIED_PRIVATE"
+              ]
+            },
+            "public_runtime_claim_status": {
+              "enum": [
+                "PUBLIC_RUNTIME_BLOCKED",
+                "PUBLIC_RUNTIME_SUMMARY_ELIGIBLE",
+                "PUBLIC_RUNTIME_SUMMARY_APPROVED"
+              ]
+            },
+            "verified_runtime_evidence_refs": {
+              "type": "array",
+              "minItems": 2,
+              "items": { "type": "string" }
+            }
+          }
+        },
+        "signal_truth": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "public_signal_claim_status", "verified_signal_record_refs"],
+          "properties": {
+            "state": {
+              "enum": [
+                "SIGNAL_NOT_OBSERVED",
+                "SIGNAL_OBSERVED_PRIVATE"
+              ]
+            },
+            "public_signal_claim_status": {
+              "enum": [
+                "PUBLIC_RUNTIME_BLOCKED",
+                "PUBLIC_RUNTIME_SUMMARY_ELIGIBLE",
+                "PUBLIC_RUNTIME_SUMMARY_APPROVED"
+              ]
+            },
+            "verified_signal_record_refs": {
+              "type": "array",
+              "minItems": 2,
+              "items": { "type": "string" }
+            }
+          }
+        },
+        "evidence_truth": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "raw_private_evidence_public_safe",
+            "repo_contains_raw_private_evidence",
+            "hash_only_private_refs"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "RUNTIME_NOT_CAPTURED",
+                "RUNTIME_CAPTURE_STAGED_PRIVATE",
+                "RUNTIME_EVIDENCE_VERIFIED_PRIVATE"
+              ]
+            },
+            "raw_private_evidence_public_safe": { "type": "boolean", "const": false },
+            "repo_contains_raw_private_evidence": { "type": "boolean", "const": false },
+            "hash_only_private_refs": { "type": "boolean", "const": true }
+          }
+        },
+        "ai_triage_truth": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "support_state",
+            "triage_output_state",
+            "authority_state",
+            "ai_decided_disposition",
+            "human_review_required"
+          ],
+          "properties": {
+            "support_state": {
+              "enum": ["AI_NOT_USED", "AI_SUPPORT_ONLY"]
+            },
+            "triage_output_state": {
+              "enum": ["AI_NOT_USED", "AI_TRIAGE_OUTPUT_PRIVATE", "AI_TRIAGE_REVIEWED"]
+            },
+            "authority_state": { "const": "AI_NOT_AUTHORITY" },
+            "ai_decided_disposition": { "type": "boolean", "const": false },
+            "human_review_required": { "type": "boolean", "const": true }
+          }
+        },
+        "public_proof_truth": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "proof_ceiling", "public_safe_status"],
+          "properties": {
+            "state": {
+              "enum": [
+                "PUBLIC_RUNTIME_BLOCKED",
+                "PUBLIC_RUNTIME_SUMMARY_ELIGIBLE",
+                "PUBLIC_RUNTIME_SUMMARY_APPROVED"
+              ]
+            },
+            "proof_ceiling": { "const": "CONTROLLED_TEST_VALIDATED" },
+            "public_safe_status": { "const": "NOT_PUBLIC_SAFE" }
+          }
+        },
+        "human_review_truth": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "public_runtime_summary_state",
+            "approval_required_for_public_summary"
+          ],
+          "properties": {
+            "state": { "const": "HUMAN_REVIEW_REQUIRED" },
+            "public_runtime_summary_state": {
+              "enum": [
+                "PUBLIC_RUNTIME_BLOCKED",
+                "PUBLIC_RUNTIME_SUMMARY_ELIGIBLE",
+                "PUBLIC_RUNTIME_SUMMARY_APPROVED"
+              ]
+            },
+            "approval_required_for_public_summary": { "type": "boolean", "const": true }
+          }
+        }
+      }
     },
     "allowed_claims": {
       "type": "array",
