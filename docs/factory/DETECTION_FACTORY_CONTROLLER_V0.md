@@ -113,10 +113,10 @@ signal-observed claims remain blocked, and AI remains support-only rather than
 approval authority.
 
 `HO-DET-012` must report `CONTROLLED_TEST_VALIDATED` for controlled scheduled
-task creation and update fixtures only. It has no proof record in v0, no
-platform sample guardrail in v0, and no runtime-active, signal-observed,
-public-safe, or scheduled-task coverage completeness claim. The platform entry
-is status visibility only.
+task creation and update fixtures only. It has a controlled-test proof record
+and proof card, no platform sample guardrail in v0, and no runtime-active,
+signal-observed, public-safe, or scheduled-task coverage completeness claim.
+The platform entry is status visibility only.
 
 `ID-DET-001` must report `CONTROLLED_TEST_VALIDATED` for controlled identity
 session context fixtures only. It has no proof record in v0, no platform sample
