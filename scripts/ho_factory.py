@@ -196,6 +196,27 @@ SOCAAS_PILOT_RECEIPT_REQUIRED_BLOCKED_ACTIONS = {
     "declare compromise",
     "mark malicious",
 }
+SOCAAS_PILOT_RECEIPT_REQUIRED_PROOF_PROMOTION_KEYS = {
+    "runtime_active",
+    "signal_observed",
+    "public_safe",
+    "public_proof",
+    "production_deployment",
+    "socaas_deployment",
+    "fortisiem_integration",
+    "autonomous_response",
+    "ai_or_analyst_approval",
+}
+SOCAAS_PILOT_RECEIPT_REQUIRED_PRIVACY_BOUNDARY_KEYS = {
+    "raw_event_included",
+    "raw_command_line_included",
+    "hostnames_included",
+    "usernames_included",
+    "internal_ips_included",
+    "private_paths_included",
+    "secrets_included",
+    "screenshots_included",
+}
 
 
 class FactoryError(RuntimeError):
@@ -2452,6 +2473,12 @@ def verify_ho_det_001_socaas_pilot_receipt() -> dict[str, Any]:
         raise FactoryError("privacy_boundary must be an object")
     if not isinstance(proof_promotions, dict):
         raise FactoryError("proof_promotions must be an object")
+    missing_proof_promotions = sorted(SOCAAS_PILOT_RECEIPT_REQUIRED_PROOF_PROMOTION_KEYS - set(proof_promotions))
+    if missing_proof_promotions:
+        raise FactoryError(f"proof_promotions missing required keys: {', '.join(missing_proof_promotions)}")
+    missing_privacy = sorted(SOCAAS_PILOT_RECEIPT_REQUIRED_PRIVACY_BOUNDARY_KEYS - set(privacy))
+    if missing_privacy:
+        raise FactoryError(f"privacy_boundary missing required keys: {', '.join(missing_privacy)}")
     if not isinstance(sample["blocked_response_actions"], list):
         raise FactoryError("blocked_response_actions must be a list")
     if not isinstance(sample["blocked_claims"], list):
@@ -2491,8 +2518,12 @@ def verify_ho_det_001_socaas_pilot_receipt() -> dict[str, Any]:
         "blocked_claims": SOCAAS_PILOT_RECEIPT_REQUIRED_BLOCKED_CLAIMS.issubset(
             set(sample["blocked_claims"])
         ),
-        "proof_promotions_blocked": all(value == "blocked" for value in proof_promotions.values()),
-        "privacy_boundary_false": all(value is False for value in privacy.values()),
+        "proof_promotions_blocked": all(
+            proof_promotions[key] == "blocked" for key in SOCAAS_PILOT_RECEIPT_REQUIRED_PROOF_PROMOTION_KEYS
+        ),
+        "privacy_boundary_false": all(
+            privacy[key] is False for key in SOCAAS_PILOT_RECEIPT_REQUIRED_PRIVACY_BOUNDARY_KEYS
+        ),
         **response_gate_checks,
     }
     failed_checks = sorted(name for name, passed in checks.items() if not passed)
