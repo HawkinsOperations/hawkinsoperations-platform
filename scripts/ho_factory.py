@@ -153,6 +153,71 @@ RUNTIME_CASE_REVIEW_BLOCKED_CLAIMS = (
     "autonomous SOC",
 )
 
+SOCAAS_PILOT_RECEIPT_SAMPLE = (
+    PLATFORM_ROOT / "contracts" / "examples" / "ho-det-001-socaas-pilot-receipt.sample.json"
+)
+SOCAAS_PILOT_RECEIPT_REQUIRED_TOP_LEVEL = {
+    "receipt_id",
+    "receipt_type",
+    "contract_version",
+    "detection_id",
+    "pilot_context",
+    "alert_summary",
+    "sanitized_process_facts",
+    "deterministic_validation_reference",
+    "proof_ceiling",
+    "public_safe_status",
+    "human_review_required",
+    "ai_support_boundary",
+    "response_actions",
+    "blocked_response_actions",
+    "proof_promotions",
+    "blocked_proof_promotions",
+    "blocked_claims",
+    "privacy_boundary",
+    "does_not_prove",
+}
+SOCAAS_PILOT_RECEIPT_REQUIRED_BLOCKED_CLAIMS = {
+    "runtime-active",
+    "signal public proof",
+    "production SOCaaS deployment",
+    "FortiSIEM integration",
+    "autonomous response",
+    "AI-approved disposition",
+    "analyst-approved disposition",
+    "public-safe proof",
+}
+SOCAAS_PILOT_RECEIPT_REQUIRED_BLOCKED_ACTIONS = {
+    "contain host",
+    "isolate endpoint",
+    "disable account",
+    "close case",
+    "suppress detection",
+    "declare compromise",
+    "mark malicious",
+}
+SOCAAS_PILOT_RECEIPT_REQUIRED_PROOF_PROMOTION_KEYS = {
+    "runtime_active",
+    "signal_observed",
+    "public_safe",
+    "public_proof",
+    "production_deployment",
+    "socaas_deployment",
+    "fortisiem_integration",
+    "autonomous_response",
+    "ai_or_analyst_approval",
+}
+SOCAAS_PILOT_RECEIPT_REQUIRED_PRIVACY_BOUNDARY_KEYS = {
+    "raw_event_included",
+    "raw_command_line_included",
+    "hostnames_included",
+    "usernames_included",
+    "internal_ips_included",
+    "private_paths_included",
+    "secrets_included",
+    "screenshots_included",
+}
+
 
 class FactoryError(RuntimeError):
     """Fail-closed controller error."""
@@ -2369,6 +2434,119 @@ def id_det_001_missing_surface_self_test() -> dict[str, Any]:
     }
 
 
+def verify_blocked_gate_map(gates: object, field_name: str) -> dict[str, bool]:
+    if not isinstance(gates, dict) or not gates:
+        raise FactoryError(f"{field_name} must be a non-empty object")
+    checks: dict[str, bool] = {}
+    for gate_name, gate in gates.items():
+        if not isinstance(gate, dict):
+            raise FactoryError(f"{field_name}.{gate_name} must be an object")
+        checks[f"{field_name}.{gate_name}.status_blocked"] = gate.get("status") == "blocked"
+        checks[f"{field_name}.{gate_name}.not_executed"] = gate.get("executed") is False
+        checks[f"{field_name}.{gate_name}.human_approval_required"] = (
+            gate.get("requires_human_approval") is True
+        )
+    return checks
+
+
+def verify_ho_det_001_socaas_pilot_receipt() -> dict[str, Any]:
+    sample = load_json(SOCAAS_PILOT_RECEIPT_SAMPLE)
+    missing = sorted(SOCAAS_PILOT_RECEIPT_REQUIRED_TOP_LEVEL - set(sample))
+    if missing:
+        raise FactoryError(f"HO-DET-001 SOCaaS pilot receipt missing fields: {', '.join(missing)}")
+
+    context = sample.get("pilot_context")
+    facts = sample.get("sanitized_process_facts")
+    validation = sample.get("deterministic_validation_reference")
+    ai_boundary = sample.get("ai_support_boundary")
+    privacy = sample.get("privacy_boundary")
+    proof_promotions = sample.get("proof_promotions")
+    if not isinstance(context, dict):
+        raise FactoryError("pilot_context must be an object")
+    if not isinstance(facts, dict):
+        raise FactoryError("sanitized_process_facts must be an object")
+    if not isinstance(validation, dict):
+        raise FactoryError("deterministic_validation_reference must be an object")
+    if not isinstance(ai_boundary, dict):
+        raise FactoryError("ai_support_boundary must be an object")
+    if not isinstance(privacy, dict):
+        raise FactoryError("privacy_boundary must be an object")
+    if not isinstance(proof_promotions, dict):
+        raise FactoryError("proof_promotions must be an object")
+    missing_proof_promotions = sorted(SOCAAS_PILOT_RECEIPT_REQUIRED_PROOF_PROMOTION_KEYS - set(proof_promotions))
+    if missing_proof_promotions:
+        raise FactoryError(f"proof_promotions missing required keys: {', '.join(missing_proof_promotions)}")
+    missing_privacy = sorted(SOCAAS_PILOT_RECEIPT_REQUIRED_PRIVACY_BOUNDARY_KEYS - set(privacy))
+    if missing_privacy:
+        raise FactoryError(f"privacy_boundary missing required keys: {', '.join(missing_privacy)}")
+    if not isinstance(sample["blocked_response_actions"], list):
+        raise FactoryError("blocked_response_actions must be a list")
+    if not isinstance(sample["blocked_claims"], list):
+        raise FactoryError("blocked_claims must be a list")
+    if not isinstance(sample["blocked_proof_promotions"], list):
+        raise FactoryError("blocked_proof_promotions must be a list")
+    if not isinstance(sample["does_not_prove"], list):
+        raise FactoryError("does_not_prove must be a list")
+
+    response_gate_checks = verify_blocked_gate_map(sample["response_actions"], "response_actions")
+    checks = {
+        "receipt_type": sample["receipt_type"] == "ho_det_001_socaas_pilot_receipt_pack_sample",
+        "detection_id": sample["detection_id"] == "HO-DET-001",
+        "proof_ceiling": sample["proof_ceiling"] == "CONTROLLED_TEST_VALIDATED",
+        "public_safe_status": sample["public_safe_status"] == "NOT_PUBLIC_SAFE",
+        "human_review_required": sample["human_review_required"] is True,
+        "pilot_deployment_claim_false": context.get("deployment_claim") is False,
+        "pilot_runtime_active_claim_false": context.get("runtime_active_claim") is False,
+        "pilot_signal_observed_claim_false": context.get("signal_observed_claim") is False,
+        "pilot_public_safe_claim_false": context.get("public_safe_claim") is False,
+        "raw_command_line_blocked": facts.get("raw_command_line_included") is False,
+        "raw_event_blocked": facts.get("raw_event_included") is False,
+        "host_identifier_blocked": facts.get("host_identifier_included") is False,
+        "user_identifier_blocked": facts.get("user_identifier_included") is False,
+        "network_indicators_blocked": facts.get("network_indicators_included") is False,
+        "private_path_blocked": facts.get("private_path_included") is False,
+        "deterministic_validation": validation.get("deterministic_validation") is True,
+        "validation_proof_ceiling": validation.get("proof_ceiling") == "CONTROLLED_TEST_VALIDATED",
+        "ai_support_only": ai_boundary.get("mode") == "AI_SUPPORT_ONLY",
+        "ai_decided_disposition_false": ai_boundary.get("ai_decided_disposition") is False,
+        "ai_may_approve_false": ai_boundary.get("ai_may_approve") is False,
+        "ai_may_promote_false": ai_boundary.get("ai_may_promote") is False,
+        "ai_may_execute_response_false": ai_boundary.get("ai_may_execute_response") is False,
+        "blocked_response_actions": SOCAAS_PILOT_RECEIPT_REQUIRED_BLOCKED_ACTIONS.issubset(
+            set(sample["blocked_response_actions"])
+        ),
+        "blocked_claims": SOCAAS_PILOT_RECEIPT_REQUIRED_BLOCKED_CLAIMS.issubset(
+            set(sample["blocked_claims"])
+        ),
+        "proof_promotions_blocked": all(
+            proof_promotions[key] == "blocked" for key in SOCAAS_PILOT_RECEIPT_REQUIRED_PROOF_PROMOTION_KEYS
+        ),
+        "privacy_boundary_false": all(
+            privacy[key] is False for key in SOCAAS_PILOT_RECEIPT_REQUIRED_PRIVACY_BOUNDARY_KEYS
+        ),
+        **response_gate_checks,
+    }
+    failed_checks = sorted(name for name, passed in checks.items() if not passed)
+    if failed_checks:
+        raise FactoryError(f"HO-DET-001 SOCaaS pilot receipt failed checks: {', '.join(failed_checks)}")
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "verify-receipt",
+        "receipt": "ho-det-001",
+        "sample_path": str(SOCAAS_PILOT_RECEIPT_SAMPLE.relative_to(PLATFORM_ROOT)),
+        "generated_output_files": False,
+        "status": "pass",
+        "proof_ceiling": sample["proof_ceiling"],
+        "public_safe_status": sample["public_safe_status"],
+        "human_review_required": sample["human_review_required"],
+        "ai_support_mode": ai_boundary.get("mode"),
+        "blocked_response_actions": sample["blocked_response_actions"],
+        "blocked_proof_promotions": sample["blocked_proof_promotions"],
+        "does_not_prove": sample["does_not_prove"],
+        "checks": checks,
+    }
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Detection Factory Controller v0")
     subparsers = parser.add_subparsers(dest="mode", required=True)
@@ -2395,6 +2573,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--ledger")
     sub.add_argument("--case-id")
     sub.add_argument("--self-test", action="store_true")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("verify-receipt")
+    sub.add_argument("--receipt", required=True, choices=("ho-det-001",))
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("self-test-id-det-001-missing-surfaces")
     sub.add_argument("--format", default="json", choices=("json",))
@@ -2478,6 +2659,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.self_test:
             output["self_tests"] = runtime_review_self_tests()
         print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "verify-receipt":
+        if args.receipt != "ho-det-001":
+            raise FactoryError(f"unsupported receipt verifier: {args.receipt}")
+        print(json.dumps(verify_ho_det_001_socaas_pilot_receipt(), indent=2, sort_keys=True))
         return 0
 
     if args.mode == "self-test-id-det-001-missing-surfaces":

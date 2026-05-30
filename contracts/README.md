@@ -48,6 +48,7 @@ Minimal examples live in:
 - `contracts/examples/detection-factory-controller-v0.ho-det-011.sample.json`
 - `contracts/examples/local-gpu-triage-support-v0.sample.json`
 - `contracts/examples/telemetry-coverage-contract-v0.sample.json`
+- `contracts/examples/ho-det-001-socaas-pilot-receipt.sample.json`
 
 ## Contract Intent
 
@@ -74,6 +75,23 @@ merge changes, or claim public-safe/runtime-active/signal-observed status.
 Reviewer packets include `gate_summary`, `decision`, and `truth_boundary`
 fields so reviewers can see the source, validation, platform guardrail, proof
 record, blocked-claim, and next-legal-move chain without inferring promotion.
+
+## HO-DET-001 SOCaaS Pilot Receipt Pack
+
+The HO-DET-001 SOCaaS pilot receipt pack sample is documented by:
+
+- `contracts/examples/ho-det-001-socaas-pilot-receipt.sample.json`
+
+The deterministic controller verifier is:
+
+- `python -B scripts/ho_factory.py verify-receipt --receipt ho-det-001 --format json`
+
+The sample records alert-summary and sanitized process-fact contract truth for
+a controlled pilot receipt workflow. It preserves `CONTROLLED_TEST_VALIDATED`,
+`AI_SUPPORT_ONLY`, `human_review_required=true`, blocked response actions, and
+blocked proof promotions. It does not claim runtime-active status, signal
+public proof, production or SOCaaS deployment, FortiSIEM integration,
+autonomous response, AI approval, analyst approval, or public-safe proof.
 
 `HO-DET-011` now aligns the platform case-packet guardrail sample, schema,
 verifier, and factory status with the current 17 controlled-test fixture
