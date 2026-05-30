@@ -1,0 +1,149 @@
+{
+  "receipt_id": "HO-DET-001-SOCAAS-PILOT-RECEIPT-SAMPLE-001",
+  "receipt_type": "ho_det_001_socaas_pilot_receipt_pack_sample",
+  "contract_version": "ho-det-001-socaas-pilot-receipt-v0",
+  "detection_id": "HO-DET-001",
+  "pilot_context": {
+    "label": "SOCaaS pilot receipt pack",
+    "truth_surface": "CONTROLLED_VALIDATION_RECEIPT_ONLY",
+    "deployment_claim": false,
+    "runtime_active_claim": false,
+    "signal_observed_claim": false,
+    "public_safe_claim": false
+  },
+  "alert_summary": {
+    "title": "Suspicious PowerShell EncodedCommand controlled-test alert",
+    "severity": "medium",
+    "summary": "Sanitized process facts support a controlled HO-DET-001 reviewer receipt for analyst-support workflow validation.",
+    "supported_scope": "controlled SOCaaS pilot receipt workflow validation only",
+    "validation_basis": "deterministic HO-DET-001 validation reference plus platform receipt verifier"
+  },
+  "sanitized_process_facts": {
+    "process_family": "powershell",
+    "process_image": "powershell.exe",
+    "parent_process_family": "command_shell",
+    "parent_process_image": "cmd.exe",
+    "command_line_features": [
+      "encoded_command_feature",
+      "controlled_test_marker"
+    ],
+    "raw_command_line_included": false,
+    "host_identifier_included": false,
+    "user_identifier_included": false,
+    "network_indicators_included": false,
+    "private_path_included": false,
+    "raw_event_included": false
+  },
+  "deterministic_validation_reference": {
+    "validation_result_ref": "hawkinsoperations-validation/reports/ho-det-001/validation-result.json",
+    "case_packet_ref": "hawkinsoperations-validation/validation/successor/ho-det-001/case-packet.json",
+    "platform_runtime_contract_ref": "hawkinsoperations-platform/contracts/examples/ho-det-001-runtime-contract.sample.json",
+    "platform_factory_verify_command": "python -B scripts/ho_factory.py verify-receipt --receipt ho-det-001 --format json",
+    "deterministic_validation": true,
+    "proof_ceiling": "CONTROLLED_TEST_VALIDATED"
+  },
+  "proof_ceiling": "CONTROLLED_TEST_VALIDATED",
+  "public_safe_status": "NOT_PUBLIC_SAFE",
+  "human_review_required": true,
+  "ai_support_boundary": {
+    "mode": "AI_SUPPORT_ONLY",
+    "allowed_outputs": [
+      "summarize sanitized alert facts",
+      "identify missing review context",
+      "draft human-review questions",
+      "map sanitized fields to deterministic validation references"
+    ],
+    "ai_decided_disposition": false,
+    "ai_may_approve": false,
+    "ai_may_promote": false,
+    "ai_may_execute_response": false,
+    "authority_boundary": "AI output may support review only. Human review is required before disposition, response action, closure, proof promotion, or publication."
+  },
+  "response_actions": {
+    "containment": {
+      "status": "blocked",
+      "executed": false,
+      "requires_human_approval": true
+    },
+    "isolation": {
+      "status": "blocked",
+      "executed": false,
+      "requires_human_approval": true
+    },
+    "account_disable": {
+      "status": "blocked",
+      "executed": false,
+      "requires_human_approval": true
+    },
+    "case_closure": {
+      "status": "blocked",
+      "executed": false,
+      "requires_human_approval": true
+    },
+    "suppression": {
+      "status": "blocked",
+      "executed": false,
+      "requires_human_approval": true
+    }
+  },
+  "blocked_response_actions": [
+    "contain host",
+    "isolate endpoint",
+    "disable account",
+    "close case",
+    "suppress detection",
+    "declare compromise",
+    "mark malicious"
+  ],
+  "proof_promotions": {
+    "runtime_active": "blocked",
+    "signal_observed": "blocked",
+    "public_safe": "blocked",
+    "public_proof": "blocked",
+    "production_deployment": "blocked",
+    "socaas_deployment": "blocked",
+    "fortisiem_integration": "blocked",
+    "autonomous_response": "blocked",
+    "ai_or_analyst_approval": "blocked"
+  },
+  "blocked_proof_promotions": [
+    "runtime-active",
+    "signal public proof",
+    "public-safe proof",
+    "production SOCaaS deployment",
+    "FortiSIEM integration proof",
+    "autonomous response",
+    "AI approval",
+    "analyst approval"
+  ],
+  "blocked_claims": [
+    "runtime-active",
+    "signal public proof",
+    "production SOCaaS deployment",
+    "FortiSIEM integration",
+    "autonomous response",
+    "AI-approved disposition",
+    "analyst-approved disposition",
+    "public-safe proof"
+  ],
+  "privacy_boundary": {
+    "raw_event_included": false,
+    "raw_command_line_included": false,
+    "hostnames_included": false,
+    "usernames_included": false,
+    "internal_ips_included": false,
+    "private_paths_included": false,
+    "secrets_included": false,
+    "screenshots_included": false
+  },
+  "does_not_prove": [
+    "runtime-active detection",
+    "signal public proof",
+    "production SOCaaS deployment",
+    "FortiSIEM integration",
+    "autonomous response",
+    "AI approval",
+    "analyst approval",
+    "public-safe status"
+  ]
+}
