@@ -62,3 +62,6 @@ jobs:
       - name: Verify Lifetime Case Ledger v1 spine
         run: |
           python -B scripts/ho_factory.py lifetime-ledger-verify --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+      - name: Verify Lifetime Case Ledger v1 append gate
+        run: |
+          python -B scripts/ho_factory.py lifetime-ledger-append-gate-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null

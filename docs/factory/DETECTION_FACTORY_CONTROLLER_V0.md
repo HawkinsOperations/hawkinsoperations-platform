@@ -529,6 +529,84 @@ correct stop state is:
 BLOCKED: APPEND_APPROVAL_REQUIRED
 ```
 
+## Lifetime Case Ledger v1 Phase 3 Append Gate
+
+Phase 3 adds the governed append-approval gate model that must pass before any
+real Lifetime Case Ledger event append can be considered. The gate is still
+non-mutating in this phase. It validates the sanitized Phase 2 candidate,
+verifies the seed ledger bridge read-only before any write, checks dedupe and
+collision rules, produces before/after metrics deltas, and proves unapproved
+append mode fails closed.
+
+The exact approval phrase required for any future real append is:
+
+```text
+APPEND_APPROVED: append sanitized Lifetime Case Ledger event
+```
+
+Without that exact phrase, append mode fails closed with:
+
+```text
+BLOCKED: APPEND_APPROVAL_REQUIRED
+```
+
+The Phase 3 dry-run append-gate command is:
+
+```powershell
+python -B scripts\ho_factory.py lifetime-ledger-append-gate --append-mode dry-run --repo-root "<ORG_REPO_ROOT>" --format json
+```
+
+The required negative self-test is:
+
+```powershell
+python -B scripts\ho_factory.py lifetime-ledger-append-gate-self-test --repo-root "<ORG_REPO_ROOT>" --format json
+```
+
+The self-test attempts append mode without the approval phrase and requires the
+fail-closed error above. It also verifies that the ledger file timestamp is not
+changed by the failed append attempt.
+
+Phase 3 dedupe and collision rules:
+
+- `event_hash` must not already exist in the ledger
+- `case_id` must not collide for a new manual-fire case
+- matching `payload_hash` blocks append as duplicate content
+- matching `sanitized_event_fingerprint` blocks append as a duplicate sanitized
+  event
+- a correction or superseding event must be a later approved append with
+  `parent_event_hash`; existing rows are never updated or deleted
+
+Phase 3 metrics rules:
+
+- metrics are read before append from the verified ledger
+- expected after metrics are computed from the normalized candidate event
+- the delta must match the single candidate event model
+- after a future approved write, the ledger must be re-opened read-only,
+  verified again, and checked against the expected delta
+
+The correction model is append-only:
+
+- no update
+- no delete
+- no destructive rollback
+- errors require a later approved correction or superseding event
+
+The Phase 3 proof boundary remains:
+
+- `dry_run=true` by default
+- `append_performed=false` unless a later separately approved append command is
+  implemented and authorized
+- `database_modified=false` in the Phase 3 gate verifier
+- `AI_SUPPORT_ONLY`
+- `human_review_required=true`
+- `ai_decided_disposition=false`
+- `NOT_PUBLIC_SAFE`
+- `NO_DISPOSITION`
+- no raw/private evidence import
+- no public runtime proof
+- no signal-observed public claim
+- no case closure
+
 ### Splunk HO-DET-001 Runtime Ingest Dry Run
 
 The controller includes a bounded dry-run adapter for sanitized Splunk
