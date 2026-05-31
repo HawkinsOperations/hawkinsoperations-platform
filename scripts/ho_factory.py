@@ -61,6 +61,7 @@ LIFETIME_LEDGER_EVENT_FIELDS = (
     "event_id",
     "event_hash",
     "parent_event_hash",
+    "event_type",
     "case_id",
     "detection_id",
     "detection_family",
@@ -91,6 +92,8 @@ LIFETIME_LEDGER_EVENT_FIELDS = (
     "github_actions_run_ref",
     "payload_hash",
     "sanitized_event_fingerprint",
+    "correction_reason",
+    "supersedes_event_hash",
     "notes_boundary",
 )
 LIFETIME_LEDGER_REQUIRED_METRICS = (
@@ -108,6 +111,8 @@ LIFETIME_LEDGER_REQUIRED_METRICS = (
     "proof_blocked_count",
     "public_safe_count",
     "closed_case_count",
+    "correction_event_count",
+    "superseding_event_count",
     "validation_only_count",
     "private_runtime_count",
     "public_proof_candidate_count",
@@ -130,6 +135,9 @@ LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLE = (
 LIFETIME_MANUAL_FIRE_APPEND_APPROVAL = "APPEND_APPROVAL_REQUIRED"
 LIFETIME_APPEND_APPROVAL_PHRASE = "APPEND_APPROVED: append sanitized Lifetime Case Ledger event"
 LIFETIME_APPEND_GATE_PHASE = "phase_3_append_approval_gate"
+LIFETIME_CORRECTION_APPEND_APPROVAL_PHRASE = "CORRECTION_APPEND_APPROVED: append sanitized Lifetime Case Ledger correction event"
+LIFETIME_CORRECTION_GATE_PHASE = "phase_5_correction_superseding_gate"
+LIFETIME_CORRECTION_EVENT_TYPE = "CORRECTION_SUPERSEDING_EVENT"
 LIFETIME_MANUAL_FIRE_ALLOWED_KEYS = {
     "candidate_type",
     "candidate_version",
@@ -1391,19 +1399,29 @@ def lifetime_ledger_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
           ai_support_mode,
           proof_blocked,
           public_safe,
-          case_closed
+          case_closed,
+          payload_json
         FROM case_events
         ORDER BY event_id
         """
     ).fetchall()
     cases_by_family: dict[str, int] = {}
     ai_support_only_count = 0
+    correction_event_count = 0
+    superseding_event_count = 0
     for row in rows:
         detection_id = str(row[0])
         family = family_by_detection.get(detection_id, "unmapped_detection_family")
         cases_by_family[family] = cases_by_family.get(family, 0) + 1
         if row[7] == "AI_SUPPORT_ONLY":
             ai_support_only_count += 1
+        try:
+            payload = json.loads(str(row[11]))
+        except json.JSONDecodeError:
+            payload = {}
+        if isinstance(payload, dict) and payload.get("event_type") == LIFETIME_CORRECTION_EVENT_TYPE:
+            correction_event_count += 1
+            superseding_event_count += 1
 
     counts = conn.execute(
         """
@@ -1437,6 +1455,8 @@ def lifetime_ledger_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
         "proof_blocked_count": int(counts[4]),
         "public_safe_count": int(counts[5]),
         "closed_case_count": int(counts[6]),
+        "correction_event_count": correction_event_count,
+        "superseding_event_count": superseding_event_count,
         "validation_only_count": int(counts[7]),
         "private_runtime_count": int(counts[8]),
         "public_proof_candidate_count": int(counts[9]),
@@ -1719,6 +1739,8 @@ def lifetime_metrics_delta(before: dict[str, Any], after: dict[str, Any]) -> dic
         "proof_blocked_count",
         "public_safe_count",
         "closed_case_count",
+        "correction_event_count",
+        "superseding_event_count",
         "validation_only_count",
         "private_runtime_count",
         "public_proof_candidate_count",
@@ -2197,6 +2219,354 @@ def lifetime_approved_append_ho_det_001(
             "This remains not runtime truth, not signal truth, not public proof, not public-safe, not case closure, "
             "and not AI or analyst final disposition authority."
         ),
+    }
+
+
+def require_sha256_hex(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+        raise FactoryError(f"BLOCKED: {label.upper()}_INVALID")
+    return value
+
+
+def require_sanitized_correction_reason(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise FactoryError("BLOCKED: CORRECTION_REASON_REQUIRED")
+    reason = " ".join(value.strip().split())
+    scan_private_markers("Lifetime correction reason", reason)
+    for pattern in SPLUNK_SANITIZED_VALUE_PATTERNS:
+        if pattern.search(reason):
+            raise FactoryError("BLOCKED: CORRECTION_REASON_PRIVATE_OR_RAW")
+    return reason
+
+
+def fetch_lifetime_parent_event(conn: sqlite3.Connection, parent_event_hash: str) -> dict[str, Any]:
+    parent_hash = require_sha256_hex(parent_event_hash, "parent_event_hash")
+    columns = [item[1] for item in conn.execute("PRAGMA table_info(case_events)").fetchall()]
+    row = conn.execute("SELECT * FROM case_events WHERE event_hash = ?", (parent_hash,)).fetchone()
+    if row is None:
+        raise FactoryError("BLOCKED: PARENT_EVENT_HASH_UNKNOWN")
+    parent = dict(zip(columns, row))
+    payload = scan_ledger_event_text_fields(parent)
+    parent["payload_json_parsed"] = payload
+    return parent
+
+
+def build_lifetime_correction_event(parent: dict[str, Any], correction_reason: str) -> dict[str, Any]:
+    reason = require_sanitized_correction_reason(correction_reason)
+    parent_hash = require_sha256_hex(parent.get("event_hash"), "parent_event_hash")
+    parent_payload = parent.get("payload_json_parsed") if isinstance(parent.get("payload_json_parsed"), dict) else {}
+    digest_input = {
+        "event_type": LIFETIME_CORRECTION_EVENT_TYPE,
+        "parent_event_hash": parent_hash,
+        "case_id": parent["case_id"],
+        "correction_reason": reason,
+        "detection_id": parent["detection_id"],
+    }
+    digest = hashlib.sha256(stable_json(digest_input).encode("utf-8")).hexdigest()
+    event = {
+        "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
+        "event_id": f"LCL-CORRECTION-{digest[:16].upper()}",
+        "event_hash": "pending",
+        "parent_event_hash": parent_hash,
+        "event_type": LIFETIME_CORRECTION_EVENT_TYPE,
+        "case_id": str(parent["case_id"]),
+        "detection_id": str(parent["detection_id"]),
+        "detection_family": str(parent_payload.get("detection_family") or lifetime_detection_family_map().get(str(parent["detection_id"]), "unmapped_detection_family")),
+        "source_system": str(parent_payload.get("source_system") or "platform_correction_gate"),
+        "fired_at": None,
+        "observed_time_utc": None,
+        "ingested_at": None,
+        "truth_class": "SYNTHETIC_TEST_CASE",
+        "case_status": "HUMAN_REVIEW_REQUIRED",
+        "triage_status": "PENDING_HUMAN_REVIEW",
+        "disposition_status": "NO_DISPOSITION",
+        "proof_ceiling": str(parent.get("proof_ceiling") or "CONTROLLED_TEST_VALIDATED"),
+        "runtime_truth_status": "CORRECTION_GATE_NOT_RUNTIME_TRUTH",
+        "signal_truth_status": "NOT_PUBLIC_PROOF",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "human_review_required": True,
+        "ai_support_mode": "AI_SUPPORT_ONLY",
+        "ai_decided_disposition": False,
+        "gpu_triage_used": False,
+        "gpu_node_id": None,
+        "model_or_triage_engine_reference": None,
+        "source_packet_ref": str(parent.get("source_packet_ref") or parent_payload.get("source_packet_ref") or "platform-correction-gate"),
+        "evidence_ref_public_safe": None,
+        "private_evidence_ref_allowed": False,
+        "blocked_claims": list(LIFETIME_LEDGER_BLOCKED_CLAIMS),
+        "validation_ref": parent_payload.get("validation_ref"),
+        "proof_ref": parent_payload.get("proof_ref"),
+        "github_actions_run_ref": None,
+        "payload_hash": digest,
+        "sanitized_event_fingerprint": f"correction-{digest}",
+        "correction_reason": reason,
+        "supersedes_event_hash": parent_hash,
+        "notes_boundary": (
+            "Sanitized correction/superseding event preview only. Original event remains immutable; "
+            "no update, delete, public proof, public-safe status, case closure, or disposition authority."
+        ),
+    }
+    event_hash_input = dict(event)
+    event_hash_input["event_hash"] = "pending"
+    event["event_hash"] = hashlib.sha256(stable_json(event_hash_input).encode("utf-8")).hexdigest()
+    scan_private_markers("Lifetime correction event", event)
+    return event
+
+
+def validate_lifetime_correction_event(event: dict[str, Any], conn: sqlite3.Connection) -> dict[str, bool]:
+    parent_hash = event.get("parent_event_hash")
+    if parent_hash is None:
+        raise FactoryError("BLOCKED: PARENT_EVENT_HASH_REQUIRED")
+    fetch_lifetime_parent_event(conn, str(parent_hash))
+    require_sanitized_correction_reason(event.get("correction_reason"))
+    checks = {
+        "event_type_is_correction_superseding": event.get("event_type") == LIFETIME_CORRECTION_EVENT_TYPE,
+        "parent_link_matches_supersedes": event.get("parent_event_hash") == event.get("supersedes_event_hash"),
+        "human_review_required": event.get("human_review_required") is True,
+        "ai_support_only": event.get("ai_support_mode") == "AI_SUPPORT_ONLY",
+        "ai_decided_disposition_false": event.get("ai_decided_disposition") is False,
+        "not_public_safe": event.get("public_safe_status") == "NOT_PUBLIC_SAFE",
+        "no_runtime_public_claim": str(event.get("runtime_truth_status")) != "RUNTIME_ACTIVE_PUBLIC_PROOF",
+        "no_signal_public_claim": str(event.get("signal_truth_status")) != "SIGNAL_OBSERVED_PUBLIC_PROOF",
+        "no_disposition": event.get("disposition_status") == "NO_DISPOSITION",
+        "case_not_closed": event.get("case_status") == "HUMAN_REVIEW_REQUIRED",
+        "original_not_marked_deleted": event.get("original_event_deleted") is None,
+        "no_private_evidence_ref": event.get("private_evidence_ref_allowed") is False,
+        "no_public_evidence_ref": event.get("evidence_ref_public_safe") is None,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"BLOCKED: CORRECTION_BOUNDARY_VIOLATION: {', '.join(failed)}")
+    return checks
+
+
+def lifetime_metrics_after_correction(before: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
+    after = json.loads(json.dumps(before))
+    after["total_ledger_events"] = int(after["total_ledger_events"]) + 1
+    for key, event_field in (
+        ("cases_by_detection", "detection_id"),
+        ("cases_by_family", "detection_family"),
+        ("cases_by_status", "case_status"),
+        ("cases_by_truth_class", "truth_class"),
+        ("cases_by_proof_ceiling", "proof_ceiling"),
+        ("cases_by_public_safe_status", "public_safe_status"),
+    ):
+        group = dict(after[key])
+        value = str(event[event_field])
+        group[value] = int(group.get(value, 0)) + 1
+        after[key] = dict(sorted(group.items()))
+    after["cases_requiring_human_review"] = int(after["cases_requiring_human_review"]) + 1
+    after["ai_support_only_count"] = int(after["ai_support_only_count"]) + 1
+    after["proof_blocked_count"] = int(after["proof_blocked_count"]) + 1
+    after["correction_event_count"] = int(after["correction_event_count"]) + 1
+    after["superseding_event_count"] = int(after["superseding_event_count"]) + 1
+    if event["truth_class"] == "SYNTHETIC_TEST_CASE":
+        after["validation_only_count"] = int(after["validation_only_count"]) + 1
+    return after
+
+
+def lifetime_correction_gate_review(
+    repo_root: Path,
+    ledger_path: Path,
+    parent_event_hash: str,
+    correction_reason: str,
+    append_mode: str,
+    correction_approval: str | None,
+) -> dict[str, Any]:
+    if append_mode not in {"dry-run", "append"}:
+        raise FactoryError(f"unsupported lifetime correction gate mode: {append_mode}")
+    if append_mode == "append" and correction_approval != LIFETIME_CORRECTION_APPEND_APPROVAL_PHRASE:
+        raise FactoryError("BLOCKED: CORRECTION_APPEND_APPROVAL_REQUIRED")
+    approved_target = approved_lifetime_append_target(ledger_path)
+    verify_lifetime_detection_coverage(repo_root)
+    with connect_read_only_ledger(approved_target) as conn:
+        pre_verification = verify_ledger(conn, "phase_5_correction_gate_pre_append_validation_only_not_runtime_truth")
+        before_metrics = lifetime_ledger_metrics(conn)
+        parent = fetch_lifetime_parent_event(conn, parent_event_hash)
+        event = build_lifetime_correction_event(parent, correction_reason)
+        checks = validate_lifetime_correction_event(event, conn)
+    expected_after = lifetime_metrics_after_correction(before_metrics, event)
+    metrics_delta = lifetime_metrics_delta(before_metrics, expected_after)
+    return {
+        "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
+        "mode": "lifetime-ledger-correction-gate",
+        "phase": LIFETIME_CORRECTION_GATE_PHASE,
+        "append_mode": append_mode,
+        "append_performed": False,
+        "database_modified": False,
+        "correction_append_approval_required": LIFETIME_CORRECTION_APPEND_APPROVAL_PHRASE,
+        "correction_approval_status": "exact_phrase_present" if correction_approval == LIFETIME_CORRECTION_APPEND_APPROVAL_PHRASE else "not_present",
+        "correction_gate_result": (
+            "CORRECTION_GATE_VERIFIED_APPROVAL_PRESENT_NO_WRITE_EXECUTED"
+            if append_mode == "append"
+            else "CORRECTION_DRY_RUN_GATE_VERIFIED_NO_WRITE_EXECUTED"
+        ),
+        "candidate_correction_event": event,
+        "parent_event_hash": parent_event_hash,
+        "correction_event_checks": checks,
+        "pre_append_ledger_verification": pre_verification,
+        "before_lifetime_metrics": before_metrics,
+        "expected_after_lifetime_metrics": expected_after,
+        "metrics_delta": metrics_delta,
+        "correction_model": {
+            "append_only": True,
+            "update_allowed": False,
+            "delete_allowed": False,
+            "destructive_rollback_allowed": False,
+            "original_event_deleted": False,
+            "correction_rule": "corrections are later linked events using parent_event_hash; existing rows are not edited or deleted",
+        },
+        "boundaries": {
+            "raw_private_evidence_imported": False,
+            "runtime_connected": False,
+            "public_safe_promotion_allowed": False,
+            "proof_promotion_allowed": False,
+            "runtime_active_public_claim_allowed": False,
+            "signal_observed_public_claim_allowed": False,
+            "ai_disposition_authority": False,
+            "analyst_disposition_authority": False,
+            "case_closure_allowed": False,
+        },
+        "boundary": (
+            "Phase 5 correction/superseding support is append-only and non-mutating in this gate. "
+            "It links a sanitized correction event to a prior event by parent_event_hash, does not edit or delete "
+            "the original row, and does not promote proof, public-safe status, runtime/signal public claims, "
+            "disposition authority, or case closure."
+        ),
+    }
+
+
+def lifetime_append_only_dml_self_tests() -> dict[str, Any]:
+    conn = self_test_runtime_conn()
+    results: dict[str, Any] = {}
+    try:
+        conn.execute("UPDATE case_events SET case_status = case_status WHERE event_id = 1")
+    except sqlite3.DatabaseError as exc:
+        results["update_blocked"] = "append-only" in str(exc)
+    else:
+        results["update_blocked"] = False
+    try:
+        conn.execute("DELETE FROM case_events WHERE event_id = 1")
+    except sqlite3.DatabaseError as exc:
+        results["delete_blocked"] = "append-only" in str(exc)
+    else:
+        results["delete_blocked"] = False
+    failed = sorted(name for name, passed in results.items() if not passed)
+    if failed:
+        raise FactoryError(f"Lifetime correction append-only DML self-tests failed: {', '.join(failed)}")
+    return results
+
+
+def expect_factory_error_contains(label: str, fn: Any, expected: str) -> dict[str, Any]:
+    try:
+        fn()
+    except FactoryError as exc:
+        actual = str(exc)
+        if expected not in actual:
+            raise FactoryError(f"{label} expected {expected}, got {actual}") from exc
+        return {"expected": expected, "actual": actual, "passed": True}
+    raise FactoryError(f"{label} expected FactoryError {expected}")
+
+
+def lifetime_correction_self_test(repo_root: Path, ledger_path: Path) -> dict[str, Any]:
+    parent_event_hash = build_lifetime_manual_fire_event(load_lifetime_manual_fire_candidate(LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLE))[
+        "event_hash"
+    ]
+    correction_reason = "Sanitized correction note: superseding review preserves append-only ledger integrity."
+    dry_run = lifetime_correction_gate_review(
+        repo_root,
+        ledger_path,
+        parent_event_hash,
+        correction_reason,
+        "dry-run",
+        None,
+    )
+    dml_tests = lifetime_append_only_dml_self_tests()
+    negative_tests = {
+        "missing_parent_event_hash": expect_factory_error_contains(
+            "missing_parent_event_hash",
+            lambda: lifetime_correction_gate_review(repo_root, ledger_path, "", correction_reason, "dry-run", None),
+            "BLOCKED: PARENT_EVENT_HASH_INVALID",
+        ),
+        "unknown_parent_event_hash": expect_factory_error_contains(
+            "unknown_parent_event_hash",
+            lambda: lifetime_correction_gate_review(repo_root, ledger_path, "0" * 64, correction_reason, "dry-run", None),
+            "BLOCKED: PARENT_EVENT_HASH_UNKNOWN",
+        ),
+        "malformed_parent_event_hash": expect_factory_error_contains(
+            "malformed_parent_event_hash",
+            lambda: lifetime_correction_gate_review(repo_root, ledger_path, "not-a-sha256", correction_reason, "dry-run", None),
+            "BLOCKED: PARENT_EVENT_HASH_INVALID",
+        ),
+        "private_or_raw_correction_reason": expect_factory_error_contains(
+            "private_or_raw_correction_reason",
+            lambda: lifetime_correction_gate_review(
+                repo_root,
+                ledger_path,
+                parent_event_hash,
+                "private " + "path marker in correction reason",
+                "dry-run",
+                None,
+            ),
+            "BLOCKED: CORRECTION_REASON_PRIVATE_OR_RAW",
+        ),
+        "unapproved_correction_append": expect_factory_error_contains(
+            "unapproved_correction_append",
+            lambda: lifetime_correction_gate_review(repo_root, ledger_path, parent_event_hash, correction_reason, "append", None),
+            "BLOCKED: CORRECTION_APPEND_APPROVAL_REQUIRED",
+        ),
+    }
+    with connect_read_only_ledger(approved_lifetime_append_target(ledger_path)) as conn:
+        parent = fetch_lifetime_parent_event(conn, parent_event_hash)
+        promoted = build_lifetime_correction_event(parent, correction_reason)
+        promoted.update(
+            {
+                "public_safe_status": "PUBLIC_SAFE",
+                "runtime_truth_status": "RUNTIME_ACTIVE_PUBLIC_PROOF",
+                "signal_truth_status": "SIGNAL_OBSERVED_PUBLIC_PROOF",
+                "disposition_status": "AI_APPROVED",
+                "case_status": "CLOSED",
+            }
+        )
+        negative_tests["promotion_boundary_violation"] = expect_factory_error_contains(
+            "promotion_boundary_violation",
+            lambda: validate_lifetime_correction_event(promoted, conn),
+            "BLOCKED: CORRECTION_BOUNDARY_VIOLATION",
+        )
+    required_delta = {
+        "total_ledger_events": 1,
+        "total_cases": 0,
+        "correction_event_count": 1,
+        "superseding_event_count": 1,
+        "cases_requiring_human_review": 1,
+        "proof_blocked_count": 1,
+        "public_safe_count": 0,
+        "closed_case_count": 0,
+    }
+    delta_failures = {
+        key: {"expected": expected, "actual": dry_run["metrics_delta"].get(key)}
+        for key, expected in required_delta.items()
+        if dry_run["metrics_delta"].get(key) != expected
+    }
+    if delta_failures:
+        raise FactoryError(f"Lifetime correction self-test metrics delta mismatch: {delta_failures}")
+    return {
+        "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
+        "mode": "lifetime-ledger-correction-self-test",
+        "phase": LIFETIME_CORRECTION_GATE_PHASE,
+        "status": "pass",
+        "positive_dry_run": {
+            "append_performed": dry_run["append_performed"],
+            "database_modified": dry_run["database_modified"],
+            "parent_event_hash": parent_event_hash,
+            "correction_event_hash": dry_run["candidate_correction_event"]["event_hash"],
+            "event_type": dry_run["candidate_correction_event"]["event_type"],
+            "metrics_delta": dry_run["metrics_delta"],
+        },
+        "append_only_negative_tests": dml_tests,
+        "negative_tests": negative_tests,
+        "correction_append_approval_required": LIFETIME_CORRECTION_APPEND_APPROVAL_PHRASE,
+        "proof_boundary": dry_run["boundary"],
     }
 
 
@@ -3718,6 +4088,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
     sub.add_argument("--append-approval", required=True)
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("lifetime-ledger-correction-gate")
+    sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+    sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
+    sub.add_argument("--parent-event-hash", required=True)
+    sub.add_argument("--correction-reason", required=True)
+    sub.add_argument("--append-mode", default="dry-run", choices=("dry-run", "append"))
+    sub.add_argument("--correction-approval")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("lifetime-ledger-correction-self-test")
+    sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+    sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("verify-receipt")
     sub.add_argument("--receipt", required=True, choices=("ho-det-001",))
     sub.add_argument("--format", default="json", choices=("json",))
@@ -3845,6 +4227,26 @@ def main(argv: list[str] | None = None) -> int:
             Path(args.ledger_path).resolve(),
             Path(args.candidate).resolve(),
             args.append_approval,
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "lifetime-ledger-correction-gate":
+        output = lifetime_correction_gate_review(
+            Path(args.repo_root).resolve(),
+            Path(args.ledger_path).resolve(),
+            args.parent_event_hash,
+            args.correction_reason,
+            args.append_mode,
+            args.correction_approval,
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "lifetime-ledger-correction-self-test":
+        output = lifetime_correction_self_test(
+            Path(args.repo_root).resolve(),
+            Path(args.ledger_path).resolve(),
         )
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
