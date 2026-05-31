@@ -762,6 +762,105 @@ The Phase 5 proof boundary remains:
 - no AI-approved or analyst-approved final disposition authority
 - no case closure authority
 
+## Lifetime Case Ledger v1 Phase 6 Multi-Detection Manual-Fire Dry Run
+
+Phase 6 expands the platform-owned manual-fire dry-run path beyond HO-DET-001
+to HO-DET-011 and HO-DET-012. The expansion keeps the same dry-run/no-append
+boundary: each candidate is sanitized platform source, opens the seed bridge
+read-only, previews dedupe and metrics impact, and remains compatible with the
+append gate without writing a ledger row.
+
+The added candidate files are:
+
+```text
+contracts/examples/lifetime-ledger-v1-manual-fire-ho-det-011.sample.json
+contracts/examples/lifetime-ledger-v1-manual-fire-ho-det-012.sample.json
+```
+
+The HO-DET-011 command is:
+
+```powershell
+python -B scripts\ho_factory.py lifetime-ledger-manual-fire-ho-det-011 --repo-root .. --format json
+```
+
+The deterministic HO-DET-011 dry-run event values are:
+
+- `case_id=LCL-MANUAL-HO-DET-011-5BC674169FE6F62D`
+- `event_hash=1415870b1c80f33bdceb7811ccd33729e53496562b4f9a3b6589a273ce8cf874`
+- `payload_hash=5bc674169fe6f62d2ddf35e19b9bb425b0d51bce2ef44c231472cfd64e1f32ae`
+- `sanitized_event_fingerprint=5bc674169fe6f62d2ddf35e19b9bb425b0d51bce2ef44c231472cfd64e1f32ae`
+- `source_packet_ref=hawkinsoperations-validation/validation/successor/ho-det-011/validation-cases.json`
+- `proof_ceiling=PRIVATE_RUNTIME_EVIDENCE_CAPTURED`
+
+The HO-DET-012 command is:
+
+```powershell
+python -B scripts\ho_factory.py lifetime-ledger-manual-fire-ho-det-012 --repo-root .. --format json
+```
+
+The deterministic HO-DET-012 dry-run event values are:
+
+- `case_id=LCL-MANUAL-HO-DET-012-845A4A3EEB77D781`
+- `event_hash=4d7bc9077e5032bfd02ff1315d5573f1df769288b1095465cb20dff41bd5f679`
+- `payload_hash=845a4a3eeb77d781656c8755c414e56d634f14bcb4c272237faad268cac20010`
+- `sanitized_event_fingerprint=845a4a3eeb77d781656c8755c414e56d634f14bcb4c272237faad268cac20010`
+- `source_packet_ref=hawkinsoperations-validation/validation/successor/ho-det-012/validation-cases.json`
+- `proof_ceiling=CONTROLLED_TEST_VALIDATED`
+
+The Phase 6 self-test command is:
+
+```powershell
+python -B scripts\ho_factory.py lifetime-ledger-multi-detection-self-test --repo-root .. --format json
+```
+
+The self-test verifies:
+
+- HO-DET-011 and HO-DET-012 dry-run previews include `event_hash`, `case_id`,
+  `payload_hash`, `sanitized_event_fingerprint`, `source_packet_ref`, and
+  metrics previews
+- both candidates preserve `AI_SUPPORT_ONLY`, `human_review_required=true`,
+  `ai_decided_disposition=false`, `NOT_PUBLIC_SAFE`, `NO_DISPOSITION`,
+  `append_performed=false`, and `database_modified=false`
+- append-gate dry-run preview works for both candidates
+- dedupe preview reports zero existing `event_hash`, `case_id`, `payload_hash`,
+  and `sanitized_event_fingerprint` collisions for both candidates
+- unsupported detection IDs fail closed
+- raw/private candidate values fail closed
+- reserved nonreal marker values fail closed
+- public-safe, runtime proof, signal proof, disposition, and case closure
+  promotion fail closed
+- the approved HO-DET-001 manual-fire event hash remains
+  `15a499248c31b1f5200f0c8c66a72c8626db11ed76acc1595ddf951e062efdfa`
+
+Phase 6 metrics preview rules for each added candidate:
+
+- `total_ledger_events +1`
+- `total_cases +1`
+- `cases_requiring_human_review +1`
+- `ai_support_only_count +1`
+- `proof_blocked_count +1`
+- `public_safe_count +0`
+- `closed_case_count +0`
+- `correction_event_count +0`
+- `superseding_event_count +0`
+
+The Phase 6 proof boundary remains:
+
+- dry-run/no-append only
+- `append_performed=false`
+- `database_modified=false`
+- no mutation of `evidence/autosoc-case-ledger-v0.sqlite`
+- no update, delete, hide, or erasure of existing ledger rows
+- no raw/private runtime evidence import
+- no public runtime proof
+- no runtime-active public claim
+- no signal-observed public claim
+- no SOCaaS deployment claim
+- no production deployment claim
+- no autonomous SOC claim
+- no AI-approved or analyst-approved final disposition authority
+- no case closure authority
+
 ### Splunk HO-DET-001 Runtime Ingest Dry Run
 
 The controller includes a bounded dry-run adapter for sanitized Splunk

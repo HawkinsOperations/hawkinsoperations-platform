@@ -68,3 +68,6 @@ jobs:
       - name: Verify Lifetime Case Ledger v1 correction gate
         run: |
           python -B scripts/ho_factory.py lifetime-ledger-correction-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+      - name: Verify Lifetime Case Ledger v1 multi-detection manual-fire gate
+        run: |
+          python -B scripts/ho_factory.py lifetime-ledger-multi-detection-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null

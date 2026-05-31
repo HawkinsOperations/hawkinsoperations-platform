@@ -1,0 +1,14 @@
+{
+  "candidate_type": "lifetime_case_ledger_v1_manual_fire_candidate",
+  "candidate_version": "phase_6_multi_detection_dry_run_v0",
+  "detection_id": "HO-DET-011",
+  "detection_family": "endpoint_service_persistence",
+  "source_system": "platform_manual_fire_dry_run",
+  "source_packet_ref": "hawkinsoperations-validation/validation/successor/ho-det-011/validation-cases.json",
+  "validation_ref": "hawkinsoperations-validation/reports/ho-det-011/validation-result.json",
+  "proof_ref": "hawkinsoperations-proof/proof/records/HO-DET-011.md",
+  "gpu_triage_used": false,
+  "gpu_node_id": null,
+  "model_or_triage_engine_reference": null,
+  "notes_boundary": "Dry-run sanitized service persistence candidate only. No append, no public proof, no public-safe status, no case closure, and no disposition authority."
+}
