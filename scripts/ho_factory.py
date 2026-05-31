@@ -127,6 +127,8 @@ LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLE = (
     PLATFORM_ROOT / "contracts" / "examples" / "lifetime-ledger-v1-manual-fire-ho-det-001.sample.json"
 )
 LIFETIME_MANUAL_FIRE_APPEND_APPROVAL = "APPEND_APPROVAL_REQUIRED"
+LIFETIME_APPEND_APPROVAL_PHRASE = "APPEND_APPROVED: append sanitized Lifetime Case Ledger event"
+LIFETIME_APPEND_GATE_PHASE = "phase_3_append_approval_gate"
 LIFETIME_MANUAL_FIRE_ALLOWED_KEYS = {
     "candidate_type",
     "candidate_version",
@@ -1562,6 +1564,7 @@ def verify_lifetime_ledger_spine(repo_root: Path, ledger_path: Path) -> dict[str
                 ".github/workflows/local-gpu-triage-gate.yml",
             ],
             "recommended_phase_1_command": "python -B scripts/ho_factory.py lifetime-ledger-verify --format json",
+            "recommended_phase_3_command": "python -B scripts/ho_factory.py lifetime-ledger-append-gate-self-test --format json",
             "governance_gate_wired": True,
             "governance_gate_job": "lifetime-case-ledger-v1",
             "workflow_dispatch_required_for_true_gpu_runner": True,
@@ -1704,6 +1707,116 @@ def lifetime_metrics_after_candidate(before: dict[str, Any], event: dict[str, An
     return after
 
 
+def lifetime_metrics_delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    scalar_keys = (
+        "total_ledger_events",
+        "total_cases",
+        "cases_requiring_human_review",
+        "gpu_triaged_count",
+        "ai_support_only_count",
+        "proof_blocked_count",
+        "public_safe_count",
+        "closed_case_count",
+        "validation_only_count",
+        "private_runtime_count",
+        "public_proof_candidate_count",
+    )
+    deltas: dict[str, Any] = {}
+    for key in scalar_keys:
+        deltas[key] = int(after[key]) - int(before[key])
+    for key in (
+        "cases_by_detection",
+        "cases_by_family",
+        "cases_by_status",
+        "cases_by_truth_class",
+        "cases_by_proof_ceiling",
+        "cases_by_public_safe_status",
+    ):
+        values = set(before[key]) | set(after[key])
+        deltas[key] = {
+            value: int(after[key].get(value, 0)) - int(before[key].get(value, 0))
+            for value in sorted(values)
+            if int(after[key].get(value, 0)) - int(before[key].get(value, 0)) != 0
+        }
+    return deltas
+
+
+def lifetime_append_gate_dedupe(conn: sqlite3.Connection, event: dict[str, Any]) -> dict[str, Any]:
+    duplicate_event_hash_count = int(
+        conn.execute("SELECT COUNT(*) FROM case_events WHERE event_hash = ?", (event["event_hash"],)).fetchone()[0]
+    )
+    duplicate_case_id_count = int(
+        conn.execute("SELECT COUNT(*) FROM case_events WHERE case_id = ?", (event["case_id"],)).fetchone()[0]
+    )
+    payload_hash_count = 0
+    sanitized_event_fingerprint_count = 0
+    for (payload_json,) in conn.execute("SELECT payload_json FROM case_events").fetchall():
+        try:
+            payload = json.loads(str(payload_json))
+        except json.JSONDecodeError as exc:
+            raise FactoryError("Lifetime append gate found invalid stored payload JSON") from exc
+        if isinstance(payload, dict):
+            if payload.get("payload_hash") == event["payload_hash"]:
+                payload_hash_count += 1
+            if payload.get("sanitized_event_fingerprint") == event["sanitized_event_fingerprint"]:
+                sanitized_event_fingerprint_count += 1
+    append_would_be_blocked = any(
+        count != 0
+        for count in (
+            duplicate_event_hash_count,
+            duplicate_case_id_count,
+            payload_hash_count,
+            sanitized_event_fingerprint_count,
+        )
+    )
+    return {
+        "event_hash": {
+            "candidate_value": event["event_hash"],
+            "existing_count": duplicate_event_hash_count,
+            "rule": "must_not_already_exist",
+            "append_allowed": duplicate_event_hash_count == 0,
+        },
+        "case_id": {
+            "candidate_value": event["case_id"],
+            "existing_count": duplicate_case_id_count,
+            "rule": "new_manual_fire_case_id_must_not_collide; correction_or_superseding_events_require_a_later_approved_event_with_parent_event_hash",
+            "append_allowed": duplicate_case_id_count == 0,
+        },
+        "payload_hash": {
+            "candidate_value": event["payload_hash"],
+            "existing_count": payload_hash_count,
+            "rule": "matching_payload_hash_blocks_append_as_duplicate_content",
+            "append_allowed": payload_hash_count == 0,
+        },
+        "sanitized_event_fingerprint": {
+            "candidate_value": event["sanitized_event_fingerprint"],
+            "existing_count": sanitized_event_fingerprint_count,
+            "rule": "matching_sanitized_event_fingerprint_blocks_append_as_duplicate_sanitized_event",
+            "append_allowed": sanitized_event_fingerprint_count == 0,
+        },
+        "append_would_be_blocked": append_would_be_blocked,
+    }
+
+
+def validate_lifetime_append_candidate_event(event: dict[str, Any]) -> dict[str, bool]:
+    checks = {
+        "ledger_version_is_v1": event.get("ledger_version") == LIFETIME_CASE_LEDGER_VERSION,
+        "detection_is_ho_det_001": event.get("detection_id") == "HO-DET-001",
+        "human_review_required": event.get("human_review_required") is True,
+        "ai_support_only": event.get("ai_support_mode") == "AI_SUPPORT_ONLY",
+        "ai_decided_disposition_false": event.get("ai_decided_disposition") is False,
+        "not_public_safe": event.get("public_safe_status") == "NOT_PUBLIC_SAFE",
+        "no_disposition": event.get("disposition_status") == "NO_DISPOSITION",
+        "case_not_closed": event.get("case_status") == "HUMAN_REVIEW_REQUIRED",
+        "no_private_evidence_ref": event.get("private_evidence_ref_allowed") is False,
+        "no_public_evidence_ref": event.get("evidence_ref_public_safe") is None,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Lifetime append candidate failed boundary checks: {', '.join(failed)}")
+    return checks
+
+
 def lifetime_manual_fire_ho_det_001_dry_run(repo_root: Path, ledger_path: Path, candidate_path: Path) -> dict[str, Any]:
     if not candidate_path.is_file():
         raise FactoryError(f"Lifetime manual-fire candidate file is missing: {candidate_path}")
@@ -1765,6 +1878,162 @@ def lifetime_manual_fire_ho_det_001_dry_run(repo_root: Path, ledger_path: Path, 
             "runtime ledger, import raw evidence, publish public proof, mark public-safe status, close a case, "
             "or grant AI or analyst final disposition authority."
         ),
+    }
+
+
+def lifetime_append_gate_review(
+    repo_root: Path,
+    ledger_path: Path,
+    candidate_path: Path,
+    append_mode: str,
+    append_approval: str | None,
+) -> dict[str, Any]:
+    if append_mode not in {"dry-run", "append"}:
+        raise FactoryError(f"unsupported lifetime append gate mode: {append_mode}")
+    if append_mode == "append" and append_approval != LIFETIME_APPEND_APPROVAL_PHRASE:
+        raise FactoryError("BLOCKED: APPEND_APPROVAL_REQUIRED")
+
+    preview = lifetime_manual_fire_ho_det_001_dry_run(repo_root, ledger_path, candidate_path)
+    event = dict(preview["candidate_event"])
+    candidate_checks = validate_lifetime_append_candidate_event(event)
+    with connect_read_only_ledger(ledger_path) as conn:
+        before_verification = verify_ledger(conn, "phase_3_append_gate_pre_append_validation_only_not_runtime_truth")
+        before_metrics = lifetime_ledger_metrics(conn)
+        dedupe = lifetime_append_gate_dedupe(conn, event)
+    expected_after = lifetime_metrics_after_candidate(before_metrics, event)
+    metrics_delta = lifetime_metrics_delta(before_metrics, expected_after)
+    if dedupe["append_would_be_blocked"]:
+        append_gate_result = "BLOCKED_DEDUPE_COLLISION"
+    elif append_mode == "append":
+        append_gate_result = "APPEND_GATE_VERIFIED_APPROVAL_PRESENT_NO_WRITE_EXECUTED"
+    else:
+        append_gate_result = "DRY_RUN_GATE_VERIFIED_NO_WRITE_EXECUTED"
+    return {
+        "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
+        "mode": "lifetime-ledger-append-gate",
+        "phase": LIFETIME_APPEND_GATE_PHASE,
+        "append_mode": append_mode,
+        "dry_run": True,
+        "append_performed": False,
+        "append_execution_approved_for_this_run": False,
+        "append_approval_required": LIFETIME_APPEND_APPROVAL_PHRASE,
+        "append_approval_status": "exact_phrase_present" if append_approval == LIFETIME_APPEND_APPROVAL_PHRASE else "not_present",
+        "append_gate_result": append_gate_result,
+        "candidate_path": preview["candidate_path"],
+        "candidate_event": event,
+        "candidate_event_checks": candidate_checks,
+        "pre_append_validation": {
+            "candidate_verified_before_write": True,
+            "ledger_verified_before_write": True,
+            "append_only_triggers_verified_before_write": True,
+            "coverage_verified_before_write": preview["coverage_status"]["source_ref_status"] == "present",
+            "dedupe_verified_before_write": True,
+            "write_performed": False,
+        },
+        "dedupe": dedupe,
+        "before_lifetime_metrics": before_metrics,
+        "expected_after_lifetime_metrics": expected_after,
+        "metrics_delta": metrics_delta,
+        "post_append_verification_model": {
+            "required_after_approved_write": [
+                "re-open ledger read-only",
+                "run ledger verifier",
+                "verify inserted event_hash appears exactly once",
+                "verify before/after metrics match expected delta",
+                "verify proof/public/runtime boundaries remain unpromoted",
+            ],
+            "performed_in_phase_3": False,
+            "reason": "APPEND_EXECUTION_NOT_APPROVED",
+        },
+        "ledger_path_rules": {
+            "ledger_must_exist_before_append": True,
+            "ledger_opened_read_only_for_gate": True,
+            "platform_seed_bridge_is_verification_input_not_runtime_truth": ledger_path.resolve() == DEFAULT_CASE_LEDGER.resolve(),
+            "repo_paths_do_not_create_runtime_or_public_proof": True,
+        },
+        "correction_model": {
+            "append_only": True,
+            "update_allowed": False,
+            "delete_allowed": False,
+            "destructive_rollback_allowed": False,
+            "correction_rule": "errors require a later approved correction or superseding event; existing rows are not edited or deleted",
+        },
+        "pre_append_ledger_verification": before_verification,
+        "boundaries": {
+            "database_modified": False,
+            "runtime_connected": False,
+            "raw_private_evidence_allowed": False,
+            "public_safe_promotion_allowed": False,
+            "proof_promotion_allowed": False,
+            "runtime_active_public_claim_allowed": False,
+            "signal_observed_public_claim_allowed": False,
+            "ai_disposition_authority": False,
+            "analyst_disposition_authority": False,
+            "case_closure_allowed": False,
+        },
+        "boundary": (
+            "Phase 3 defines the append approval gate and verifier model only. Without the exact append approval "
+            "phrase, append mode fails closed. This command does not perform a real append, mutate a runtime ledger, "
+            "import raw evidence, publish public proof, mark public-safe status, close a case, or grant AI or analyst "
+            "final disposition authority."
+        ),
+    }
+
+
+def lifetime_append_gate_self_test(repo_root: Path, ledger_path: Path, candidate_path: Path) -> dict[str, Any]:
+    before_mtime = ledger_path.stat().st_mtime_ns if ledger_path.exists() else None
+    dry_run = lifetime_append_gate_review(repo_root, ledger_path, candidate_path, "dry-run", None)
+    try:
+        lifetime_append_gate_review(repo_root, ledger_path, candidate_path, "append", None)
+    except FactoryError as exc:
+        unapproved_error = str(exc)
+    else:
+        raise FactoryError("Lifetime append gate self-test expected unapproved append to fail closed")
+    after_mtime = ledger_path.stat().st_mtime_ns if ledger_path.exists() else None
+    negative_passed = unapproved_error == "BLOCKED: APPEND_APPROVAL_REQUIRED"
+    if not negative_passed:
+        raise FactoryError(f"Lifetime append gate self-test failed closed with unexpected error: {unapproved_error}")
+    if before_mtime != after_mtime:
+        raise FactoryError("Lifetime append gate self-test modified the ledger")
+    expected_delta = dry_run["metrics_delta"]
+    required_deltas = {
+        "total_ledger_events": 1,
+        "total_cases": 1,
+        "cases_requiring_human_review": 1,
+        "ai_support_only_count": 1,
+        "proof_blocked_count": 1,
+        "public_safe_count": 0,
+        "closed_case_count": 0,
+    }
+    failed_delta = {
+        key: {"expected": expected, "actual": expected_delta.get(key)}
+        for key, expected in required_deltas.items()
+        if expected_delta.get(key) != expected
+    }
+    if failed_delta:
+        raise FactoryError(f"Lifetime append gate self-test metrics delta mismatch: {failed_delta}")
+    return {
+        "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
+        "mode": "lifetime-ledger-append-gate-self-test",
+        "phase": LIFETIME_APPEND_GATE_PHASE,
+        "status": "pass",
+        "negative_unapproved_append": {
+            "attempted": True,
+            "append_performed": False,
+            "expected_error": "BLOCKED: APPEND_APPROVAL_REQUIRED",
+            "actual_error": unapproved_error,
+            "passed": negative_passed,
+        },
+        "dry_run_gate": {
+            "append_gate_result": dry_run["append_gate_result"],
+            "append_performed": dry_run["append_performed"],
+            "database_modified": dry_run["boundaries"]["database_modified"],
+            "dedupe_append_would_be_blocked": dry_run["dedupe"]["append_would_be_blocked"],
+            "metrics_delta": dry_run["metrics_delta"],
+        },
+        "append_approval_required": LIFETIME_APPEND_APPROVAL_PHRASE,
+        "correction_model": dry_run["correction_model"],
+        "proof_boundary": dry_run["boundary"],
     }
 
 
@@ -3268,6 +3537,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
     sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("lifetime-ledger-append-gate")
+    sub.add_argument("--candidate", default=str(LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLE))
+    sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+    sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
+    sub.add_argument("--append-mode", default="dry-run", choices=("dry-run", "append"))
+    sub.add_argument("--append-approval")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("lifetime-ledger-append-gate-self-test")
+    sub.add_argument("--candidate", default=str(LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLE))
+    sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+    sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("verify-receipt")
     sub.add_argument("--receipt", required=True, choices=("ho-det-001",))
     sub.add_argument("--format", default="json", choices=("json",))
@@ -3362,6 +3643,26 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "lifetime-ledger-manual-fire-ho-det-001":
         output = lifetime_manual_fire_ho_det_001_dry_run(
+            Path(args.repo_root).resolve(),
+            Path(args.ledger_path).resolve(),
+            Path(args.candidate).resolve(),
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "lifetime-ledger-append-gate":
+        output = lifetime_append_gate_review(
+            Path(args.repo_root).resolve(),
+            Path(args.ledger_path).resolve(),
+            Path(args.candidate).resolve(),
+            args.append_mode,
+            args.append_approval,
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "lifetime-ledger-append-gate-self-test":
+        output = lifetime_append_gate_self_test(
             Path(args.repo_root).resolve(),
             Path(args.ledger_path).resolve(),
             Path(args.candidate).resolve(),
