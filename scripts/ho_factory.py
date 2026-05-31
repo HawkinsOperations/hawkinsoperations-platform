@@ -132,6 +132,18 @@ LIFETIME_LEDGER_BLOCKED_CLAIMS = (
 LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLE = (
     PLATFORM_ROOT / "contracts" / "examples" / "lifetime-ledger-v1-manual-fire-ho-det-001.sample.json"
 )
+LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLES = {
+    "HO-DET-001": LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLE,
+    "HO-DET-011": PLATFORM_ROOT / "contracts" / "examples" / "lifetime-ledger-v1-manual-fire-ho-det-011.sample.json",
+    "HO-DET-012": PLATFORM_ROOT / "contracts" / "examples" / "lifetime-ledger-v1-manual-fire-ho-det-012.sample.json",
+}
+LIFETIME_MANUAL_FIRE_SUPPORTED_DETECTIONS = frozenset(LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLES)
+LIFETIME_MANUAL_FIRE_ALLOWED_VERSIONS = frozenset(
+    {
+        "phase_2_dry_run_v0",
+        "phase_6_multi_detection_dry_run_v0",
+    }
+)
 LIFETIME_MANUAL_FIRE_APPEND_APPROVAL = "APPEND_APPROVAL_REQUIRED"
 LIFETIME_APPEND_APPROVAL_PHRASE = "APPEND_APPROVED: append sanitized Lifetime Case Ledger event"
 LIFETIME_APPEND_GATE_PHASE = "phase_3_append_approval_gate"
@@ -1379,6 +1391,10 @@ def lifetime_detection_family_map() -> dict[str, str]:
     return {str(item["detection_id"]): str(item["detection_family"]) for item in LIFETIME_DETECTION_COVERAGE}
 
 
+def lifetime_detection_coverage_map() -> dict[str, dict[str, Any]]:
+    return {str(item["detection_id"]): dict(item) for item in LIFETIME_DETECTION_COVERAGE}
+
+
 def lifetime_ledger_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
     family_by_detection = lifetime_detection_family_map()
 
@@ -1587,6 +1603,7 @@ def verify_lifetime_ledger_spine(repo_root: Path, ledger_path: Path) -> dict[str
             "recommended_phase_1_command": "python -B scripts/ho_factory.py lifetime-ledger-verify --format json",
             "recommended_phase_3_command": "python -B scripts/ho_factory.py lifetime-ledger-append-gate-self-test --format json",
             "recommended_phase_4_command": "python -B scripts/ho_factory.py lifetime-ledger-append-approved-ho-det-001 --append-approval '<exact approved phrase>' --format json",
+            "recommended_phase_6_command": "python -B scripts/ho_factory.py lifetime-ledger-multi-detection-self-test --format json",
             "governance_gate_wired": True,
             "governance_gate_job": "lifetime-case-ledger-v1",
             "workflow_dispatch_required_for_true_gpu_runner": True,
@@ -1602,6 +1619,10 @@ def load_lifetime_manual_fire_candidate(path: Path) -> dict[str, Any]:
     except ValueError as exc:
         raise FactoryError("Lifetime manual-fire candidate must be a platform-owned sample path") from exc
     candidate = load_json(path)
+    return validate_lifetime_manual_fire_candidate(candidate)
+
+
+def validate_lifetime_manual_fire_candidate(candidate: Any) -> dict[str, Any]:
     if not isinstance(candidate, dict):
         raise FactoryError("Lifetime manual-fire candidate root must be an object")
     unknown = sorted(set(candidate) - LIFETIME_MANUAL_FIRE_ALLOWED_KEYS)
@@ -1612,21 +1633,28 @@ def load_lifetime_manual_fire_candidate(path: Path) -> dict[str, Any]:
         raise FactoryError(f"Lifetime manual-fire candidate contains blocked raw/private fields: {', '.join(blocked)}")
     if candidate.get("candidate_type") != "lifetime_case_ledger_v1_manual_fire_candidate":
         raise FactoryError("Lifetime manual-fire candidate_type is invalid")
-    if candidate.get("candidate_version") != "phase_2_dry_run_v0":
+    if candidate.get("candidate_version") not in LIFETIME_MANUAL_FIRE_ALLOWED_VERSIONS:
         raise FactoryError("Lifetime manual-fire candidate_version is invalid")
-    if candidate.get("detection_id") != "HO-DET-001":
-        raise FactoryError("Lifetime manual-fire Phase 2 candidate must target HO-DET-001")
-    if candidate.get("detection_family") != "endpoint_process_execution":
+    detection_id = str(candidate.get("detection_id") or "")
+    coverage = lifetime_detection_coverage_map().get(detection_id)
+    if detection_id not in LIFETIME_MANUAL_FIRE_SUPPORTED_DETECTIONS or coverage is None:
+        raise FactoryError("BLOCKED: LIFETIME_MANUAL_FIRE_UNSUPPORTED_DETECTION")
+    if candidate.get("detection_family") != coverage["detection_family"]:
         raise FactoryError("Lifetime manual-fire candidate detection_family is invalid")
+    if detection_id != "HO-DET-001" and candidate.get("candidate_version") != "phase_6_multi_detection_dry_run_v0":
+        raise FactoryError("Lifetime manual-fire multi-detection candidate_version is invalid")
     for field in ("source_system", "source_packet_ref", "validation_ref", "proof_ref", "notes_boundary"):
         value = candidate.get(field)
         if not isinstance(value, str) or not value.strip():
             raise FactoryError(f"Lifetime manual-fire candidate requires non-empty {field}")
+    for ref_field, coverage_field in (("validation_ref", "validation_ref"), ("proof_ref", "proof_ref")):
+        if candidate[ref_field] != coverage.get(coverage_field):
+            raise FactoryError(f"Lifetime manual-fire {ref_field} must match lifetime detection coverage")
     for optional_time in ("fired_at", "observed_time_utc"):
         if optional_time in candidate and candidate[optional_time] is not None and not isinstance(candidate[optional_time], str):
             raise FactoryError(f"Lifetime manual-fire candidate {optional_time} must be string or null")
-    if "case_id" in candidate and not str(candidate["case_id"]).startswith("LCL-MANUAL-HO-DET-001-"):
-        raise FactoryError("Lifetime manual-fire candidate case_id must start with LCL-MANUAL-HO-DET-001-")
+    if "case_id" in candidate and not str(candidate["case_id"]).startswith(f"LCL-MANUAL-{detection_id}-"):
+        raise FactoryError(f"Lifetime manual-fire candidate case_id must start with LCL-MANUAL-{detection_id}-")
     if "sanitized_event_fingerprint" in candidate and (
         not isinstance(candidate["sanitized_event_fingerprint"], str) or not candidate["sanitized_event_fingerprint"].strip()
     ):
@@ -1649,6 +1677,10 @@ def load_lifetime_manual_fire_candidate(path: Path) -> dict[str, Any]:
     for pattern in SPLUNK_SANITIZED_VALUE_PATTERNS:
         if pattern.search(scan_text):
             raise FactoryError(f"Lifetime manual-fire candidate contains blocked raw/private value: {pattern.pattern}")
+    blocked_sample_terms = ("place" + "holder", "fa" + "ke", "TO" + "DO", "TB" + "D", "FIX" + "ME", "X" * 3)
+    lowered_scan = scan_text.lower()
+    if any(term.lower() in lowered_scan for term in blocked_sample_terms):
+        raise FactoryError("BLOCKED: LIFETIME_MANUAL_FIRE_NONREAL_VALUE")
     return candidate
 
 
@@ -1658,7 +1690,11 @@ def lifetime_candidate_digest(candidate: dict[str, Any]) -> str:
 
 def build_lifetime_manual_fire_event(candidate: dict[str, Any]) -> dict[str, Any]:
     digest = lifetime_candidate_digest(candidate)
-    case_id = str(candidate.get("case_id") or f"LCL-MANUAL-HO-DET-001-{digest[:16].upper()}")
+    detection_id = str(candidate["detection_id"])
+    coverage = lifetime_detection_coverage_map().get(detection_id)
+    if detection_id not in LIFETIME_MANUAL_FIRE_SUPPORTED_DETECTIONS or coverage is None:
+        raise FactoryError("BLOCKED: LIFETIME_MANUAL_FIRE_UNSUPPORTED_DETECTION")
+    case_id = str(candidate.get("case_id") or f"LCL-MANUAL-{detection_id}-{digest[:16].upper()}")
     sanitized_event_fingerprint = str(candidate.get("sanitized_event_fingerprint") or digest)
     event = {
         "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
@@ -1666,8 +1702,8 @@ def build_lifetime_manual_fire_event(candidate: dict[str, Any]) -> dict[str, Any
         "event_hash": "pending",
         "parent_event_hash": None,
         "case_id": case_id,
-        "detection_id": "HO-DET-001",
-        "detection_family": "endpoint_process_execution",
+        "detection_id": detection_id,
+        "detection_family": str(coverage["detection_family"]),
         "source_system": candidate["source_system"],
         "fired_at": candidate.get("fired_at"),
         "observed_time_utc": candidate.get("observed_time_utc"),
@@ -1676,7 +1712,7 @@ def build_lifetime_manual_fire_event(candidate: dict[str, Any]) -> dict[str, Any
         "case_status": "HUMAN_REVIEW_REQUIRED",
         "triage_status": "PENDING_HUMAN_REVIEW",
         "disposition_status": "NO_DISPOSITION",
-        "proof_ceiling": "CONTROLLED_TEST_VALIDATED",
+        "proof_ceiling": str(coverage["proof_ceiling"]),
         "runtime_truth_status": "DRY_RUN_NOT_RUNTIME_TRUTH",
         "signal_truth_status": "NOT_PUBLIC_PROOF",
         "public_safe_status": "NOT_PUBLIC_SAFE",
@@ -1825,11 +1861,13 @@ def lifetime_append_gate_dedupe(conn: sqlite3.Connection, event: dict[str, Any])
 def validate_lifetime_append_candidate_event(event: dict[str, Any]) -> dict[str, bool]:
     checks = {
         "ledger_version_is_v1": event.get("ledger_version") == LIFETIME_CASE_LEDGER_VERSION,
-        "detection_is_ho_det_001": event.get("detection_id") == "HO-DET-001",
+        "detection_is_supported_manual_fire": event.get("detection_id") in LIFETIME_MANUAL_FIRE_SUPPORTED_DETECTIONS,
         "human_review_required": event.get("human_review_required") is True,
         "ai_support_only": event.get("ai_support_mode") == "AI_SUPPORT_ONLY",
         "ai_decided_disposition_false": event.get("ai_decided_disposition") is False,
         "not_public_safe": event.get("public_safe_status") == "NOT_PUBLIC_SAFE",
+        "no_runtime_public_claim": str(event.get("runtime_truth_status")) != "RUNTIME_ACTIVE_PUBLIC_PROOF",
+        "no_signal_public_claim": str(event.get("signal_truth_status")) != "SIGNAL_OBSERVED_PUBLIC_PROOF",
         "no_disposition": event.get("disposition_status") == "NO_DISPOSITION",
         "case_not_closed": event.get("case_status") == "HUMAN_REVIEW_REQUIRED",
         "no_private_evidence_ref": event.get("private_evidence_ref_allowed") is False,
@@ -1841,10 +1879,12 @@ def validate_lifetime_append_candidate_event(event: dict[str, Any]) -> dict[str,
     return checks
 
 
-def lifetime_manual_fire_ho_det_001_dry_run(repo_root: Path, ledger_path: Path, candidate_path: Path) -> dict[str, Any]:
+def lifetime_manual_fire_dry_run(repo_root: Path, ledger_path: Path, candidate_path: Path) -> dict[str, Any]:
     if not candidate_path.is_file():
         raise FactoryError(f"Lifetime manual-fire candidate file is missing: {candidate_path}")
     candidate = load_lifetime_manual_fire_candidate(candidate_path)
+    detection_id = str(candidate["detection_id"])
+    phase = "phase_6_multi_detection_manual_fire_dry_run" if detection_id != "HO-DET-001" else "phase_2_manual_fire_candidate_dry_run"
     missing_refs = [
         str(candidate[field])
         for field in ("source_packet_ref", "validation_ref", "proof_ref")
@@ -1854,9 +1894,9 @@ def lifetime_manual_fire_ho_det_001_dry_run(repo_root: Path, ledger_path: Path, 
         raise FactoryError(f"Lifetime manual-fire candidate references are missing: {', '.join(missing_refs)}")
     event = build_lifetime_manual_fire_event(candidate)
     coverage = verify_lifetime_detection_coverage(repo_root)
-    coverage_item = next(item for item in coverage if item["detection_id"] == "HO-DET-001")
+    coverage_item = next(item for item in coverage if item["detection_id"] == detection_id)
     with connect_read_only_ledger(ledger_path) as conn:
-        seed_verification = verify_ledger(conn, "seed_bridge_for_lifetime_case_ledger_v1_phase_2_preview_not_runtime_truth")
+        seed_verification = verify_ledger(conn, f"seed_bridge_for_lifetime_case_ledger_v1_{phase}_not_runtime_truth")
         before_metrics = lifetime_ledger_metrics(conn)
         duplicate_event_hash_count = int(
             conn.execute("SELECT COUNT(*) FROM case_events WHERE event_hash = ?", (event["event_hash"],)).fetchone()[0]
@@ -1866,18 +1906,21 @@ def lifetime_manual_fire_ho_det_001_dry_run(repo_root: Path, ledger_path: Path, 
         )
     return {
         "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
-        "mode": "lifetime-ledger-manual-fire-ho-det-001",
-        "phase": "phase_2_manual_fire_candidate_dry_run",
+        "mode": f"lifetime-ledger-manual-fire-{detection_id.lower()}",
+        "phase": phase,
         "dry_run": True,
         "append_performed": False,
+        "database_modified": False,
         "append_approval_required": LIFETIME_MANUAL_FIRE_APPEND_APPROVAL,
         "candidate_path": str(candidate_path.relative_to(PLATFORM_ROOT)) if candidate_path.is_relative_to(PLATFORM_ROOT) else str(candidate_path),
         "candidate_event": event,
         "coverage_status": {
-            "detection_id": coverage_item["detection_id"],
+            "detection_id": detection_id,
             "source_ref_status": coverage_item["source_ref_status"],
             "validation_ref_status": coverage_item["validation_ref_status"],
             "proof_ref_status": coverage_item["proof_ref_status"],
+            "proof_ceiling": coverage_item["proof_ceiling"],
+            "public_safe_status": coverage_item["public_safe_status"],
         },
         "dedupe": {
             "duplicate_event_hash_count": duplicate_event_hash_count,
@@ -1898,11 +1941,15 @@ def lifetime_manual_fire_ho_det_001_dry_run(repo_root: Path, ledger_path: Path, 
             "case_closure_allowed": False,
         },
         "boundary": (
-            "Phase 2 manual-fire candidate is a sanitized dry-run preview only. It does not append to a "
+            f"{phase} is a sanitized dry-run preview only. It does not append to a "
             "runtime ledger, import raw evidence, publish public proof, mark public-safe status, close a case, "
             "or grant AI or analyst final disposition authority."
         ),
     }
+
+
+def lifetime_manual_fire_ho_det_001_dry_run(repo_root: Path, ledger_path: Path, candidate_path: Path) -> dict[str, Any]:
+    return lifetime_manual_fire_dry_run(repo_root, ledger_path, candidate_path)
 
 
 def lifetime_append_gate_review(
@@ -1917,7 +1964,7 @@ def lifetime_append_gate_review(
     if append_mode == "append" and append_approval != LIFETIME_APPEND_APPROVAL_PHRASE:
         raise FactoryError("BLOCKED: APPEND_APPROVAL_REQUIRED")
 
-    preview = lifetime_manual_fire_ho_det_001_dry_run(repo_root, ledger_path, candidate_path)
+    preview = lifetime_manual_fire_dry_run(repo_root, ledger_path, candidate_path)
     event = dict(preview["candidate_event"])
     candidate_checks = validate_lifetime_append_candidate_event(event)
     with connect_read_only_ledger(ledger_path) as conn:
@@ -2058,6 +2105,152 @@ def lifetime_append_gate_self_test(repo_root: Path, ledger_path: Path, candidate
         "append_approval_required": LIFETIME_APPEND_APPROVAL_PHRASE,
         "correction_model": dry_run["correction_model"],
         "proof_boundary": dry_run["boundary"],
+    }
+
+
+def validate_lifetime_manual_fire_preview(preview: dict[str, Any], detection_id: str) -> dict[str, Any]:
+    event = preview["candidate_event"]
+    delta = lifetime_metrics_delta(preview["before_lifetime_metrics"], preview["expected_after_lifetime_metrics"])
+    checks = {
+        "detection_id": event.get("detection_id") == detection_id,
+        "event_hash_present": isinstance(event.get("event_hash"), str) and len(str(event.get("event_hash"))) == 64,
+        "case_id_present": isinstance(event.get("case_id"), str) and str(event.get("case_id")).startswith(f"LCL-MANUAL-{detection_id}-"),
+        "payload_hash_present": isinstance(event.get("payload_hash"), str) and len(str(event.get("payload_hash"))) == 64,
+        "sanitized_event_fingerprint_present": isinstance(event.get("sanitized_event_fingerprint"), str)
+        and bool(str(event.get("sanitized_event_fingerprint")).strip()),
+        "source_packet_ref_present": isinstance(event.get("source_packet_ref"), str) and bool(str(event.get("source_packet_ref")).strip()),
+        "ai_support_only": event.get("ai_support_mode") == "AI_SUPPORT_ONLY",
+        "human_review_required": event.get("human_review_required") is True,
+        "ai_decided_disposition_false": event.get("ai_decided_disposition") is False,
+        "not_public_safe": event.get("public_safe_status") == "NOT_PUBLIC_SAFE",
+        "no_disposition": event.get("disposition_status") == "NO_DISPOSITION",
+        "append_not_performed": preview.get("append_performed") is False,
+        "database_not_modified": preview.get("database_modified") is False,
+    }
+    required_delta = {
+        "total_ledger_events": 1,
+        "total_cases": 1,
+        "cases_requiring_human_review": 1,
+        "ai_support_only_count": 1,
+        "proof_blocked_count": 1,
+        "public_safe_count": 0,
+        "closed_case_count": 0,
+    }
+    delta_failures = {
+        key: {"expected": expected, "actual": delta.get(key)}
+        for key, expected in required_delta.items()
+        if delta.get(key) != expected
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed or delta_failures:
+        raise FactoryError(f"Lifetime manual-fire preview failed Phase 6 checks: checks={failed}, delta={delta_failures}")
+    return {
+        "checks": checks,
+        "metrics_delta": delta,
+        "dedupe": preview["dedupe"],
+        "proof_ceiling": event["proof_ceiling"],
+        "public_safe_status": event["public_safe_status"],
+    }
+
+
+def lifetime_multi_detection_self_test(repo_root: Path, ledger_path: Path) -> dict[str, Any]:
+    before_mtime = ledger_path.stat().st_mtime_ns if ledger_path.exists() else None
+    previews: dict[str, Any] = {}
+    gates: dict[str, Any] = {}
+    for detection_id in ("HO-DET-011", "HO-DET-012"):
+        candidate_path = LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLES[detection_id]
+        preview = lifetime_manual_fire_dry_run(repo_root, ledger_path, candidate_path)
+        gates[detection_id] = lifetime_append_gate_review(repo_root, ledger_path, candidate_path, "dry-run", None)
+        previews[detection_id] = validate_lifetime_manual_fire_preview(preview, detection_id)
+        if gates[detection_id]["append_performed"] is not False or gates[detection_id]["boundaries"]["database_modified"] is not False:
+            raise FactoryError(f"Lifetime append gate modified state for {detection_id}")
+
+    ho_det_001_hash = build_lifetime_manual_fire_event(
+        load_lifetime_manual_fire_candidate(LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLES["HO-DET-001"])
+    )["event_hash"]
+    if ho_det_001_hash != "15a499248c31b1f5200f0c8c66a72c8626db11ed76acc1595ddf951e062efdfa":
+        raise FactoryError("Lifetime Phase 6 changed the approved HO-DET-001 manual-fire event hash")
+
+    valid = load_lifetime_manual_fire_candidate(LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLES["HO-DET-011"])
+    unsupported = {**valid, "detection_id": "HO-DET-013", "detection_family": "endpoint_telemetry_control_tamper"}
+    non_public_value = {**valid, "source_system": "private " + "evidence marker"}
+    nonreal_value = {**valid, "notes_boundary": "Sanitized " + "place" + "holder review note"}
+
+    negative_tests = {
+        "unsupported_detection_id": expect_factory_error_contains(
+            "unsupported detection ID fails closed",
+            lambda: validate_lifetime_manual_fire_candidate(unsupported),
+            "BLOCKED: LIFETIME_MANUAL_FIRE_UNSUPPORTED_DETECTION",
+        ),
+        "raw_or_private_value": expect_factory_error_contains(
+            "raw or private value fails closed",
+            lambda: validate_lifetime_manual_fire_candidate(non_public_value),
+            "blocked raw/private value",
+        ),
+        "nonreal_marker_value": expect_factory_error_contains(
+            "nonreal marker value fails closed",
+            lambda: validate_lifetime_manual_fire_candidate(nonreal_value),
+            "BLOCKED: LIFETIME_MANUAL_FIRE_NONREAL_VALUE",
+        ),
+        "unapproved_append": expect_factory_error_contains(
+            "unapproved append fails closed",
+            lambda: lifetime_append_gate_review(
+                repo_root,
+                ledger_path,
+                LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLES["HO-DET-011"],
+                "append",
+                None,
+            ),
+            "BLOCKED: APPEND_APPROVAL_REQUIRED",
+        ),
+    }
+
+    with connect_read_only_ledger(ledger_path) as conn:
+        promoted = build_lifetime_manual_fire_event(valid)
+        promoted.update(
+            {
+                "public_safe_status": "PUBLIC_SAFE",
+                "runtime_truth_status": "RUNTIME_ACTIVE_PUBLIC_PROOF",
+                "signal_truth_status": "SIGNAL_OBSERVED_PUBLIC_PROOF",
+                "disposition_status": "AI_APPROVED",
+                "case_status": "CLOSED",
+            }
+        )
+        negative_tests["promotion_boundary_violation"] = expect_factory_error_contains(
+            "promotion boundary violation fails closed",
+            lambda: validate_lifetime_append_candidate_event(promoted),
+            "Lifetime append candidate failed boundary checks",
+        )
+
+    after_mtime = ledger_path.stat().st_mtime_ns if ledger_path.exists() else None
+    if before_mtime != after_mtime:
+        raise FactoryError("Lifetime multi-detection self-test modified the ledger")
+
+    return {
+        "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
+        "mode": "lifetime-ledger-multi-detection-self-test",
+        "phase": "phase_6_multi_detection_manual_fire_dry_run",
+        "status": "pass",
+        "supported_detection_ids": ["HO-DET-001", "HO-DET-011", "HO-DET-012"],
+        "ho_det_001_event_hash_stable": ho_det_001_hash,
+        "manual_fire_previews": previews,
+        "append_gate_previews": {
+            detection_id: {
+                "append_performed": gate["append_performed"],
+                "database_modified": gate["boundaries"]["database_modified"],
+                "append_gate_result": gate["append_gate_result"],
+                "dedupe": gate["dedupe"],
+                "metrics_delta": gate["metrics_delta"],
+            }
+            for detection_id, gate in gates.items()
+        },
+        "negative_tests": negative_tests,
+        "proof_boundary": (
+            "Phase 6 expands sanitized manual-fire dry-run and append-gate previews only. "
+            "It does not append to the seed bridge, mutate existing ledger rows, import raw/private runtime evidence, "
+            "publish public proof, mark public-safe status, claim runtime/signal public status, close a case, "
+            "or grant AI or analyst final disposition authority."
+        ),
     }
 
 
@@ -4070,6 +4263,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
     sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("lifetime-ledger-manual-fire-ho-det-011")
+    sub.add_argument("--candidate", default=str(LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLES["HO-DET-011"]))
+    sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+    sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("lifetime-ledger-manual-fire-ho-det-012")
+    sub.add_argument("--candidate", default=str(LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLES["HO-DET-012"]))
+    sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+    sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("lifetime-ledger-append-gate")
     sub.add_argument("--candidate", default=str(LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLE))
     sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
@@ -4097,6 +4300,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--correction-approval")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("lifetime-ledger-correction-self-test")
+    sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+    sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("lifetime-ledger-multi-detection-self-test")
     sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
     sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
     sub.add_argument("--format", default="json", choices=("json",))
@@ -4201,6 +4408,15 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
+    if args.mode in {"lifetime-ledger-manual-fire-ho-det-011", "lifetime-ledger-manual-fire-ho-det-012"}:
+        output = lifetime_manual_fire_dry_run(
+            Path(args.repo_root).resolve(),
+            Path(args.ledger_path).resolve(),
+            Path(args.candidate).resolve(),
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
     if args.mode == "lifetime-ledger-append-gate":
         output = lifetime_append_gate_review(
             Path(args.repo_root).resolve(),
@@ -4245,6 +4461,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "lifetime-ledger-correction-self-test":
         output = lifetime_correction_self_test(
+            Path(args.repo_root).resolve(),
+            Path(args.ledger_path).resolve(),
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "lifetime-ledger-multi-detection-self-test":
+        output = lifetime_multi_detection_self_test(
             Path(args.repo_root).resolve(),
             Path(args.ledger_path).resolve(),
         )
