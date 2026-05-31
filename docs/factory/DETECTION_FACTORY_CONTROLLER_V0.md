@@ -201,19 +201,19 @@ claims.
 Entry point:
 
 ```powershell
-python -B scripts\ho_factory.py status --detection HO-DET-001 --repo-root "<ORG_REPO_ROOT>" --format json
-python -B scripts\ho_factory.py status --detection HO-DET-011 --repo-root "<ORG_REPO_ROOT>" --format json
-python -B scripts\ho_factory.py status --detection HO-DET-012 --repo-root "<ORG_REPO_ROOT>" --format json
-python -B scripts\ho_factory.py status --detection ID-DET-001 --repo-root "<ORG_REPO_ROOT>" --format json
-python -B scripts\ho_factory.py status --detection ID-DET-002 --repo-root "<ORG_REPO_ROOT>" --format json
-python -B scripts\ho_factory.py status --detection ID-DET-003 --repo-root "<ORG_REPO_ROOT>" --format json
-python -B scripts\ho_factory.py status --detection ID-DET-004 --repo-root "<ORG_REPO_ROOT>" --format json
-python -B scripts\ho_factory.py plan --detection HO-DET-012 --repo-root "<ORG_REPO_ROOT>" --format json
-python -B scripts\ho_factory.py plan --detection ID-DET-001 --repo-root "<ORG_REPO_ROOT>" --format json
-python -B scripts\ho_factory.py plan --detection ID-DET-002 --repo-root "<ORG_REPO_ROOT>" --format json
-python -B scripts\ho_factory.py plan --detection ID-DET-003 --repo-root "<ORG_REPO_ROOT>" --format json
-python -B scripts\ho_factory.py plan --detection ID-DET-004 --repo-root "<ORG_REPO_ROOT>" --format json
-python -B scripts\ho_factory.py plan --detection all --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py status --detection HO-DET-001 --repo-root .. --format json
+python -B scripts\ho_factory.py status --detection HO-DET-011 --repo-root .. --format json
+python -B scripts\ho_factory.py status --detection HO-DET-012 --repo-root .. --format json
+python -B scripts\ho_factory.py status --detection ID-DET-001 --repo-root .. --format json
+python -B scripts\ho_factory.py status --detection ID-DET-002 --repo-root .. --format json
+python -B scripts\ho_factory.py status --detection ID-DET-003 --repo-root .. --format json
+python -B scripts\ho_factory.py status --detection ID-DET-004 --repo-root .. --format json
+python -B scripts\ho_factory.py plan --detection HO-DET-012 --repo-root .. --format json
+python -B scripts\ho_factory.py plan --detection ID-DET-001 --repo-root .. --format json
+python -B scripts\ho_factory.py plan --detection ID-DET-002 --repo-root .. --format json
+python -B scripts\ho_factory.py plan --detection ID-DET-003 --repo-root .. --format json
+python -B scripts\ho_factory.py plan --detection ID-DET-004 --repo-root .. --format json
+python -B scripts\ho_factory.py plan --detection all --repo-root .. --format json
 python -B scripts\ho_factory.py self-test-id-det-001-missing-surfaces --format json
 ```
 
@@ -307,9 +307,9 @@ it does not run `UPDATE` or `DELETE` negative tests against the seed ledger.
 ### Ledger CLI
 
 ```powershell
-python -B scripts\ho_factory.py ledger-init-sample --repo-root "<ORG_REPO_ROOT>" --ledger evidence\autosoc-case-ledger-v0.sqlite
-python -B scripts\ho_factory.py ledger-verify --repo-root "<ORG_REPO_ROOT>" --ledger evidence\autosoc-case-ledger-v0.sqlite
-python -B scripts\ho_factory.py ledger-metrics --repo-root "<ORG_REPO_ROOT>" --ledger evidence\autosoc-case-ledger-v0.sqlite
+python -B scripts\ho_factory.py ledger-init-sample --repo-root .. --ledger evidence\autosoc-case-ledger-v0.sqlite
+python -B scripts\ho_factory.py ledger-verify --repo-root .. --ledger evidence\autosoc-case-ledger-v0.sqlite
+python -B scripts\ho_factory.py ledger-metrics --repo-root .. --ledger evidence\autosoc-case-ledger-v0.sqlite
 ```
 
 Only `ledger-init-sample` may create the approved ledger parent directory.
@@ -358,7 +358,7 @@ proof, close cases, or grant AI or analyst disposition authority.
 The Phase 1 verifier command is:
 
 ```powershell
-python -B scripts\ho_factory.py lifetime-ledger-verify --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py lifetime-ledger-verify --repo-root .. --format json
 ```
 
 The v1 event model includes:
@@ -478,7 +478,7 @@ approved by a separate human gate.
 The Phase 2 command is:
 
 ```powershell
-python -B scripts\ho_factory.py lifetime-ledger-manual-fire-ho-det-001 --candidate contracts\examples\lifetime-ledger-v1-manual-fire-ho-det-001.sample.json --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py lifetime-ledger-manual-fire-ho-det-001 --candidate contracts\examples\lifetime-ledger-v1-manual-fire-ho-det-001.sample.json --repo-root .. --format json
 ```
 
 The sample candidate lives at:
@@ -553,13 +553,13 @@ BLOCKED: APPEND_APPROVAL_REQUIRED
 The Phase 3 dry-run append-gate command is:
 
 ```powershell
-python -B scripts\ho_factory.py lifetime-ledger-append-gate --append-mode dry-run --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py lifetime-ledger-append-gate --append-mode dry-run --repo-root .. --format json
 ```
 
 The required negative self-test is:
 
 ```powershell
-python -B scripts\ho_factory.py lifetime-ledger-append-gate-self-test --repo-root "<ORG_REPO_ROOT>" --format json
+python -B scripts\ho_factory.py lifetime-ledger-append-gate-self-test --repo-root .. --format json
 ```
 
 The self-test attempts append mode without the approval phrase and requires the
@@ -624,7 +624,7 @@ truth surface, public proof surface, or public-safe evidence store.
 The approved append command is:
 
 ```powershell
-python -B scripts\ho_factory.py lifetime-ledger-append-approved-ho-det-001 --repo-root "<ORG_REPO_ROOT>" --append-approval "APPEND_APPROVED: append sanitized Lifetime Case Ledger event" --format json
+python -B scripts\ho_factory.py lifetime-ledger-append-approved-ho-det-001 --repo-root .. --append-approval "APPEND_APPROVED: append sanitized Lifetime Case Ledger event" --format json
 ```
 
 The command fails closed unless the approval phrase is exact. Before writing it
@@ -860,6 +860,83 @@ The Phase 6 proof boundary remains:
 - no autonomous SOC claim
 - no AI-approved or analyst-approved final disposition authority
 - no case closure authority
+
+## Lifetime Case Ledger v1 Phase 7 Multi-Detection Approved Append
+
+Phase 7 uses the merged Phase 6 sanitized manual-fire candidates for
+HO-DET-011 and HO-DET-012 and appends them to the tracked platform seed bridge
+only:
+
+```text
+evidence/autosoc-case-ledger-v0.sqlite
+```
+
+The approved append command is:
+
+```powershell
+python -B scripts\ho_factory.py lifetime-ledger-append-approved-ho-det-011-012 --repo-root .. --append-approval "APPEND_APPROVED: append sanitized Lifetime Case Ledger event" --format json
+```
+
+The append command requires the exact append approval phrase and verifies that
+the seed bridge has the expected pre-append count of two lifetime events before
+writing either candidate. It writes both events in one SQLite transaction and
+then verifies the post-append count, event hash uniqueness, duplicate blocking,
+and lifetime metrics delta.
+
+The appended HO-DET-011 event is:
+
+- `case_id=LCL-MANUAL-HO-DET-011-5BC674169FE6F62D`
+- `event_hash=1415870b1c80f33bdceb7811ccd33729e53496562b4f9a3b6589a273ce8cf874`
+- `payload_hash=5bc674169fe6f62d2ddf35e19b9bb425b0d51bce2ef44c231472cfd64e1f32ae`
+- `sanitized_event_fingerprint=5bc674169fe6f62d2ddf35e19b9bb425b0d51bce2ef44c231472cfd64e1f32ae`
+- `append_phase=phase_7_approved_multi_detection_manual_fire_append`
+- `proof_ceiling=PRIVATE_RUNTIME_EVIDENCE_CAPTURED`
+- `public_safe_status=NOT_PUBLIC_SAFE`
+
+The appended HO-DET-012 event is:
+
+- `case_id=LCL-MANUAL-HO-DET-012-845A4A3EEB77D781`
+- `event_hash=4d7bc9077e5032bfd02ff1315d5573f1df769288b1095465cb20dff41bd5f679`
+- `payload_hash=845a4a3eeb77d781656c8755c414e56d634f14bcb4c272237faad268cac20010`
+- `sanitized_event_fingerprint=845a4a3eeb77d781656c8755c414e56d634f14bcb4c272237faad268cac20010`
+- `append_phase=phase_7_approved_multi_detection_manual_fire_append`
+- `proof_ceiling=CONTROLLED_TEST_VALIDATED`
+- `public_safe_status=NOT_PUBLIC_SAFE`
+
+Phase 7 metrics delta from the approved append:
+
+- `total_ledger_events +2`
+- `total_cases +2`
+- `cases_requiring_human_review +2`
+- `ai_support_only_count +2`
+- `proof_blocked_count +2`
+- `public_safe_count +0`
+- `closed_case_count +0`
+- `correction_event_count +0`
+- `superseding_event_count +0`
+
+After the approved append, duplicate attempts for both candidate events must
+fail closed with `BLOCKED: DEDUPE_COLLISION`, and the lifetime ledger count must
+remain unchanged. The Phase 6 dry-run preview remains available, but its dedupe
+preview now reports that these two candidate rows already exist in the seed
+bridge.
+
+The Phase 7 proof boundary remains:
+
+- tracked platform seed bridge only
+- not runtime truth
+- not signal truth
+- not public proof
+- not public-safe
+- no raw/private runtime evidence import
+- no runtime-active public claim
+- no signal-observed public claim
+- no SOCaaS deployment claim
+- no production deployment claim
+- no autonomous SOC claim
+- no AI-approved or analyst-approved final disposition authority
+- no case closure authority
+- no correction or superseding append performed
 
 ### Splunk HO-DET-001 Runtime Ingest Dry Run
 
