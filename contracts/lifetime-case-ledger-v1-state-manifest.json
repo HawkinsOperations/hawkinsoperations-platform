@@ -1,0 +1,128 @@
+{
+  "manifest_id": "LIFETIME_CASE_LEDGER_V1_PHASE_8_STATE_MANIFEST",
+  "manifest_version": "phase_8_ledger_state_manifest_v1",
+  "source_controlled_manifest": true,
+  "state_basis": "post_phase_7_merged_main",
+  "platform_commit_sha": "eff2f8ea6c79c8b63aeaefc151d70539ba199eee",
+  "six_repo_state": [
+    {
+      "repo_name": ".github",
+      "role": "organization policy and shared GitHub defaults",
+      "branch": "main",
+      "commit_sha": "c0e8505c9ebd342bb180c37e8a45284c61bc1e44",
+      "authority_boundary": "organization repository metadata only; not runtime truth, signal truth, or public proof"
+    },
+    {
+      "repo_name": "hawkinsoperations-detections",
+      "role": "detection source rules and queries",
+      "branch": "main",
+      "commit_sha": "c072d082b6c59c8556355a598b169a18897c6f8f",
+      "authority_boundary": "detection source truth only; not runtime truth, signal truth, or public proof"
+    },
+    {
+      "repo_name": "hawkinsoperations-validation",
+      "role": "validation reports, fixtures, and controlled-test evidence",
+      "branch": "main",
+      "commit_sha": "9a187017db970317035704dfa8e5e8010aefce25",
+      "authority_boundary": "validation truth within controlled scope only; not runtime truth, signal truth, or public proof"
+    },
+    {
+      "repo_name": "hawkinsoperations-platform",
+      "role": "platform controller, ledger seed bridge, and governance gate",
+      "branch": "main",
+      "commit_sha": "eff2f8ea6c79c8b63aeaefc151d70539ba199eee",
+      "authority_boundary": "platform source truth and tracked seed bridge only; not runtime truth, signal truth, or public proof"
+    },
+    {
+      "repo_name": "hawkinsoperations-proof",
+      "role": "proof records and proof cards",
+      "branch": "main",
+      "commit_sha": "a5a59822d16f79332ecd674ced77621dc1a662c5",
+      "authority_boundary": "proof source records only; public proof and public-safe use still require separate approval"
+    },
+    {
+      "repo_name": "hawkinsoperations-website",
+      "role": "public website presentation surface",
+      "branch": "main",
+      "commit_sha": "62bbb5336e4e09ae5904c08a5b4d86210772d066",
+      "authority_boundary": "presentation source only; website rendering does not create runtime truth, signal truth, or public proof"
+    }
+  ],
+  "ledger_target": "evidence/autosoc-case-ledger-v0.sqlite",
+  "ledger_boundary": "tracked platform seed bridge, not runtime truth, not signal truth, not public proof",
+  "current_ledger_counts": {
+    "total_ledger_events": 4,
+    "total_cases": 4,
+    "public_safe_count": 0,
+    "closed_case_count": 0,
+    "correction_event_count": 0,
+    "superseding_event_count": 0
+  },
+  "appended_detection_ids": [
+    "HO-DET-001",
+    "HO-DET-011",
+    "HO-DET-012"
+  ],
+  "covered_not_appended_detection_ids": [
+    "AWS-DET-001",
+    "HO-DET-013",
+    "ID-DET-001",
+    "ID-DET-002",
+    "ID-DET-003",
+    "ID-DET-004"
+  ],
+  "verifier_commands": [
+    "python -B scripts/ho_factory.py lifetime-ledger-verify --repo-root .. --format json",
+    "python -B scripts/ho_factory.py ledger-verify --repo-root .. --format json",
+    "python -B scripts/ho_factory.py ledger-metrics --repo-root .. --format json",
+    "python -B scripts/ho_factory.py lifetime-ledger-state-manifest-verify --repo-root .. --format json"
+  ],
+  "proof_ceiling": "SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY",
+  "public_safe_status": "NOT_PUBLIC_SAFE",
+  "governance_defaults": {
+    "human_review_required": true,
+    "ai_support_mode": "AI_SUPPORT_ONLY",
+    "ai_decided_disposition": false,
+    "recommended_disposition": null,
+    "proof_blocked": true,
+    "public_safe": false,
+    "case_closed": false,
+    "github_issue_mutation_allowed": false
+  },
+  "explicitly_blocked_claims": [
+    "production deployment",
+    "public raw runtime evidence",
+    "runtime-active public status",
+    "signal-observed public status",
+    "public-safe runtime proof",
+    "SOCaaS deployment",
+    "autonomous SOC",
+    "AI-approved final disposition",
+    "analyst-approved final disposition",
+    "case closure without explicit human-approved closure artifact"
+  ],
+  "additional_blocked_public_claims": [
+    "evidence-linked public proof",
+    "live Splunk firing",
+    "production triage",
+    "LOCAL_GPU_SUPPORT_NODE runtime-active",
+    "Cribl-routed proof",
+    "Wazuh-routed proof",
+    "AWS-live",
+    "fleet-wide deployment",
+    "production-ready SOC",
+    "public-safe status"
+  ],
+  "does_not_prove": [
+    "live runtime activity",
+    "signal observation",
+    "production deployment",
+    "SOCaaS availability",
+    "public-safe runtime proof",
+    "public proof",
+    "autonomous SOC authority",
+    "AI-approved final disposition",
+    "analyst-approved final disposition",
+    "case closure authority"
+  ]
+}

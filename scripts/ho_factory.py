@@ -30,6 +30,7 @@ LIFETIME_CASE_LEDGER_VERSION = "LIFETIME_CASE_LEDGER_V1"
 PLATFORM_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO_ROOT = PLATFORM_ROOT.parent
 DEFAULT_CASE_LEDGER = PLATFORM_ROOT / "evidence" / "autosoc-case-ledger-v0.sqlite"
+LIFETIME_LEDGER_STATE_MANIFEST = PLATFORM_ROOT / "contracts" / "lifetime-case-ledger-v1-state-manifest.json"
 PROOF_STATUS_INDEX_REL = "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml"
 PROOF_STATUS_INDEX_OWNER = "hawkinsoperations-proof"
 PROOF_STATUS_INDEX_VISIBILITY_STATUS = "STATUS_VISIBILITY_ONLY_NON_AUTHORITATIVE"
@@ -128,6 +129,58 @@ LIFETIME_LEDGER_BLOCKED_CLAIMS = (
     "AI-approved final disposition",
     "analyst-approved final disposition",
     "case closure without explicit human-approved closure artifact",
+)
+LIFETIME_LEDGER_STATE_MANIFEST_ID = "LIFETIME_CASE_LEDGER_V1_PHASE_8_STATE_MANIFEST"
+LIFETIME_LEDGER_STATE_MANIFEST_VERSION = "phase_8_ledger_state_manifest_v1"
+LIFETIME_LEDGER_STATE_MANIFEST_REQUIRED_COUNTS = {
+    "total_ledger_events": 4,
+    "total_cases": 4,
+    "public_safe_count": 0,
+    "closed_case_count": 0,
+    "correction_event_count": 0,
+    "superseding_event_count": 0,
+}
+LIFETIME_LEDGER_STATE_MANIFEST_REQUIRED_REPOS = (
+    ".github",
+    "hawkinsoperations-detections",
+    "hawkinsoperations-validation",
+    "hawkinsoperations-platform",
+    "hawkinsoperations-proof",
+    "hawkinsoperations-website",
+)
+LIFETIME_LEDGER_STATE_MANIFEST_DOES_NOT_PROVE = (
+    "live runtime activity",
+    "signal observation",
+    "production deployment",
+    "SOCaaS availability",
+    "public-safe runtime proof",
+    "public proof",
+    "autonomous SOC authority",
+    "AI-approved final disposition",
+    "analyst-approved final disposition",
+    "case closure authority",
+)
+LIFETIME_LEDGER_STATE_MANIFEST_GOVERNANCE_DEFAULTS = {
+    "human_review_required": True,
+    "ai_support_mode": "AI_SUPPORT_ONLY",
+    "ai_decided_disposition": False,
+    "recommended_disposition": None,
+    "proof_blocked": True,
+    "public_safe": False,
+    "case_closed": False,
+    "github_issue_mutation_allowed": False,
+}
+LIFETIME_LEDGER_STATE_MANIFEST_ADDITIONAL_BLOCKED_CLAIMS = (
+    "evidence-linked public proof",
+    "live Splunk firing",
+    "production triage",
+    "LOCAL_GPU_SUPPORT_NODE runtime-active",
+    "Cribl-routed proof",
+    "Wazuh-routed proof",
+    "AWS-live",
+    "fleet-wide deployment",
+    "production-ready SOC",
+    "public-safe status",
 )
 LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLE = (
     PLATFORM_ROOT / "contracts" / "examples" / "lifetime-ledger-v1-manual-fire-ho-det-001.sample.json"
@@ -1611,6 +1664,151 @@ def verify_lifetime_ledger_spine(repo_root: Path, ledger_path: Path) -> dict[str
         },
         "seed_ledger_bridge": seed_verification,
         "boundary": LIFETIME_LEDGER_BOUNDARY,
+    }
+
+
+def require_manifest_sha(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{40}", value):
+        raise FactoryError(f"BLOCKED: {label.upper()}_MISSING_OR_MALFORMED")
+    return value
+
+
+def require_repo_relative_manifest_path(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise FactoryError(f"BLOCKED: {label.upper()}_MISSING")
+    if re.search(r"\b[A-Za-z]:\\", value) or value.startswith(("/", "\\")) or "\\" in value:
+        raise FactoryError(f"BLOCKED: {label.upper()}_MUST_BE_REPO_RELATIVE")
+    return value
+
+
+def verify_lifetime_ledger_state_manifest(repo_root: Path, ledger_path: Path, manifest_path: Path) -> dict[str, Any]:
+    try:
+        manifest_path.resolve().relative_to(PLATFORM_ROOT.resolve())
+    except ValueError as exc:
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_NOT_PLATFORM_OWNED") from exc
+    manifest = load_json(manifest_path)
+    scan_private_markers("Lifetime ledger state manifest", manifest)
+
+    if manifest.get("manifest_id") != LIFETIME_LEDGER_STATE_MANIFEST_ID:
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_ID_INVALID")
+    if manifest.get("manifest_version") != LIFETIME_LEDGER_STATE_MANIFEST_VERSION:
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_VERSION_INVALID")
+    if manifest.get("source_controlled_manifest") is not True:
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_SOURCE_CONTROLLED_REQUIRED")
+    platform_commit_sha = require_manifest_sha(manifest.get("platform_commit_sha"), "platform_sha")
+
+    ledger_target = require_repo_relative_manifest_path(manifest.get("ledger_target"), "ledger_target")
+    if ledger_target != "evidence/autosoc-case-ledger-v0.sqlite":
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_LEDGER_TARGET_INVALID")
+    if manifest.get("ledger_boundary") != "tracked platform seed bridge, not runtime truth, not signal truth, not public proof":
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_LEDGER_BOUNDARY_INVALID")
+
+    repos = manifest.get("six_repo_state")
+    if not isinstance(repos, list):
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_SIX_REPO_STATE_INVALID")
+    by_repo: dict[str, dict[str, Any]] = {}
+    for entry in repos:
+        if not isinstance(entry, dict):
+            raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_REPO_ENTRY_INVALID")
+        repo_name = entry.get("repo_name")
+        if repo_name in by_repo:
+            raise FactoryError(f"BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_DUPLICATE_REPO: {repo_name}")
+        if not isinstance(repo_name, str) or not repo_name:
+            raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_REPO_NAME_MISSING")
+        by_repo[repo_name] = entry
+        for field in ("role", "branch", "authority_boundary"):
+            if not isinstance(entry.get(field), str) or not entry[field].strip():
+                raise FactoryError(f"BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_{repo_name}_{field.upper()}_MISSING")
+        require_manifest_sha(entry.get("commit_sha"), f"{repo_name}_commit_sha")
+        scan_private_markers(f"Lifetime ledger state manifest repo entry {repo_name}", entry)
+    missing_repos = sorted(set(LIFETIME_LEDGER_STATE_MANIFEST_REQUIRED_REPOS) - set(by_repo))
+    if missing_repos:
+        raise FactoryError(f"BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_REQUIRED_REPOS_MISSING: {', '.join(missing_repos)}")
+    extra_repos = sorted(set(by_repo) - set(LIFETIME_LEDGER_STATE_MANIFEST_REQUIRED_REPOS))
+    if extra_repos:
+        raise FactoryError(f"BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_UNKNOWN_REPOS: {', '.join(extra_repos)}")
+    if by_repo["hawkinsoperations-platform"]["commit_sha"] != platform_commit_sha:
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_PLATFORM_SHA_MISMATCH")
+
+    if manifest.get("proof_ceiling") != LIFETIME_LEDGER_PROOF_CEILING:
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_PROOF_CEILING_PROMOTED")
+    if manifest.get("public_safe_status") != LIFETIME_LEDGER_PUBLIC_SAFE_STATUS:
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_PUBLIC_SAFE_PROMOTED")
+    if manifest.get("governance_defaults") != LIFETIME_LEDGER_STATE_MANIFEST_GOVERNANCE_DEFAULTS:
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_GOVERNANCE_DEFAULTS_WEAKENED")
+    require_blocked_claims(manifest.get("explicitly_blocked_claims"), LIFETIME_LEDGER_BLOCKED_CLAIMS, "lifetime ledger state manifest")
+    require_blocked_claims(
+        manifest.get("additional_blocked_public_claims"),
+        LIFETIME_LEDGER_STATE_MANIFEST_ADDITIONAL_BLOCKED_CLAIMS,
+        "lifetime ledger state manifest additional public claims",
+    )
+    does_not_prove = manifest.get("does_not_prove")
+    if not isinstance(does_not_prove, list):
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_DOES_NOT_PROVE_INVALID")
+    missing_does_not_prove = sorted(set(LIFETIME_LEDGER_STATE_MANIFEST_DOES_NOT_PROVE) - {str(item) for item in does_not_prove})
+    if missing_does_not_prove:
+        raise FactoryError(
+            "BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_DOES_NOT_PROVE_MISSING: "
+            + ", ".join(missing_does_not_prove)
+        )
+
+    with connect_read_only_ledger(ledger_path) as conn:
+        ledger_verification = verify_ledger(conn, "phase_8_manifest_seed_bridge_not_runtime_truth_not_public_proof")
+        metrics = lifetime_ledger_metrics(conn)
+    manifest_counts = manifest.get("current_ledger_counts")
+    if not isinstance(manifest_counts, dict):
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_COUNTS_INVALID")
+    count_failures = {
+        key: {"manifest": manifest_counts.get(key), "actual": metrics.get(key), "required": required}
+        for key, required in LIFETIME_LEDGER_STATE_MANIFEST_REQUIRED_COUNTS.items()
+        if manifest_counts.get(key) != required or metrics.get(key) != required
+    }
+    if count_failures:
+        raise FactoryError(f"BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_LEDGER_COUNTS_MISMATCH: {count_failures}")
+
+    appended_detection_ids = manifest.get("appended_detection_ids")
+    if sorted(appended_detection_ids or []) != sorted(metrics["cases_by_detection"]):
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_APPENDED_DETECTIONS_MISMATCH")
+    coverage_ids = sorted(item["detection_id"] for item in verify_lifetime_detection_coverage(repo_root))
+    expected_not_appended = sorted(set(coverage_ids) - set(appended_detection_ids or []))
+    if sorted(manifest.get("covered_not_appended_detection_ids") or []) != expected_not_appended:
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_COVERED_NOT_APPENDED_MISMATCH")
+
+    verifier_commands = manifest.get("verifier_commands")
+    if not isinstance(verifier_commands, list) or not verifier_commands:
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_VERIFIER_COMMANDS_MISSING")
+    if not any("lifetime-ledger-state-manifest-verify" in str(command) for command in verifier_commands):
+        raise FactoryError("BLOCKED: LIFETIME_LEDGER_STATE_MANIFEST_VERIFIER_COMMAND_MISSING")
+    for command in verifier_commands:
+        require_repo_relative_manifest_path(str(command), "verifier_command")
+
+    return {
+        "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
+        "mode": "lifetime-ledger-state-manifest-verify",
+        "phase": "phase_8_ledger_state_manifest",
+        "manifest_path": manifest_path.relative_to(PLATFORM_ROOT).as_posix(),
+        "manifest_id": manifest["manifest_id"],
+        "manifest_version": manifest["manifest_version"],
+        "source_controlled_manifest": True,
+        "platform_commit_sha": platform_commit_sha,
+        "six_repo_state": repos,
+        "ledger_target": ledger_target,
+        "ledger_boundary": manifest["ledger_boundary"],
+        "ledger_verification": ledger_verification,
+        "ledger_counts": {key: metrics[key] for key in LIFETIME_LEDGER_STATE_MANIFEST_REQUIRED_COUNTS},
+        "appended_detection_ids": appended_detection_ids,
+        "covered_not_appended_detection_ids": expected_not_appended,
+        "proof_ceiling": manifest["proof_ceiling"],
+        "public_safe_status": manifest["public_safe_status"],
+        "governance_defaults": manifest["governance_defaults"],
+        "blocked_claims_verified": list(LIFETIME_LEDGER_BLOCKED_CLAIMS),
+        "additional_blocked_public_claims_verified": list(LIFETIME_LEDGER_STATE_MANIFEST_ADDITIONAL_BLOCKED_CLAIMS),
+        "does_not_prove_verified": list(LIFETIME_LEDGER_STATE_MANIFEST_DOES_NOT_PROVE),
+        "boundary": (
+            "Phase 8 verifies a source-controlled platform ledger state manifest and six-repo SHA anchor only. "
+            "It does not mutate the ledger, prove runtime activity, prove signal observation, publish public proof, "
+            "mark public-safe status, or grant AI, analyst, or case closure authority."
+        ),
     }
 
 
@@ -4437,6 +4635,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
     sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("lifetime-ledger-state-manifest-verify")
+    sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+    sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
+    sub.add_argument("--manifest", "--manifest-path", dest="manifest_path", default=str(LIFETIME_LEDGER_STATE_MANIFEST))
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("lifetime-ledger-manual-fire-ho-det-001")
     sub.add_argument("--candidate", default=str(LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLE))
     sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
@@ -4580,6 +4783,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "lifetime-ledger-verify":
         output = verify_lifetime_ledger_spine(Path(args.repo_root).resolve(), Path(args.ledger_path).resolve())
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "lifetime-ledger-state-manifest-verify":
+        output = verify_lifetime_ledger_state_manifest(
+            Path(args.repo_root).resolve(),
+            Path(args.ledger_path).resolve(),
+            Path(args.manifest_path).resolve(),
+        )
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
