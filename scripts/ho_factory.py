@@ -1602,8 +1602,9 @@ def verify_lifetime_ledger_spine(repo_root: Path, ledger_path: Path) -> dict[str
             ],
             "recommended_phase_1_command": "python -B scripts/ho_factory.py lifetime-ledger-verify --format json",
             "recommended_phase_3_command": "python -B scripts/ho_factory.py lifetime-ledger-append-gate-self-test --format json",
-            "recommended_phase_4_command": "python -B scripts/ho_factory.py lifetime-ledger-append-approved-ho-det-001 --append-approval '<exact approved phrase>' --format json",
+            "recommended_phase_4_command": "python -B scripts/ho_factory.py lifetime-ledger-append-approved-ho-det-001 --append-approval \"APPEND_APPROVED: append sanitized Lifetime Case Ledger event\" --format json",
             "recommended_phase_6_command": "python -B scripts/ho_factory.py lifetime-ledger-multi-detection-self-test --format json",
+            "recommended_phase_7_command": "python -B scripts/ho_factory.py lifetime-ledger-append-approved-ho-det-011-012 --append-approval \"APPEND_APPROVED: append sanitized Lifetime Case Ledger event\" --format json",
             "governance_gate_wired": True,
             "governance_gate_job": "lifetime-case-ledger-v1",
             "workflow_dispatch_required_for_true_gpu_runner": True,
@@ -2264,10 +2265,14 @@ def approved_lifetime_append_target(ledger_path: Path) -> Path:
     return actual
 
 
-def lifetime_event_to_case_ledger_event(event: dict[str, Any], inserted_at: str) -> dict[str, Any]:
+def lifetime_event_to_case_ledger_event(
+    event: dict[str, Any],
+    inserted_at: str,
+    append_phase: str = "phase_4_approved_manual_fire_append",
+) -> dict[str, Any]:
     payload = {
         **event,
-        "append_phase": "phase_4_approved_manual_fire_append",
+        "append_phase": append_phase,
         "truth_boundary": (
             "Sanitized Lifetime Case Ledger v1 manual-fire event stored in the platform seed bridge. "
             "Not runtime truth, not signal truth, not public proof, not public-safe, and not case closure."
@@ -2302,6 +2307,11 @@ def lifetime_event_to_case_ledger_event(event: dict[str, Any], inserted_at: str)
     return case_event
 
 
+def ensure_lifetime_candidate_append_allowed(gate: dict[str, Any]) -> None:
+    if gate["dedupe"]["append_would_be_blocked"]:
+        raise FactoryError("BLOCKED: DEDUPE_COLLISION")
+
+
 def verify_lifetime_metrics_delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
     delta = lifetime_metrics_delta(before, after)
     required = {
@@ -2323,6 +2333,29 @@ def verify_lifetime_metrics_delta(before: dict[str, Any], after: dict[str, Any])
     return delta
 
 
+def verify_lifetime_multi_append_metrics_delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    delta = lifetime_metrics_delta(before, after)
+    required = {
+        "total_ledger_events": 2,
+        "total_cases": 2,
+        "cases_requiring_human_review": 2,
+        "ai_support_only_count": 2,
+        "proof_blocked_count": 2,
+        "public_safe_count": 0,
+        "closed_case_count": 0,
+        "correction_event_count": 0,
+        "superseding_event_count": 0,
+    }
+    failures = {
+        key: {"expected": expected, "actual": delta.get(key)}
+        for key, expected in required.items()
+        if delta.get(key) != expected
+    }
+    if failures:
+        raise FactoryError(f"Lifetime multi-append metrics delta mismatch: {failures}")
+    return delta
+
+
 def lifetime_approved_append_ho_det_001(
     repo_root: Path,
     ledger_path: Path,
@@ -2334,8 +2367,7 @@ def lifetime_approved_append_ho_det_001(
         raise FactoryError("BLOCKED: APPEND_APPROVAL_REQUIRED")
 
     gate = lifetime_append_gate_review(repo_root, approved_target, candidate_path, "append", append_approval)
-    if gate["dedupe"]["append_would_be_blocked"]:
-        raise FactoryError("BLOCKED: DEDUPE_COLLISION")
+    ensure_lifetime_candidate_append_allowed(gate)
 
     before_metrics = gate["before_lifetime_metrics"]
     event = dict(gate["candidate_event"])
@@ -2411,6 +2443,153 @@ def lifetime_approved_append_ho_det_001(
             "One approved sanitized HO-DET-001 manual-fire event was appended to the platform seed bridge only. "
             "This remains not runtime truth, not signal truth, not public proof, not public-safe, not case closure, "
             "and not AI or analyst final disposition authority."
+        ),
+    }
+
+
+def lifetime_approved_append_ho_det_011_012(
+    repo_root: Path,
+    ledger_path: Path,
+    append_approval: str | None,
+) -> dict[str, Any]:
+    approved_target = approved_lifetime_append_target(ledger_path)
+    if append_approval != LIFETIME_APPEND_APPROVAL_PHRASE:
+        raise FactoryError("BLOCKED: APPEND_APPROVAL_REQUIRED")
+
+    candidate_paths = {
+        detection_id: LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLES[detection_id]
+        for detection_id in ("HO-DET-011", "HO-DET-012")
+    }
+    expected_hashes = {
+        "HO-DET-011": "1415870b1c80f33bdceb7811ccd33729e53496562b4f9a3b6589a273ce8cf874",
+        "HO-DET-012": "4d7bc9077e5032bfd02ff1315d5573f1df769288b1095465cb20dff41bd5f679",
+    }
+    gates: dict[str, Any] = {}
+    events: dict[str, dict[str, Any]] = {}
+    for detection_id, candidate_path in candidate_paths.items():
+        gate = lifetime_append_gate_review(repo_root, approved_target, candidate_path, "append", append_approval)
+        event = dict(gate["candidate_event"])
+        if event["event_hash"] != expected_hashes[detection_id]:
+            raise FactoryError(
+                f"BLOCKED: CANDIDATE_HASH_DRIFT: {detection_id} expected {expected_hashes[detection_id]} got {event['event_hash']}"
+            )
+        ensure_lifetime_candidate_append_allowed(gate)
+        gates[detection_id] = gate
+        events[detection_id] = event
+
+    before_metrics = gates["HO-DET-011"]["before_lifetime_metrics"]
+    before_verification = gates["HO-DET-011"]["pre_append_ledger_verification"]
+    before_event_count = int(before_metrics["total_ledger_events"])
+    if before_event_count != 2:
+        raise FactoryError(f"BLOCKED: UNEXPECTED_PRE_APPEND_LEDGER_COUNT: {before_event_count}")
+
+    inserted_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    inserted: dict[str, Any] = {}
+    with connect_ledger(approved_target) as conn:
+        for detection_id, event in events.items():
+            case_event = lifetime_event_to_case_ledger_event(
+                event,
+                inserted_at,
+                append_phase="phase_7_approved_multi_detection_manual_fire_append",
+            )
+            insert_case_event_unchecked(conn, case_event)
+            inserted[detection_id] = {
+                "insert_status": "inserted",
+                "case_id": event["case_id"],
+                "event_hash": event["event_hash"],
+                "payload_hash": event["payload_hash"],
+                "sanitized_event_fingerprint": event["sanitized_event_fingerprint"],
+                "proof_ceiling": event["proof_ceiling"],
+                "public_safe_status": event["public_safe_status"],
+                "ai_support_mode": event["ai_support_mode"],
+                "human_review_required": event["human_review_required"],
+                "ai_decided_disposition": event["ai_decided_disposition"],
+                "disposition_status": event["disposition_status"],
+            }
+        conn.commit()
+
+    with connect_read_only_ledger(approved_target) as conn:
+        post_verification = verify_ledger(conn, "phase_7_approved_multi_detection_seed_bridge_not_runtime_truth_not_public_proof")
+        after_metrics = lifetime_ledger_metrics(conn)
+        inserted_counts = {
+            detection_id: int(
+                conn.execute("SELECT COUNT(*) FROM case_events WHERE event_hash = ?", (event["event_hash"],)).fetchone()[0]
+            )
+            for detection_id, event in events.items()
+        }
+        post_dedupe = {
+            detection_id: lifetime_append_gate_dedupe(conn, event)
+            for detection_id, event in events.items()
+        }
+    if inserted_counts != {"HO-DET-011": 1, "HO-DET-012": 1}:
+        raise FactoryError(f"Lifetime Phase 7 post-check expected one row per inserted event_hash, found {inserted_counts}")
+    metrics_delta = verify_lifetime_multi_append_metrics_delta(before_metrics, after_metrics)
+
+    duplicate_results: dict[str, Any] = {}
+    for detection_id, candidate_path in candidate_paths.items():
+        before_duplicate_count = int(after_metrics["total_ledger_events"])
+        try:
+            duplicate_gate = lifetime_append_gate_review(repo_root, approved_target, candidate_path, "append", append_approval)
+            ensure_lifetime_candidate_append_allowed(duplicate_gate)
+        except FactoryError as exc:
+            duplicate_error = str(exc)
+        else:
+            raise FactoryError(f"Lifetime Phase 7 duplicate append did not fail closed for {detection_id}")
+        with connect_read_only_ledger(approved_target) as conn:
+            after_duplicate_metrics = lifetime_ledger_metrics(conn)
+        after_duplicate_count = int(after_duplicate_metrics["total_ledger_events"])
+        if duplicate_error != "BLOCKED: DEDUPE_COLLISION":
+            raise FactoryError(f"Lifetime Phase 7 duplicate append failed with unexpected error for {detection_id}: {duplicate_error}")
+        if before_duplicate_count != after_duplicate_count:
+            raise FactoryError(f"Lifetime Phase 7 duplicate append changed ledger count for {detection_id}")
+        duplicate_results[detection_id] = {
+            "expected_result": "BLOCKED: DEDUPE_COLLISION",
+            "actual_result": duplicate_error,
+            "event_count_before": before_duplicate_count,
+            "event_count_after": after_duplicate_count,
+            "event_count_unchanged": True,
+            "post_append_dedupe_append_would_be_blocked": post_dedupe[detection_id]["append_would_be_blocked"],
+            "event_hash_existing_count": post_dedupe[detection_id]["event_hash"]["existing_count"],
+            "case_id_existing_count": post_dedupe[detection_id]["case_id"]["existing_count"],
+            "payload_hash_existing_count": post_dedupe[detection_id]["payload_hash"]["existing_count"],
+            "sanitized_event_fingerprint_existing_count": post_dedupe[detection_id]["sanitized_event_fingerprint"]["existing_count"],
+        }
+
+    return {
+        "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
+        "mode": "lifetime-ledger-append-approved-ho-det-011-012",
+        "phase": "phase_7_approved_multi_detection_append",
+        "append_target": str(approved_target),
+        "append_target_boundary": "tracked_platform_seed_bridge_not_runtime_truth_not_signal_truth_not_public_proof",
+        "append_approval_status": "exact_phrase_present",
+        "append_performed": True,
+        "inserted_at": inserted_at,
+        "inserted_event_count": 2,
+        "inserted_events": inserted,
+        "pre_append_verification": before_verification,
+        "dedupe_pre_check": {detection_id: gate["dedupe"] for detection_id, gate in gates.items()},
+        "post_append_verification": post_verification,
+        "before_lifetime_metrics": before_metrics,
+        "after_lifetime_metrics": after_metrics,
+        "metrics_delta": metrics_delta,
+        "duplicate_append_negative_tests": duplicate_results,
+        "correction_model": gates["HO-DET-011"]["correction_model"],
+        "boundaries": {
+            "raw_private_evidence_imported": False,
+            "runtime_connected": False,
+            "public_safe_promotion_allowed": False,
+            "proof_promotion_allowed": False,
+            "runtime_active_public_claim_allowed": False,
+            "signal_observed_public_claim_allowed": False,
+            "ai_disposition_authority": False,
+            "analyst_disposition_authority": False,
+            "case_closure_allowed": False,
+            "correction_or_superseding_append_performed": False,
+        },
+        "boundary": (
+            "Two approved sanitized manual-fire events for HO-DET-011 and HO-DET-012 were appended to the "
+            "tracked platform seed bridge only. This remains not runtime truth, not signal truth, not public proof, "
+            "not public-safe, not case closure, and not AI or analyst final disposition authority."
         ),
     }
 
@@ -4291,6 +4470,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
     sub.add_argument("--append-approval", required=True)
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("lifetime-ledger-append-approved-ho-det-011-012")
+    sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+    sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
+    sub.add_argument("--append-approval", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("lifetime-ledger-correction-gate")
     sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
     sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
@@ -4442,6 +4626,15 @@ def main(argv: list[str] | None = None) -> int:
             Path(args.repo_root).resolve(),
             Path(args.ledger_path).resolve(),
             Path(args.candidate).resolve(),
+            args.append_approval,
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "lifetime-ledger-append-approved-ho-det-011-012":
+        output = lifetime_approved_append_ho_det_011_012(
+            Path(args.repo_root).resolve(),
+            Path(args.ledger_path).resolve(),
             args.append_approval,
         )
         print(json.dumps(output, indent=2, sort_keys=True))
