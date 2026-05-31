@@ -466,6 +466,69 @@ does not prove live runtime activity, signal observation, production deployment,
 SOCaaS availability, public-safe runtime proof, AI-approved disposition,
 analyst-approved disposition, or case closure authority.
 
+## Lifetime Case Ledger v1 Phase 2 Manual-Fire Candidate
+
+Phase 2 adds a platform-owned manual-fire candidate path for one sanitized
+HO-DET-001 lab case preview. The path is still dry-run only: it validates a
+sanitized candidate JSON file, maps it into the Lifetime Case Ledger v1 event
+model, checks existing HO-DET-001 coverage references, opens the seed ledger
+read-only, and reports how lifetime counts would change if an append were later
+approved by a separate human gate.
+
+The Phase 2 command is:
+
+```powershell
+python -B scripts\ho_factory.py lifetime-ledger-manual-fire-ho-det-001 --candidate contracts\examples\lifetime-ledger-v1-manual-fire-ho-det-001.sample.json --repo-root "<ORG_REPO_ROOT>" --format json
+```
+
+The sample candidate lives at:
+
+```text
+contracts/examples/lifetime-ledger-v1-manual-fire-ho-det-001.sample.json
+```
+
+The candidate file must remain sanitized. It may contain abstract candidate
+metadata, repo-relative source/proof/validation references, and optional
+abstract GPU support fields. Candidate identifiers, event identifiers, payload
+hashes, event hashes, and sanitized event fingerprints are deterministically
+derived from the candidate content unless a real sanitized candidate identifier
+is provided. If the dry-run has no actual fired, observed, ingested, model, or
+GitHub Actions value, the preview emits `null` rather than inventing one. It
+must not contain raw runtime evidence, hostnames, usernames, private IPs, local
+paths, screenshots, raw command lines, secrets, private filenames, raw model
+output, or internal service names.
+
+The preview output includes:
+
+- the normalized Lifetime Case Ledger v1 candidate event
+- HO-DET-001 coverage reference status
+- duplicate case/event hash preview against the seed bridge
+- before-count metrics from the current seed bridge
+- expected after-count metrics for the separate-approval append scenario
+- explicit no-append and no-promotion boundaries
+
+The Phase 2 dry-run preserves:
+
+- `ai_support_mode=AI_SUPPORT_ONLY`
+- `human_review_required=true`
+- `ai_decided_disposition=false`
+- `public_safe_status=NOT_PUBLIC_SAFE`
+- `case_status=HUMAN_REVIEW_REQUIRED`
+- `disposition_status=NO_DISPOSITION`
+- `runtime_truth_status=DRY_RUN_NOT_RUNTIME_TRUTH`
+- no case closure
+- no proof promotion
+- no public-safe promotion
+- no raw/private evidence import
+
+Appending a manual-fire candidate remains blocked unless separate append
+approval is granted. If append work is requested without that approval, the
+correct stop state is:
+
+```text
+BLOCKED: APPEND_APPROVAL_REQUIRED
+```
+
 ### Splunk HO-DET-001 Runtime Ingest Dry Run
 
 The controller includes a bounded dry-run adapter for sanitized Splunk
