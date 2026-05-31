@@ -25,6 +25,7 @@ except ImportError:  # pragma: no cover - absence is handled as fail-closed runt
 
 CONTROLLER_VERSION = "0.1.0"
 CASE_LEDGER_VERSION = "AUTOSOC_CASE_LEDGER_V0"
+LIFETIME_CASE_LEDGER_VERSION = "LIFETIME_CASE_LEDGER_V1"
 PLATFORM_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO_ROOT = PLATFORM_ROOT.parent
 DEFAULT_CASE_LEDGER = PLATFORM_ROOT / "evidence" / "autosoc-case-ledger-v0.sqlite"
@@ -44,6 +45,230 @@ RUNTIME_REVIEW_NEXT_ALLOWED_MOVE = (
     "Review the sanitized runtime case packet and metrics snapshot. Runtime append, proof promotion, "
     "public-safe promotion, GitHub Issue mutation, case closure, and AI or analyst disposition authority "
     f"remain blocked unless a separate scoped approval such as {RUNTIME_REVIEW_APPEND_APPROVAL} is provided."
+)
+LIFETIME_LEDGER_PROOF_CEILING = "SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY"
+LIFETIME_LEDGER_PUBLIC_SAFE_STATUS = "NOT_PUBLIC_SAFE"
+LIFETIME_LEDGER_BOUNDARY = (
+    "Phase 1 verifies only the Lifetime Case Ledger v1 spine, model, coverage map, "
+    "bounded metrics contract, and existing seed-ledger bridge. It does not prove live "
+    "runtime activity, signal observation, production deployment, SOCaaS availability, "
+    "public-safe runtime proof, AI-approved disposition, analyst-approved disposition, "
+    "or case closure authority."
+)
+LIFETIME_LEDGER_EVENT_FIELDS = (
+    "ledger_version",
+    "event_id",
+    "event_hash",
+    "parent_event_hash",
+    "case_id",
+    "detection_id",
+    "detection_family",
+    "source_system",
+    "fired_at",
+    "observed_time_utc",
+    "ingested_at",
+    "truth_class",
+    "case_status",
+    "triage_status",
+    "disposition_status",
+    "proof_ceiling",
+    "runtime_truth_status",
+    "signal_truth_status",
+    "public_safe_status",
+    "human_review_required",
+    "ai_support_mode",
+    "ai_decided_disposition",
+    "gpu_triage_used",
+    "gpu_node_id",
+    "model_or_triage_engine_reference",
+    "source_packet_ref",
+    "evidence_ref_public_safe",
+    "private_evidence_ref_allowed",
+    "blocked_claims",
+    "validation_ref",
+    "proof_ref",
+    "github_actions_run_ref",
+    "payload_hash",
+    "sanitized_event_fingerprint",
+    "notes_boundary",
+)
+LIFETIME_LEDGER_REQUIRED_METRICS = (
+    "total_ledger_events",
+    "total_cases",
+    "cases_by_detection",
+    "cases_by_family",
+    "cases_by_status",
+    "cases_by_truth_class",
+    "cases_by_proof_ceiling",
+    "cases_by_public_safe_status",
+    "cases_requiring_human_review",
+    "gpu_triaged_count",
+    "ai_support_only_count",
+    "proof_blocked_count",
+    "public_safe_count",
+    "closed_case_count",
+    "validation_only_count",
+    "private_runtime_count",
+    "public_proof_candidate_count",
+)
+LIFETIME_LEDGER_BLOCKED_CLAIMS = (
+    "production deployment",
+    "public raw runtime evidence",
+    "runtime-active public status",
+    "signal-observed public status",
+    "public-safe runtime proof",
+    "SOCaaS deployment",
+    "autonomous SOC",
+    "AI-approved final disposition",
+    "analyst-approved final disposition",
+    "case closure without explicit human-approved closure artifact",
+)
+LIFETIME_DETECTION_COVERAGE = (
+    {
+        "detection_id": "HO-DET-001",
+        "detection_family": "endpoint_process_execution",
+        "source_system": "Splunk/Sysmon",
+        "source_refs": (
+            "hawkinsoperations-detections/detections/successor/ho-det-001/rule.yml",
+            "hawkinsoperations-detections/detections/successor/ho-det-001/splunk.spl",
+        ),
+        "validation_ref": "hawkinsoperations-validation/reports/ho-det-001/validation-result.json",
+        "validation_test_count": 14,
+        "proof_ref": "hawkinsoperations-proof/proof/records/HO-DET-001.md",
+        "proof_ceiling": "CONTROLLED_TEST_VALIDATED",
+        "runtime_truth_status": "PRIVATE_RUNTIME_BOUNDARY_CONTEXT_ONLY",
+        "signal_truth_status": "NOT_PUBLIC_PROOF",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+    },
+    {
+        "detection_id": "HO-DET-011",
+        "detection_family": "endpoint_service_persistence",
+        "source_system": "Sigma/Wazuh/Splunk",
+        "source_refs": (
+            "hawkinsoperations-detections/detections/successor/ho-det-011/rule.yml",
+            "hawkinsoperations-detections/detections/successor/ho-det-011/wazuh.xml",
+            "hawkinsoperations-detections/detections/successor/ho-det-011/splunk.spl",
+        ),
+        "validation_ref": "hawkinsoperations-validation/reports/ho-det-011/validation-result.json",
+        "validation_test_count": 17,
+        "proof_ref": "hawkinsoperations-proof/proof/records/HO-DET-011.md",
+        "proof_ceiling": "PRIVATE_RUNTIME_EVIDENCE_CAPTURED",
+        "runtime_truth_status": "PRIVATE_RUNTIME_EVIDENCE_CAPTURED",
+        "signal_truth_status": "NOT_PROVEN",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+    },
+    {
+        "detection_id": "HO-DET-012",
+        "detection_family": "endpoint_scheduled_task_persistence",
+        "source_system": "Sigma/Wazuh/Splunk",
+        "source_refs": (
+            "hawkinsoperations-detections/detections/successor/ho-det-012/rule.yml",
+            "hawkinsoperations-detections/detections/successor/ho-det-012/wazuh.xml",
+            "hawkinsoperations-detections/detections/successor/ho-det-012/splunk.spl",
+        ),
+        "validation_ref": "hawkinsoperations-validation/reports/ho-det-012/validation-result.json",
+        "validation_test_count": 8,
+        "proof_ref": "hawkinsoperations-proof/proof/records/HO-DET-012.md",
+        "proof_ceiling": "CONTROLLED_TEST_VALIDATED",
+        "runtime_truth_status": "NOT_PROVEN",
+        "signal_truth_status": "NOT_PROVEN",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+    },
+    {
+        "detection_id": "HO-DET-013",
+        "detection_family": "endpoint_telemetry_control_tamper",
+        "source_system": "Sigma/Splunk",
+        "source_refs": (
+            "hawkinsoperations-detections/detections/successor/ho-det-013/rule.yml",
+            "hawkinsoperations-detections/detections/successor/ho-det-013/splunk.spl",
+        ),
+        "validation_ref": None,
+        "validation_test_count": 0,
+        "proof_ref": None,
+        "proof_ceiling": "SOURCE_EXISTS",
+        "runtime_truth_status": "NOT_PROVEN",
+        "signal_truth_status": "NOT_PROVEN",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+    },
+    {
+        "detection_id": "ID-DET-001",
+        "detection_family": "identity_session_context",
+        "source_system": "Identity/Splunk",
+        "source_refs": (
+            "hawkinsoperations-detections/detections/identity/id-det-001/rule.yml",
+            "hawkinsoperations-detections/detections/identity/id-det-001/splunk.spl",
+        ),
+        "validation_ref": "hawkinsoperations-validation/reports/id-det-001/validation-result.json",
+        "validation_test_count": 10,
+        "proof_ref": None,
+        "proof_ceiling": "NO_PROOF_RECORD",
+        "runtime_truth_status": "NOT_PROVEN",
+        "signal_truth_status": "NOT_PROVEN",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+    },
+    {
+        "detection_id": "ID-DET-002",
+        "detection_family": "identity_mfa_pressure",
+        "source_system": "Identity/Splunk",
+        "source_refs": (
+            "hawkinsoperations-detections/detections/identity/id-det-002/rule.yml",
+            "hawkinsoperations-detections/detections/identity/id-det-002/splunk.spl",
+        ),
+        "validation_ref": "hawkinsoperations-validation/reports/id-det-002/validation-result.json",
+        "validation_test_count": 10,
+        "proof_ref": None,
+        "proof_ceiling": "NO_PROOF_RECORD",
+        "runtime_truth_status": "NOT_PROVEN",
+        "signal_truth_status": "NOT_PROVEN",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+    },
+    {
+        "detection_id": "ID-DET-003",
+        "detection_family": "identity_privilege_change",
+        "source_system": "Identity/Splunk",
+        "source_refs": (
+            "hawkinsoperations-detections/detections/identity/id-det-003/rule.yml",
+            "hawkinsoperations-detections/detections/identity/id-det-003/splunk.spl",
+        ),
+        "validation_ref": "hawkinsoperations-validation/reports/id-det-003/validation-result.json",
+        "validation_test_count": 10,
+        "proof_ref": None,
+        "proof_ceiling": "NO_PROOF_RECORD",
+        "runtime_truth_status": "NOT_PROVEN",
+        "signal_truth_status": "NOT_PROVEN",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+    },
+    {
+        "detection_id": "ID-DET-004",
+        "detection_family": "identity_travel_session_anomaly",
+        "source_system": "Identity/Splunk",
+        "source_refs": (
+            "hawkinsoperations-detections/detections/identity/id-det-004/rule.yml",
+            "hawkinsoperations-detections/detections/identity/id-det-004/splunk.spl",
+        ),
+        "validation_ref": "hawkinsoperations-validation/reports/id-det-004/validation-result.json",
+        "validation_test_count": 10,
+        "proof_ref": None,
+        "proof_ceiling": "NO_PROOF_RECORD",
+        "runtime_truth_status": "NOT_PROVEN",
+        "signal_truth_status": "NOT_PROVEN",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+    },
+    {
+        "detection_id": "AWS-DET-001",
+        "detection_family": "cloud_identity_access",
+        "source_system": "CloudTrail-style fixtures",
+        "source_refs": (
+            "hawkinsoperations-detections/detections/cloud/aws/aws-det-001/rule.yml",
+        ),
+        "validation_ref": "hawkinsoperations-validation/reports/aws-det-001/validation-result.json",
+        "validation_test_count": 6,
+        "proof_ref": "hawkinsoperations-proof/proof/records/AWS-DET-001.md",
+        "proof_ceiling": "CONTROLLED_TEST_VALIDATED",
+        "runtime_truth_status": "NOT_PROVEN",
+        "signal_truth_status": "NOT_PROVEN",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+    },
 )
 
 CASE_LEDGER_TRUTH_CLASSES = (
@@ -1080,6 +1305,206 @@ def ledger_metrics(
         "public_safe_count": int(counts[5]),
         "proof_blocked_count": int(counts[6]),
         "truth_boundary": truth_boundary,
+    }
+
+
+def lifetime_detection_family_map() -> dict[str, str]:
+    return {str(item["detection_id"]): str(item["detection_family"]) for item in LIFETIME_DETECTION_COVERAGE}
+
+
+def lifetime_ledger_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
+    family_by_detection = lifetime_detection_family_map()
+
+    def grouped(column: str) -> dict[str, int]:
+        rows = conn.execute(f"SELECT {column}, COUNT(*) FROM case_events GROUP BY {column} ORDER BY {column}").fetchall()
+        return {str(key): int(count) for key, count in rows}
+
+    rows = conn.execute(
+        """
+        SELECT
+          detection_id,
+          case_status,
+          truth_class,
+          proof_ceiling,
+          public_safe_status,
+          human_review_required,
+          gpu_supported,
+          ai_support_mode,
+          proof_blocked,
+          public_safe,
+          case_closed
+        FROM case_events
+        ORDER BY event_id
+        """
+    ).fetchall()
+    cases_by_family: dict[str, int] = {}
+    ai_support_only_count = 0
+    for row in rows:
+        detection_id = str(row[0])
+        family = family_by_detection.get(detection_id, "unmapped_detection_family")
+        cases_by_family[family] = cases_by_family.get(family, 0) + 1
+        if row[7] == "AI_SUPPORT_ONLY":
+            ai_support_only_count += 1
+
+    counts = conn.execute(
+        """
+        SELECT
+          COUNT(*),
+          COUNT(DISTINCT case_id),
+          COALESCE(SUM(human_review_required), 0),
+          COALESCE(SUM(gpu_supported), 0),
+          COALESCE(SUM(proof_blocked), 0),
+          COALESCE(SUM(public_safe), 0),
+          COALESCE(SUM(case_closed), 0),
+          COALESCE(SUM(CASE WHEN truth_class = 'SYNTHETIC_TEST_CASE' THEN 1 ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN truth_class = 'PRIVATE_RUNTIME_EVIDENCE' THEN 1 ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN truth_class = 'PUBLIC_PROOF_CANDIDATE' THEN 1 ELSE 0 END), 0)
+        FROM case_events
+        """
+    ).fetchone()
+    return {
+        "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
+        "total_ledger_events": int(counts[0]),
+        "total_cases": int(counts[1]),
+        "cases_by_detection": grouped("detection_id"),
+        "cases_by_family": dict(sorted(cases_by_family.items())),
+        "cases_by_status": grouped("case_status"),
+        "cases_by_truth_class": grouped("truth_class"),
+        "cases_by_proof_ceiling": grouped("proof_ceiling"),
+        "cases_by_public_safe_status": grouped("public_safe_status"),
+        "cases_requiring_human_review": int(counts[2]),
+        "gpu_triaged_count": int(counts[3]),
+        "ai_support_only_count": ai_support_only_count,
+        "proof_blocked_count": int(counts[4]),
+        "public_safe_count": int(counts[5]),
+        "closed_case_count": int(counts[6]),
+        "validation_only_count": int(counts[7]),
+        "private_runtime_count": int(counts[8]),
+        "public_proof_candidate_count": int(counts[9]),
+        "truth_boundary": "counts_are_ledger_rows_only_not_runtime_or_public_proof",
+    }
+
+
+def verify_lifetime_detection_coverage(repo_root: Path) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    coverage: list[dict[str, Any]] = []
+    for item in LIFETIME_DETECTION_COVERAGE:
+        detection_id = str(item["detection_id"])
+        if detection_id in seen:
+            raise FactoryError(f"duplicate lifetime ledger detection coverage entry: {detection_id}")
+        seen.add(detection_id)
+        source_refs = tuple(item.get("source_refs") or ())
+        if not source_refs:
+            raise FactoryError(f"{detection_id} lifetime ledger entry must include source_refs")
+        existing_source_refs = [path for path in source_refs if (repo_root / path).is_file()]
+        missing_source_refs = [path for path in source_refs if not (repo_root / path).is_file()]
+        validation_ref = item.get("validation_ref")
+        proof_ref = item.get("proof_ref")
+        coverage.append(
+            {
+                **item,
+                "source_refs": list(source_refs),
+                "source_ref_status": "present" if existing_source_refs and not missing_source_refs else "review_required",
+                "existing_source_refs": existing_source_refs,
+                "missing_source_refs": missing_source_refs,
+                "validation_ref_status": (
+                    "not_applicable"
+                    if validation_ref is None
+                    else ("present" if (repo_root / str(validation_ref)).is_file() else "review_required")
+                ),
+                "proof_ref_status": (
+                    "not_applicable"
+                    if proof_ref is None
+                    else ("present" if (repo_root / str(proof_ref)).is_file() else "review_required")
+                ),
+                "ledger_eligible": True,
+                "human_review_required": True,
+                "ai_support_mode": "AI_SUPPORT_ONLY",
+                "ai_decided_disposition": False,
+                "blocked_claims": list(LIFETIME_LEDGER_BLOCKED_CLAIMS),
+            }
+        )
+    required = {"HO-DET-001", "HO-DET-011", "HO-DET-012", "HO-DET-013", "ID-DET-001", "ID-DET-002", "ID-DET-003", "ID-DET-004"}
+    missing = sorted(required - seen)
+    if missing:
+        raise FactoryError(f"lifetime ledger coverage missing required detections: {', '.join(missing)}")
+    return coverage
+
+
+def verify_lifetime_ledger_spine(repo_root: Path, ledger_path: Path) -> dict[str, Any]:
+    if not ledger_path.is_file():
+        raise FactoryError(f"Lifetime Case Ledger v1 seed bridge is missing: {ledger_path}")
+    coverage = verify_lifetime_detection_coverage(repo_root)
+    required_event_fields = set(LIFETIME_LEDGER_EVENT_FIELDS)
+    for field in (
+        "ledger_version",
+        "event_hash",
+        "case_id",
+        "detection_id",
+        "truth_class",
+        "case_status",
+        "proof_ceiling",
+        "public_safe_status",
+        "human_review_required",
+        "ai_support_mode",
+        "ai_decided_disposition",
+        "gpu_triage_used",
+        "blocked_claims",
+        "validation_ref",
+        "proof_ref",
+        "payload_hash",
+        "notes_boundary",
+    ):
+        if field not in required_event_fields:
+            raise FactoryError(f"Lifetime Case Ledger v1 event model missing required field: {field}")
+    with connect_ledger(ledger_path) as conn:
+        seed_verification = verify_ledger(conn, "seed_bridge_for_lifetime_case_ledger_v1_not_runtime_truth")
+        metrics = lifetime_ledger_metrics(conn)
+    missing_metrics = sorted(set(LIFETIME_LEDGER_REQUIRED_METRICS) - set(metrics))
+    if missing_metrics:
+        raise FactoryError(f"Lifetime Case Ledger v1 metrics missing required keys: {', '.join(missing_metrics)}")
+    if metrics["public_safe_count"] != 0 or metrics["closed_case_count"] != 0:
+        raise FactoryError("Lifetime Case Ledger v1 seed bridge must not contain public-safe or closed cases")
+    return {
+        "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
+        "mode": "lifetime-ledger-verify",
+        "phase": "phase_1_spine_contract_only",
+        "proof_ceiling": LIFETIME_LEDGER_PROOF_CEILING,
+        "public_safe_status": LIFETIME_LEDGER_PUBLIC_SAFE_STATUS,
+        "event_model_fields": list(LIFETIME_LEDGER_EVENT_FIELDS),
+        "metrics_model": list(LIFETIME_LEDGER_REQUIRED_METRICS),
+        "lifetime_metrics": metrics,
+        "detection_coverage": coverage,
+        "gpu_triage_contract": {
+            "ai_support_mode": "AI_SUPPORT_ONLY",
+            "gpu_triage_used_field": "gpu_triage_used",
+            "gpu_reference_field": "gpu_node_id",
+            "approved_gpu_reference_value": "LOCAL_GPU_SUPPORT_NODE",
+            "model_or_triage_engine_reference": "approved abstract model/triage engine reference only",
+            "ai_decided_disposition": False,
+            "human_review_required": True,
+            "private_runtime_details_public_safe": False,
+        },
+        "public_safe_summary_model": {
+            "may_publish": False,
+            "public_summary_allowed_after_review": "schema, verifier, bounded counts, and blocked claims only",
+            "raw_runtime_evidence_allowed": False,
+            "private_hostnames_usernames_ips_allowed": False,
+            "public_proof_promotion_allowed": False,
+            "blocked_claims": list(LIFETIME_LEDGER_BLOCKED_CLAIMS),
+        },
+        "github_actions_verification": {
+            "existing_platform_workflows": [
+                ".github/workflows/governance-gate.yml",
+                ".github/workflows/local-gpu-triage-gate.yml",
+            ],
+            "recommended_phase_1_command": "python -B scripts/ho_factory.py lifetime-ledger-verify --format json",
+            "governance_gate_wired": True,
+            "governance_gate_job": "lifetime-case-ledger-v1",
+            "workflow_dispatch_required_for_true_gpu_runner": True,
+        },
+        "seed_ledger_bridge": seed_verification,
+        "boundary": LIFETIME_LEDGER_BOUNDARY,
     }
 
 
@@ -2574,6 +2999,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--case-id")
     sub.add_argument("--self-test", action="store_true")
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("lifetime-ledger-verify")
+    sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+    sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("verify-receipt")
     sub.add_argument("--receipt", required=True, choices=("ho-det-001",))
     sub.add_argument("--format", default="json", choices=("json",))
@@ -2658,6 +3087,11 @@ def main(argv: list[str] | None = None) -> int:
         output = runtime_ledger_review_case(Path(args.ledger).resolve(), args.case_id)
         if args.self_test:
             output["self_tests"] = runtime_review_self_tests()
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "lifetime-ledger-verify":
+        output = verify_lifetime_ledger_spine(Path(args.repo_root).resolve(), Path(args.ledger_path).resolve())
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 

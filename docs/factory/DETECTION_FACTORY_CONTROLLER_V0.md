@@ -345,6 +345,123 @@ The metrics output includes:
 Ledger metrics count ledger rows only. They do not import or claim legacy/V1
 historical counts as current governed proof.
 
+## Lifetime Case Ledger v1 Phase 1 Spine
+
+Lifetime Case Ledger v1 is the governed upgrade path for accumulating detection
+case and event rows across implemented HawkinsOperations detections. Phase 1 is
+platform-owned and contract-only: it verifies the event model, metrics model,
+detection coverage map, GPU/AI triage boundary, public-safe summary boundary,
+and the existing AutoSOC Case Ledger v0 seed bridge. It does not initialize a
+live runtime ledger, append runtime rows, publish raw evidence, promote public
+proof, close cases, or grant AI or analyst disposition authority.
+
+The Phase 1 verifier command is:
+
+```powershell
+python -B scripts\ho_factory.py lifetime-ledger-verify --repo-root "<ORG_REPO_ROOT>" --format json
+```
+
+The v1 event model includes:
+
+- `ledger_version`
+- `event_id`
+- `event_hash`
+- `parent_event_hash`
+- `case_id`
+- `detection_id`
+- `detection_family`
+- `source_system`
+- `fired_at`
+- `observed_time_utc`
+- `ingested_at`
+- `truth_class`
+- `case_status`
+- `triage_status`
+- `disposition_status`
+- `proof_ceiling`
+- `runtime_truth_status`
+- `signal_truth_status`
+- `public_safe_status`
+- `human_review_required`
+- `ai_support_mode`
+- `ai_decided_disposition`
+- `gpu_triage_used`
+- `gpu_node_id`
+- `model_or_triage_engine_reference`
+- `source_packet_ref`
+- `evidence_ref_public_safe`
+- `private_evidence_ref_allowed`
+- `blocked_claims`
+- `validation_ref`
+- `proof_ref`
+- `github_actions_run_ref`
+- `payload_hash`
+- `sanitized_event_fingerprint`
+- `notes_boundary`
+
+The v1 metrics model includes:
+
+- `total_ledger_events`
+- `total_cases`
+- `cases_by_detection`
+- `cases_by_family`
+- `cases_by_status`
+- `cases_by_truth_class`
+- `cases_by_proof_ceiling`
+- `cases_by_public_safe_status`
+- `cases_requiring_human_review`
+- `gpu_triaged_count`
+- `ai_support_only_count`
+- `proof_blocked_count`
+- `public_safe_count`
+- `closed_case_count`
+- `validation_only_count`
+- `private_runtime_count`
+- `public_proof_candidate_count`
+
+Phase 1 coverage includes implemented detection packages and proof/validation
+boundaries for `HO-DET-001`, `HO-DET-011`, `HO-DET-012`, `HO-DET-013`,
+`ID-DET-001`, `ID-DET-002`, `ID-DET-003`, `ID-DET-004`, and `AWS-DET-001`.
+`HO-PIPE-001` remains a pipeline/field-preservation contract row rather than a
+behavioral detection case row.
+
+The GPU triage boundary is support-only:
+
+- `ai_support_mode=AI_SUPPORT_ONLY`
+- `ai_decided_disposition=false`
+- `human_review_required=true`
+- `gpu_triage_used` may record bounded triage support only
+- `gpu_node_id` must use an approved abstract reference such as
+  `LOCAL_GPU_SUPPORT_NODE`, not a private hostname
+- `model_or_triage_engine_reference` must be an approved abstract engine
+  reference, not raw model output or private runtime detail
+
+Public-safe summary output is blocked in Phase 1 except for later
+human-reviewed wording about schema, verifier existence, bounded ledger-row
+counts, and blocked claims. Raw runtime evidence, private hostnames, usernames,
+private IPs, local paths, screenshots, private filenames, command lines, and
+private model output must not enter repo or public output.
+
+Blocked unless separately proven and approved:
+
+- production deployment
+- public raw runtime evidence
+- runtime-active public status
+- signal-observed public status
+- public-safe runtime proof
+- SOCaaS deployment
+- autonomous SOC
+- AI-approved final disposition
+- analyst-approved final disposition
+- case closure without explicit human-approved closure artifact
+
+The proof ceiling for Phase 1 is
+`SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY`. A passing verifier proves only that the
+v1 spine/contract/verifier exists and that the seed bridge remains bounded. It
+does not prove live runtime activity, signal observation, production deployment,
+SOCaaS availability, public-safe runtime proof, AI-approved disposition,
+analyst-approved disposition, or case closure authority.
+
 ### Splunk HO-DET-001 Runtime Ingest Dry Run
 
 The controller includes a bounded dry-run adapter for sanitized Splunk
