@@ -41,3 +41,24 @@ jobs:
         run: python -m pip install jsonschema
       - name: Verify HO-DET-011 case packet guardrail
         run: python scripts/verify-ho-det-011-case-packet.py
+
+  lifetime-case-ledger-v1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out HawkinsOperations sibling repositories
+        uses: actions/checkout@v4
+        with:
+          repository: HawkinsOperations/hawkinsoperations-detections
+          path: hawkinsoperations-detections
+      - uses: actions/checkout@v4
+        with:
+          repository: HawkinsOperations/hawkinsoperations-validation
+          path: hawkinsoperations-validation
+      - uses: actions/checkout@v4
+        with:
+          repository: HawkinsOperations/hawkinsoperations-proof
+          path: hawkinsoperations-proof
+      - name: Verify Lifetime Case Ledger v1 spine
+        run: |
+          python -B scripts/ho_factory.py lifetime-ledger-verify --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
