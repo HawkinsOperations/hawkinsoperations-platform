@@ -607,6 +607,77 @@ The Phase 3 proof boundary remains:
 - no signal-observed public claim
 - no case closure
 
+## Lifetime Case Ledger v1 Phase 4 Approved Append
+
+Phase 4 performs one approved append of the sanitized HO-DET-001 manual-fire
+candidate into the existing platform seed bridge only. The append target is the
+tracked platform ledger already used by `ledger-verify`, `ledger-metrics`, and
+the Lifetime Case Ledger v1 seed bridge verifier:
+
+```text
+evidence/autosoc-case-ledger-v0.sqlite
+```
+
+This target remains a platform seed bridge. It is not a runtime ledger, signal
+truth surface, public proof surface, or public-safe evidence store.
+
+The approved append command is:
+
+```powershell
+python -B scripts\ho_factory.py lifetime-ledger-append-approved-ho-det-001 --repo-root "<ORG_REPO_ROOT>" --append-approval "APPEND_APPROVED: append sanitized Lifetime Case Ledger event" --format json
+```
+
+The command fails closed unless the approval phrase is exact. Before writing it
+verifies:
+
+- the approved append target exists and is the platform seed bridge
+- the candidate is valid and sanitized
+- the ledger verifies before append
+- append-only triggers exist
+- `event_hash` does not already exist
+- `case_id` does not collide
+- `payload_hash` does not duplicate existing content
+- `sanitized_event_fingerprint` does not duplicate an existing sanitized event
+
+After writing exactly one row, it re-opens the ledger read-only, verifies the
+ledger, verifies the inserted `event_hash` exists exactly once, and checks the
+metrics delta:
+
+- `total_ledger_events +1`
+- `total_cases +1`
+- `cases_requiring_human_review +1`
+- `ai_support_only_count +1`
+- `proof_blocked_count +1`
+- `public_safe_count +0`
+- `closed_case_count +0`
+
+A second append of the same candidate must fail closed with:
+
+```text
+BLOCKED: DEDUPE_COLLISION
+```
+
+The Phase 4 append preserves the Phase 3 correction model:
+
+- append-only
+- no update
+- no delete
+- no destructive rollback
+- corrections require a later approved correction or superseding event
+
+The Phase 4 proof boundary remains:
+
+- sanitized candidate only
+- no raw/private evidence import
+- no public runtime proof
+- no runtime-active public claim
+- no signal-observed public claim
+- no SOCaaS deployment claim
+- no production deployment claim
+- no autonomous SOC claim
+- no AI-approved or analyst-approved final disposition authority
+- no case closure authority
+
 ### Splunk HO-DET-001 Runtime Ingest Dry Run
 
 The controller includes a bounded dry-run adapter for sanitized Splunk

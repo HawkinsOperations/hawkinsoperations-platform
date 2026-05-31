@@ -14,6 +14,7 @@ import re
 import sqlite3
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -1565,6 +1566,7 @@ def verify_lifetime_ledger_spine(repo_root: Path, ledger_path: Path) -> dict[str
             ],
             "recommended_phase_1_command": "python -B scripts/ho_factory.py lifetime-ledger-verify --format json",
             "recommended_phase_3_command": "python -B scripts/ho_factory.py lifetime-ledger-append-gate-self-test --format json",
+            "recommended_phase_4_command": "python -B scripts/ho_factory.py lifetime-ledger-append-approved-ho-det-001 --append-approval '<exact approved phrase>' --format json",
             "governance_gate_wired": True,
             "governance_gate_job": "lifetime-case-ledger-v1",
             "workflow_dispatch_required_for_true_gpu_runner": True,
@@ -2034,6 +2036,167 @@ def lifetime_append_gate_self_test(repo_root: Path, ledger_path: Path, candidate
         "append_approval_required": LIFETIME_APPEND_APPROVAL_PHRASE,
         "correction_model": dry_run["correction_model"],
         "proof_boundary": dry_run["boundary"],
+    }
+
+
+def approved_lifetime_append_target(ledger_path: Path) -> Path:
+    approved = DEFAULT_CASE_LEDGER.resolve()
+    actual = ledger_path.resolve()
+    if actual != approved:
+        raise FactoryError("BLOCKED: APPEND_TARGET_OUT_OF_SCOPE")
+    if not actual.is_file():
+        raise FactoryError("BLOCKED: APPEND_TARGET_REQUIRED")
+    return actual
+
+
+def lifetime_event_to_case_ledger_event(event: dict[str, Any], inserted_at: str) -> dict[str, Any]:
+    payload = {
+        **event,
+        "append_phase": "phase_4_approved_manual_fire_append",
+        "truth_boundary": (
+            "Sanitized Lifetime Case Ledger v1 manual-fire event stored in the platform seed bridge. "
+            "Not runtime truth, not signal truth, not public proof, not public-safe, and not case closure."
+        ),
+    }
+    case_event = {
+        "event_hash": event["event_hash"],
+        "inserted_at": inserted_at,
+        "ledger_version": CASE_LEDGER_VERSION,
+        "case_id": event["case_id"],
+        "detection_id": event["detection_id"],
+        "truth_class": event["truth_class"],
+        "case_status": event["case_status"],
+        "proof_ceiling": event["proof_ceiling"],
+        "public_safe_status": event["public_safe_status"],
+        "ai_support_mode": event["ai_support_mode"],
+        "ai_decided_disposition": event["ai_decided_disposition"],
+        "recommended_disposition": None,
+        "deterministic_close_eligible": False,
+        "deterministic_close_blocked": True,
+        "human_review_required": event["human_review_required"],
+        "gpu_supported": event["gpu_triage_used"],
+        "public_safe": False,
+        "proof_blocked": True,
+        "github_issue_mutation_allowed": False,
+        "case_closed": False,
+        "legacy_import_count": 0,
+        "payload_json": payload,
+        "source_packet_ref": event["source_packet_ref"],
+    }
+    scan_private_markers("Lifetime approved append case ledger event", case_event)
+    return case_event
+
+
+def verify_lifetime_metrics_delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    delta = lifetime_metrics_delta(before, after)
+    required = {
+        "total_ledger_events": 1,
+        "total_cases": 1,
+        "cases_requiring_human_review": 1,
+        "ai_support_only_count": 1,
+        "proof_blocked_count": 1,
+        "public_safe_count": 0,
+        "closed_case_count": 0,
+    }
+    failures = {
+        key: {"expected": expected, "actual": delta.get(key)}
+        for key, expected in required.items()
+        if delta.get(key) != expected
+    }
+    if failures:
+        raise FactoryError(f"Lifetime append metrics delta mismatch: {failures}")
+    return delta
+
+
+def lifetime_approved_append_ho_det_001(
+    repo_root: Path,
+    ledger_path: Path,
+    candidate_path: Path,
+    append_approval: str | None,
+) -> dict[str, Any]:
+    approved_target = approved_lifetime_append_target(ledger_path)
+    if append_approval != LIFETIME_APPEND_APPROVAL_PHRASE:
+        raise FactoryError("BLOCKED: APPEND_APPROVAL_REQUIRED")
+
+    gate = lifetime_append_gate_review(repo_root, approved_target, candidate_path, "append", append_approval)
+    if gate["dedupe"]["append_would_be_blocked"]:
+        raise FactoryError("BLOCKED: DEDUPE_COLLISION")
+
+    before_metrics = gate["before_lifetime_metrics"]
+    event = dict(gate["candidate_event"])
+    inserted_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    case_event = lifetime_event_to_case_ledger_event(event, inserted_at)
+    insert_status = "not_attempted"
+    with connect_ledger(approved_target) as conn:
+        insert_case_event_unchecked(conn, case_event)
+        conn.commit()
+        insert_status = "inserted"
+
+    with connect_read_only_ledger(approved_target) as conn:
+        post_verification = verify_ledger(conn, "phase_4_approved_append_seed_bridge_not_runtime_truth_not_public_proof")
+        after_metrics = lifetime_ledger_metrics(conn)
+        inserted_count = int(
+            conn.execute("SELECT COUNT(*) FROM case_events WHERE event_hash = ?", (event["event_hash"],)).fetchone()[0]
+        )
+        post_dedupe = lifetime_append_gate_dedupe(conn, event)
+    if inserted_count != 1:
+        raise FactoryError(f"Lifetime append post-check expected one inserted event_hash, found {inserted_count}")
+    metrics_delta = verify_lifetime_metrics_delta(before_metrics, after_metrics)
+    return {
+        "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
+        "mode": "lifetime-ledger-append-approved-ho-det-001",
+        "phase": "phase_4_approved_append",
+        "append_target": str(approved_target),
+        "append_target_boundary": "platform_seed_bridge_not_runtime_truth_not_public_proof",
+        "append_approval_status": "exact_phrase_present",
+        "append_performed": True,
+        "insert_status": insert_status,
+        "inserted_event_hash": event["event_hash"],
+        "inserted_case_id": event["case_id"],
+        "inserted_at": inserted_at,
+        "candidate_event_summary": {
+            "detection_id": event["detection_id"],
+            "case_id": event["case_id"],
+            "event_hash": event["event_hash"],
+            "payload_hash": event["payload_hash"],
+            "sanitized_event_fingerprint": event["sanitized_event_fingerprint"],
+            "ai_support_mode": event["ai_support_mode"],
+            "human_review_required": event["human_review_required"],
+            "ai_decided_disposition": event["ai_decided_disposition"],
+            "public_safe_status": event["public_safe_status"],
+            "disposition_status": event["disposition_status"],
+        },
+        "pre_append_verification": gate["pre_append_ledger_verification"],
+        "dedupe_pre_check": gate["dedupe"],
+        "post_append_verification": post_verification,
+        "before_lifetime_metrics": before_metrics,
+        "after_lifetime_metrics": after_metrics,
+        "metrics_delta": metrics_delta,
+        "duplicate_append_negative_test": {
+            "expected_result": "BLOCKED: DEDUPE_COLLISION",
+            "post_append_dedupe_append_would_be_blocked": post_dedupe["append_would_be_blocked"],
+            "event_hash_existing_count": post_dedupe["event_hash"]["existing_count"],
+            "case_id_existing_count": post_dedupe["case_id"]["existing_count"],
+            "payload_hash_existing_count": post_dedupe["payload_hash"]["existing_count"],
+            "sanitized_event_fingerprint_existing_count": post_dedupe["sanitized_event_fingerprint"]["existing_count"],
+        },
+        "correction_model": gate["correction_model"],
+        "boundaries": {
+            "raw_private_evidence_imported": False,
+            "runtime_connected": False,
+            "public_safe_promotion_allowed": False,
+            "proof_promotion_allowed": False,
+            "runtime_active_public_claim_allowed": False,
+            "signal_observed_public_claim_allowed": False,
+            "ai_disposition_authority": False,
+            "analyst_disposition_authority": False,
+            "case_closure_allowed": False,
+        },
+        "boundary": (
+            "One approved sanitized HO-DET-001 manual-fire event was appended to the platform seed bridge only. "
+            "This remains not runtime truth, not signal truth, not public proof, not public-safe, not case closure, "
+            "and not AI or analyst final disposition authority."
+        ),
     }
 
 
@@ -3549,6 +3712,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
     sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("lifetime-ledger-append-approved-ho-det-001")
+    sub.add_argument("--candidate", default=str(LIFETIME_MANUAL_FIRE_CANDIDATE_SAMPLE))
+    sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+    sub.add_argument("--ledger", "--ledger-path", dest="ledger_path", default=str(DEFAULT_CASE_LEDGER))
+    sub.add_argument("--append-approval", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("verify-receipt")
     sub.add_argument("--receipt", required=True, choices=("ho-det-001",))
     sub.add_argument("--format", default="json", choices=("json",))
@@ -3666,6 +3835,16 @@ def main(argv: list[str] | None = None) -> int:
             Path(args.repo_root).resolve(),
             Path(args.ledger_path).resolve(),
             Path(args.candidate).resolve(),
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "lifetime-ledger-append-approved-ho-det-001":
+        output = lifetime_approved_append_ho_det_001(
+            Path(args.repo_root).resolve(),
+            Path(args.ledger_path).resolve(),
+            Path(args.candidate).resolve(),
+            args.append_approval,
         )
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
