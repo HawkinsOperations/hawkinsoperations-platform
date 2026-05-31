@@ -1388,6 +1388,7 @@ def lifetime_ledger_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
 def verify_lifetime_detection_coverage(repo_root: Path) -> list[dict[str, Any]]:
     seen: set[str] = set()
     coverage: list[dict[str, Any]] = []
+    missing_required_source_refs: list[str] = []
     for item in LIFETIME_DETECTION_COVERAGE:
         detection_id = str(item["detection_id"])
         if detection_id in seen:
@@ -1398,6 +1399,7 @@ def verify_lifetime_detection_coverage(repo_root: Path) -> list[dict[str, Any]]:
             raise FactoryError(f"{detection_id} lifetime ledger entry must include source_refs")
         existing_source_refs = [path for path in source_refs if (repo_root / path).is_file()]
         missing_source_refs = [path for path in source_refs if not (repo_root / path).is_file()]
+        missing_required_source_refs.extend(f"{detection_id}:{path}" for path in missing_source_refs)
         validation_ref = item.get("validation_ref")
         proof_ref = item.get("proof_ref")
         coverage.append(
@@ -1428,6 +1430,11 @@ def verify_lifetime_detection_coverage(repo_root: Path) -> list[dict[str, Any]]:
     missing = sorted(required - seen)
     if missing:
         raise FactoryError(f"lifetime ledger coverage missing required detections: {', '.join(missing)}")
+    if missing_required_source_refs:
+        raise FactoryError(
+            "lifetime ledger coverage missing required source refs: "
+            + "; ".join(sorted(missing_required_source_refs))
+        )
     return coverage
 
 

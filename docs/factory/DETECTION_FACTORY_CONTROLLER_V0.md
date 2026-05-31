@@ -425,6 +425,10 @@ boundaries for `HO-DET-001`, `HO-DET-011`, `HO-DET-012`, `HO-DET-013`,
 `HO-PIPE-001` remains a pipeline/field-preservation contract row rather than a
 behavioral detection case row.
 
+Required coverage source references fail closed. If a listed detection source
+file is missing, renamed, or mistyped, `lifetime-ledger-verify` exits non-zero
+instead of treating the source reference as informational review state.
+
 The GPU triage boundary is support-only:
 
 - `ai_support_mode=AI_SUPPORT_ONLY`
