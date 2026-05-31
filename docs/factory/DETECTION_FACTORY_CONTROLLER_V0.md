@@ -678,6 +678,90 @@ The Phase 4 proof boundary remains:
 - no AI-approved or analyst-approved final disposition authority
 - no case closure authority
 
+## Lifetime Case Ledger v1 Phase 5 Correction/Superseding Gate
+
+Phase 5 adds the governed correction/superseding event gate for Lifetime Case
+Ledger v1. The gate is append-only and dry-run by default. It builds a
+sanitized correction event preview that links to an existing ledger event by
+`parent_event_hash`, verifies that the parent hash exists, and leaves the
+original row unchanged.
+
+The correction event type is:
+
+```text
+CORRECTION_SUPERSEDING_EVENT
+```
+
+The exact approval phrase required for any real correction append is:
+
+```text
+CORRECTION_APPEND_APPROVED: append sanitized Lifetime Case Ledger correction event
+```
+
+Without that exact phrase, correction append mode fails closed with:
+
+```text
+BLOCKED: CORRECTION_APPEND_APPROVAL_REQUIRED
+```
+
+The Phase 5 correction gate command is:
+
+```powershell
+python -B scripts\ho_factory.py lifetime-ledger-correction-gate --append-mode dry-run --parent-event-hash 15a499248c31b1f5200f0c8c66a72c8626db11ed76acc1595ddf951e062efdfa --correction-reason "Sanitized correction note: superseding review preserves append-only ledger integrity." --repo-root .. --format json
+```
+
+The Phase 5 self-test command is:
+
+```powershell
+python -B scripts\ho_factory.py lifetime-ledger-correction-self-test --repo-root .. --format json
+```
+
+The self-test derives its positive parent hash from the approved Phase 4
+HO-DET-001 event model and validates the gate without writing to the ledger. It
+also proves these fail-closed paths:
+
+- update blocked by append-only trigger
+- delete blocked by append-only trigger
+- missing `parent_event_hash` blocked
+- malformed `parent_event_hash` blocked
+- unknown `parent_event_hash` blocked
+- raw/private correction reason blocked
+- correction append without the exact approval phrase blocked
+- public-safe, runtime proof, signal proof, disposition, and case closure
+  promotion blocked
+
+Phase 5 metrics preview rules:
+
+- `total_ledger_events +1`
+- `total_cases +0`
+- `correction_event_count +1`
+- `superseding_event_count +1`
+- `cases_requiring_human_review +1`
+- `proof_blocked_count +1`
+- `public_safe_count +0`
+- `closed_case_count +0`
+
+The Phase 5 proof boundary remains:
+
+- `append_performed=false` unless the exact correction append approval phrase is
+  present
+- `database_modified=false` for the dry-run gate and self-test
+- existing ledger rows are not updated, deleted, hidden, or marked deleted
+- `AI_SUPPORT_ONLY`
+- `human_review_required=true`
+- `ai_decided_disposition=false`
+- `NOT_PUBLIC_SAFE`
+- `NO_DISPOSITION`
+- no raw/private evidence import
+- no public runtime proof
+- no runtime-active public claim
+- no signal-observed public claim
+- no SOCaaS deployment claim
+- no production deployment claim
+- no autonomous SOC claim
+- no AI-approved or analyst-approved final disposition authority
+- no case closure authority
+
 ### Splunk HO-DET-001 Runtime Ingest Dry Run
 
 The controller includes a bounded dry-run adapter for sanitized Splunk
