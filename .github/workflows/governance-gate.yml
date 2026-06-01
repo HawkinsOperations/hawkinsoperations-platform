@@ -22,6 +22,9 @@ jobs:
             "GOVERNANCE.md",
             "STATUS.md",
             "contracts/lifetime-case-ledger-v1-state-manifest.json",
+            "contracts/lifetime-case-ledger-v1-recoverability-drill.json",
+            "docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md",
+            "scripts/verify-lifetime-ledger-backup-drill.py",
             "evidence/EVIDENCE_LEDGER_SCHEMA.json",
             "evidence/evidence-ledger.json"
           )
@@ -66,6 +69,9 @@ jobs:
       - name: Verify Lifetime Case Ledger v1 state manifest
         run: |
           python -B scripts/ho_factory.py lifetime-ledger-state-manifest-verify --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+      - name: Verify Lifetime Case Ledger v1 recoverability drill
+        run: |
+          python -B scripts/verify-lifetime-ledger-backup-drill.py --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
       - name: Verify Lifetime Case Ledger v1 append gate
         run: |
           python -B scripts/ho_factory.py lifetime-ledger-append-gate-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null

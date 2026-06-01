@@ -25,6 +25,9 @@ This repository defines how detection and validation components are wired, promo
 - Validation PR #18 clone-runnable proof pack: merged into `hawkinsoperations-validation`.
 - Platform runtime contract enforcement: merged through `HawkinsOperations/hawkinsoperations-platform#5`.
 - Platform verifier status: `PLATFORM_RUNTIME_CONTRACT=pass`; this is schema and verifier guardrail only.
+- Lifetime Case Ledger recoverability drill: `scripts/verify-lifetime-ledger-backup-drill.py` copies the tracked SQLite seed bridge to a temporary backup, compares SHA256 and ledger metrics, and verifies `database_modified=false`, `restore_performed=false`, and `append_performed=false`.
+- Ledger mechanics map: `docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md` shows candidate event -> dry run -> approval gate -> append -> dedupe -> correction/superseding model -> state manifest -> proof handoff.
+- Lifetime Case Ledger boundary: tracked platform seed bridge only; current expected state is 4 events / 4 cases for `HO-DET-001`, `HO-DET-011`, and `HO-DET-012`; `public_safe_status=NOT_PUBLIC_SAFE`; `proof_ceiling=SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY`.
 - HO-DET-011 case-packet guardrail: `scripts/verify-ho-det-011-case-packet.py` runs in the governance gate workflow; this is claim-boundary CI only.
 - Platform contract status: non-promotional guardrail; it does not prove live runtime, public-safe signal, public-safe runtime evidence, live Splunk fired, Splunk-proven Runtime Signal 001, Cribl-routed status, Wazuh-routed public proof, AWS-live status, production-ready status, fleet-wide coverage, autonomous SOC operation, AI-approved disposition, or analyst-approved disposition.
 - Next gate: evidence-backed runtime or signal promotion only after separate proof review, privacy review, stale review, wording review, and Raylee approval.
@@ -52,6 +55,7 @@ Initial contract package is now defined under `contracts/`:
 - `contracts/schemas/local-llm-runtime-receipt.schema.json`
 - `contracts/schemas/ho-det-001-runtime-contract.schema.json`
 - `contracts/schemas/ho-det-011-case-packet.schema.json`
+- `contracts/lifetime-case-ledger-v1-recoverability-drill.json`
 
 This baseline defines minimum fields required for reproducible
 detection-to-validation-to-proof linkage.
