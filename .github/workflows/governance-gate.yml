@@ -49,6 +49,17 @@ jobs:
       - name: Verify HO-DET-011 case packet guardrail
         run: python scripts/verify-ho-det-011-case-packet.py
 
+  runtime-route-proof-v1-private-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse Runtime Route Proof v1 private candidate schema
+        run: python -m json.tool contracts/schemas/runtime-route-proof-v1-private-candidate.schema.json >/dev/null
+      - name: Parse Runtime Route Proof v1 private candidate sample
+        run: python -m json.tool contracts/examples/runtime-route-proof-v1-private-candidate.sample.json >/dev/null
+      - name: Verify Runtime Route Proof v1 private candidate packet
+        run: python scripts/verify-runtime-route-proof-v1-private-candidate.py >/dev/null
+
   lifetime-case-ledger-v1:
     runs-on: ubuntu-latest
     steps:
