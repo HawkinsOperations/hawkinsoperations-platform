@@ -1,0 +1,60 @@
+{
+  "contract_id": "LIFETIME_CASE_LEDGER_V1_RECOVERABILITY_DRILL",
+  "contract_version": "phase_9_recoverability_drill_v1",
+  "ledger_path": "evidence/autosoc-case-ledger-v0.sqlite",
+  "ledger_boundary": "tracked platform seed bridge, not runtime truth, not signal truth, not public proof",
+  "source_controlled_contract": true,
+  "backup_model": {
+    "copy_source": "canonical tracked platform seed bridge",
+    "copy_destination": "temporary test copy",
+    "restore_over_canonical_allowed": false,
+    "canonical_overwrite_allowed": false,
+    "canonical_append_allowed": false,
+    "canonical_delete_allowed": false
+  },
+  "expected_current_metrics": {
+    "current_state_fail_closed_control": true,
+    "future_approved_append_update_rule": "Any future approved ledger append must update expected_current_metrics, verifier constants, and this contract in the same bounded change.",
+    "total_ledger_events": 4,
+    "total_cases": 4,
+    "public_safe_count": 0,
+    "closed_case_count": 0,
+    "cases_by_detection": {
+      "HO-DET-001": 2,
+      "HO-DET-011": 1,
+      "HO-DET-012": 1
+    }
+  },
+  "required_report_fields": [
+    "canonical_ledger_path",
+    "backup_path",
+    "canonical_sha256_before",
+    "canonical_sha256_after",
+    "backup_sha256",
+    "canonical_metrics_before",
+    "canonical_metrics_after",
+    "backup_metrics",
+    "database_modified",
+    "restore_performed",
+    "append_performed",
+    "public_safe_status",
+    "proof_ceiling"
+  ],
+  "database_modified": false,
+  "restore_performed": false,
+  "append_performed": false,
+  "public_safe_status": "NOT_PUBLIC_SAFE",
+  "proof_ceiling": "SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY",
+  "does_not_prove": [
+    "runtime truth",
+    "signal truth",
+    "public proof",
+    "public-safe status",
+    "production deployment",
+    "SOCaaS deployment",
+    "autonomous SOC",
+    "AI-approved disposition",
+    "analyst-approved disposition",
+    "case closure"
+  ]
+}
