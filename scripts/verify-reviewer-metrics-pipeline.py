@@ -123,6 +123,25 @@ def source_metrics_from_state(state_path: Path = STATE_PATH, repo_root: Path = R
     return required
 
 
+def project_reconciliation_from_state(state_path: Path = STATE_PATH, repo_root: Path = ROOT) -> dict[str, bool]:
+    state = load_json(state_path)
+    receipt_path = _source_artifact_path(state, "github_project_reconciliation_source", repo_root)
+    text = receipt_path.read_text(encoding="utf-8")
+    lowered = text.lower()
+    reconciliation = state.get("project_board_reconciliation_status")
+    if not isinstance(reconciliation, dict):
+        fail("project_board_reconciliation_status must be present")
+
+    return {
+        "standing_issue_8_present": "#8" in text and "standing control" in lowered,
+        "standing_issue_10_present": "#10" in text and "blocked claims" in lowered,
+        "project_2_route_present": "project #2" in lowered,
+        "report_only_boundary_present": "report_only" in lowered or "not proof" in lowered,
+        "project_metadata_is_proof_authority": reconciliation.get("github_project_metadata_is_proof_authority") is True,
+        "github_project_mutation_performed": reconciliation.get("github_project_mutation_performed") is True,
+    }
+
+
 def verify_state(state_path: Path = STATE_PATH, repo_root: Path = ROOT) -> dict[str, Any]:
     state = load_json(state_path)
     scan_value(state, "reviewer metrics state")
@@ -175,6 +194,23 @@ def verify_state(state_path: Path = STATE_PATH, repo_root: Path = ROOT) -> dict[
     for key, expected in source_metrics_from_state(state_path, repo_root).items():
         if metrics.get(key) != expected:
             fail(f"{key} source metric mismatch: expected {expected}, found {metrics.get(key)}")
+    reconciliation = state.get("project_board_reconciliation_status")
+    if not isinstance(reconciliation, dict):
+        fail("project_board_reconciliation_status must be present")
+    if reconciliation.get("status") != "REPO_BACKED_RECONCILIATION_PLAN_NO_PROJECT_MUTATION":
+        fail("project_board_reconciliation_status must remain repo-backed and non-mutating")
+    if reconciliation.get("standing_issue_8_status") != "KEEP_OPEN_STANDING_CONTROL":
+        fail("standing issue #8 must remain an open standing control")
+    if reconciliation.get("standing_issue_10_status") != "KEEP_OPEN_STANDING_CONTROL":
+        fail("standing issue #10 must remain an open standing control")
+    project_reconciliation = project_reconciliation_from_state(state_path, repo_root)
+    for key in ("standing_issue_8_present", "standing_issue_10_present", "project_2_route_present", "report_only_boundary_present"):
+        if project_reconciliation[key] is not True:
+            fail(f"project reconciliation source missing boundary: {key}")
+    if project_reconciliation["project_metadata_is_proof_authority"] is not False:
+        fail("GitHub Project metadata must remain non-authoritative")
+    if project_reconciliation["github_project_mutation_performed"] is not False:
+        fail("reviewer metrics pipeline must not mutate GitHub Projects")
 
     return {
         "status": "pass",

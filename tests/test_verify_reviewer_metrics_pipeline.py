@@ -43,6 +43,16 @@ class ReviewerMetricsPipelineTests(unittest.TestCase):
         self.assertEqual(source_metrics["validation_case_count"], 106)
         self.assertEqual(source_metrics["detection_activity_entry_count"], 10)
 
+    def test_project_reconciliation_is_backed_by_github_receipt_source(self) -> None:
+        reconciliation = verifier.project_reconciliation_from_state(STATE_PATH, ROOT)
+
+        self.assertTrue(reconciliation["standing_issue_8_present"])
+        self.assertTrue(reconciliation["standing_issue_10_present"])
+        self.assertTrue(reconciliation["project_2_route_present"])
+        self.assertTrue(reconciliation["report_only_boundary_present"])
+        self.assertFalse(reconciliation["project_metadata_is_proof_authority"])
+        self.assertFalse(reconciliation["github_project_mutation_performed"])
+
     def test_detection_activity_cannot_equal_governed_case_semantics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "state.json"
