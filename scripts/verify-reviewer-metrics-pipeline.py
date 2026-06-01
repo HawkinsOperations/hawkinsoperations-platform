@@ -41,15 +41,15 @@ def fail(message: str) -> None:
     raise VerificationError(message)
 
 
-def load_json(path: Path) -> dict[str, Any]:
+def load_json(path: Path, label: str = "reviewer metrics state") -> dict[str, Any]:
     if not path.exists():
-        fail(f"missing reviewer metrics state: {path}")
+        fail(f"missing {label}: {path}")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        fail(f"malformed reviewer metrics state: {exc}")
+        fail(f"malformed {label}: {exc}")
     if not isinstance(data, dict):
-        fail("reviewer metrics state root must be an object")
+        fail(f"{label} root must be an object")
     return data
 
 
@@ -77,6 +77,50 @@ def _require_repo_relative_source_artifacts(state: dict[str, Any]) -> None:
         path = Path(value)
         if path.is_absolute():
             fail(f"source artifact {key} must be repo-relative or sibling-relative")
+
+
+def _source_artifact_path(state: dict[str, Any], key: str, repo_root: Path) -> Path:
+    source_artifacts = state.get("source_artifacts")
+    if not isinstance(source_artifacts, dict):
+        fail("source_artifacts must be a non-empty object")
+    value = source_artifacts.get(key)
+    if not isinstance(value, str) or not value:
+        fail(f"source artifact {key} must be a string")
+    path = Path(value)
+    if path.is_absolute():
+        fail(f"source artifact {key} must be repo-relative or sibling-relative")
+    return (repo_root / path).resolve()
+
+
+def source_metrics_from_state(state_path: Path = STATE_PATH, repo_root: Path = ROOT) -> dict[str, int]:
+    state = load_json(state_path)
+    _require_repo_relative_source_artifacts(state)
+
+    lifetime_summary_path = _source_artifact_path(state, "proof_lifetime_summary", repo_root)
+    validation_ledger_path = _source_artifact_path(state, "validation_activity_ledger", repo_root)
+    lifetime_summary = load_json(lifetime_summary_path, "lifetime case ledger summary")
+    validation_ledger = load_json(validation_ledger_path, "detection activity ledger")
+
+    ledger_counts = lifetime_summary.get("ledger_counts")
+    if not isinstance(ledger_counts, dict):
+        fail("lifetime case ledger summary ledger_counts must be present")
+    activity_metrics = validation_ledger.get("aggregate_metrics")
+    if not isinstance(activity_metrics, dict):
+        fail("detection activity ledger aggregate_metrics must be present")
+
+    required = {
+        "lifetime_governed_cases": ledger_counts.get("total_cases"),
+        "lifetime_ledger_events": ledger_counts.get("total_ledger_events"),
+        "detection_activity_count": activity_metrics.get("detection_activity_count"),
+        "controlled_validation_fire_count": activity_metrics.get("controlled_validation_fire_count"),
+        "controlled_negative_test_count": activity_metrics.get("controlled_negative_test_count"),
+        "validation_case_count": activity_metrics.get("validation_case_count"),
+        "detection_activity_entry_count": activity_metrics.get("activity_entry_count"),
+    }
+    for key, value in required.items():
+        if not isinstance(value, int) or value < 0:
+            fail(f"source metric {key} must be a non-negative integer")
+    return required
 
 
 def verify_state(state_path: Path = STATE_PATH, repo_root: Path = ROOT) -> dict[str, Any]:
@@ -128,6 +172,9 @@ def verify_state(state_path: Path = STATE_PATH, repo_root: Path = ROOT) -> dict[
         fail("v1 must not claim public-safe or runtime-public-safe counts")
     if not state.get("blocked_claims"):
         fail("blocked_claims must not be empty")
+    for key, expected in source_metrics_from_state(state_path, repo_root).items():
+        if metrics.get(key) != expected:
+            fail(f"{key} source metric mismatch: expected {expected}, found {metrics.get(key)}")
 
     return {
         "status": "pass",

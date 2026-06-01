@@ -32,6 +32,17 @@ class ReviewerMetricsPipelineTests(unittest.TestCase):
         self.assertEqual(metrics["runtime_public_safe_count"], 0)
         self.assertEqual(metrics["public_safe_count"], 0)
 
+    def test_state_metrics_match_source_artifacts(self) -> None:
+        source_metrics = verifier.source_metrics_from_state(STATE_PATH, ROOT)
+
+        self.assertEqual(source_metrics["lifetime_governed_cases"], 4)
+        self.assertEqual(source_metrics["lifetime_ledger_events"], 4)
+        self.assertEqual(source_metrics["detection_activity_count"], 49)
+        self.assertEqual(source_metrics["controlled_validation_fire_count"], 49)
+        self.assertEqual(source_metrics["controlled_negative_test_count"], 57)
+        self.assertEqual(source_metrics["validation_case_count"], 106)
+        self.assertEqual(source_metrics["detection_activity_entry_count"], 10)
+
     def test_detection_activity_cannot_equal_governed_case_semantics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "state.json"
