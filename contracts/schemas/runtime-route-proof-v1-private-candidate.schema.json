@@ -79,7 +79,7 @@
           "const": "HO-RUNTIME-ROUTE-PROOF-V1-PRIVATE-REVIEWER-SAFE-2026-06-01.zip"
         },
         "sha256": {
-          "const": "2688ce99197dcdc9588f93b2da73818fc75d4bd923a1fd8bac0570ee82adb13a"
+          "const": "3a1d4472bffcce68cff6e101c54e06b5a67528338bda174e6fef209fa9b1b278"
         },
         "raw_private_evidence_in_repo": {
           "type": "boolean",
