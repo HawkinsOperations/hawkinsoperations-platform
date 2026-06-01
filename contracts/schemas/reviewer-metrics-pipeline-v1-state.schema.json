@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HawkinsOperations/hawkinsoperations-platform/contracts/schemas/reviewer-metrics-pipeline-v1-state.schema.json",
+  "title": "Reviewer Metrics Pipeline v1 State",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "owner_repo",
+    "source_artifacts",
+    "metrics",
+    "project_board_reconciliation_status",
+    "assertions",
+    "proof_ceiling",
+    "public_safe_status",
+    "does_not_prove",
+    "blocked_claims"
+  ],
+  "properties": {
+    "schema_version": { "const": "reviewer_metrics_pipeline_v1_state" },
+    "owner_repo": { "const": "hawkinsoperations-platform" },
+    "source_artifacts": { "type": "object" },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "lifetime_governed_cases",
+        "lifetime_ledger_events",
+        "detection_activity_count",
+        "controlled_validation_fire_count",
+        "validation_case_count",
+        "proof_record_count",
+        "blocked_claim_count",
+        "runtime_public_safe_count",
+        "public_safe_count",
+        "detection_family_count"
+      ],
+      "properties": {
+        "lifetime_governed_cases": { "type": "integer", "minimum": 0 },
+        "lifetime_ledger_events": { "type": "integer", "minimum": 0 },
+        "detection_activity_count": { "type": "integer", "minimum": 0 },
+        "controlled_validation_fire_count": { "type": "integer", "minimum": 0 },
+        "validation_case_count": { "type": "integer", "minimum": 0 },
+        "proof_record_count": { "type": "integer", "minimum": 0 },
+        "blocked_claim_count": { "type": "integer", "minimum": 0 },
+        "runtime_public_safe_count": { "type": "integer", "minimum": 0 },
+        "public_safe_count": { "type": "integer", "minimum": 0 },
+        "detection_family_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "project_board_reconciliation_status": { "type": "object" },
+    "assertions": { "type": "object" },
+    "proof_ceiling": { "const": "SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY" },
+    "public_safe_status": { "const": "NOT_PUBLIC_SAFE" },
+    "does_not_prove": { "type": "array", "items": { "type": "string" } },
+    "blocked_claims": { "type": "array", "items": { "type": "string" } }
+  }
+}

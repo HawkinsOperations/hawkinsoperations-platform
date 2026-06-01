@@ -1,0 +1,79 @@
+{
+  "schema_version": "reviewer_metrics_pipeline_v1_state",
+  "state_id": "HAWKINSOPERATIONS_REVIEWER_METRICS_PIPELINE_V1_STATE",
+  "owner_repo": "hawkinsoperations-platform",
+  "state_boundary": "Aggregate reviewer metrics only. Platform owns the Lifetime Case Ledger boundary and does not convert detection activity into governed cases.",
+  "source_artifacts": {
+    "lifetime_case_ledger_manifest": "contracts/lifetime-case-ledger-v1-state-manifest.json",
+    "validation_activity_ledger": "../hawkinsoperations-validation/activity/detection-activity-ledger-v1.json",
+    "proof_lifetime_summary": "../hawkinsoperations-proof/proof/records/lifetime-case-ledger-v1-public-summary.json",
+    "proof_reviewer_map": "../hawkinsoperations-proof/proof/indexes/reviewer-proof-map.json",
+    "detections_promotion_matrix": "../hawkinsoperations-detections/detections/DETECTION_PROMOTION_MATRIX.yml",
+    "github_project_reconciliation_source": "../.github/governance/ISSUE_FACTORY_CONTROL_RECEIPTS.md"
+  },
+  "metrics": {
+    "lifetime_governed_cases": 4,
+    "lifetime_ledger_events": 4,
+    "detection_activity_count": 49,
+    "controlled_validation_fire_count": 49,
+    "validation_case_count": 106,
+    "proof_record_count": 8,
+    "blocked_claim_count": 31,
+    "runtime_public_safe_count": 0,
+    "public_safe_count": 0,
+    "detection_family_count": 6,
+    "controlled_negative_test_count": 57,
+    "detection_activity_entry_count": 10
+  },
+  "project_board_reconciliation_status": {
+    "status": "REPO_BACKED_RECONCILIATION_PLAN_NO_PROJECT_MUTATION",
+    "github_project_metadata_is_proof_authority": false,
+    "github_project_mutation_performed": false,
+    "standing_issue_8_status": "KEEP_OPEN_STANDING_CONTROL",
+    "standing_issue_10_status": "KEEP_OPEN_STANDING_CONTROL",
+    "website_integration_status": "DEFERRED_OPEN_WEBSITE_PR_47"
+  },
+  "assertions": {
+    "lifetime_governed_cases_separate_from_detection_activity": true,
+    "detection_activity_is_governed_case_count": false,
+    "sqlite_mutation_performed": false,
+    "case_append_performed": false,
+    "public_safe_promotion_performed": false,
+    "runtime_promotion_performed": false,
+    "signal_promotion_performed": false,
+    "website_is_proof_authority": false,
+    "github_project_metadata_is_proof_authority": false
+  },
+  "proof_ceiling": "SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY",
+  "public_safe_status": "NOT_PUBLIC_SAFE",
+  "does_not_prove": [
+    "runtime activity",
+    "signal observation",
+    "public-safe runtime proof",
+    "production deployment",
+    "SOCaaS deployment",
+    "autonomous SOC",
+    "AI-approved disposition",
+    "analyst-approved disposition",
+    "case closure"
+  ],
+  "blocked_claims": [
+    "runtime-active public proof",
+    "signal-observed public proof",
+    "evidence-linked public proof",
+    "public-safe proof",
+    "public-safe runtime proof",
+    "production-ready",
+    "production triage",
+    "fleet-wide deployment",
+    "live Splunk firing",
+    "Cribl-routed",
+    "Wazuh-routed",
+    "AWS-live",
+    "autonomous SOC",
+    "AI-approved disposition",
+    "AI-decided disposition",
+    "analyst-approved disposition",
+    "case closure"
+  ]
+}
