@@ -36,6 +36,9 @@ jobs:
             Write-Error ("Missing required files: " + ($missing -join ", "))
             exit 1
           }
+      - name: Verify Lifetime Case Ledger recoverability drill required context
+        run: |
+          python -B scripts/verify-lifetime-ledger-backup-drill.py --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
 
   ho-det-011-case-packet:
     runs-on: ubuntu-latest

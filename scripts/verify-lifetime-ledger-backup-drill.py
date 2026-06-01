@@ -307,8 +307,7 @@ def build_report(repo_root: Path) -> dict[str, Any]:
             "mode": "lifetime-case-ledger-recoverability-drill",
             "status": "pass",
             "canonical_ledger_path": str(EXPECTED_LEDGER_PATH).replace("\\", "/"),
-            "canonical_ledger_absolute_path": str(ledger_path.resolve()),
-            "backup_path": str(backup_path.resolve()),
+            "backup_path": "temporary_test_copy_deleted_after_process_exit",
             "backup_retained": False,
             "backup_storage_class": "temporary_test_copy_deleted_after_process_exit",
             "canonical_sha256_before": canonical_sha_before,
@@ -333,14 +332,14 @@ def build_report(repo_root: Path) -> dict[str, Any]:
                 "lane": "Platform / Ledger",
                 "truth_surface": "repo truth / operating control",
                 "control_level": "real control",
-                "receipt_status": "READY_FOR_COMMIT_APPROVAL",
+                "receipt_status": "READY_FOR_HUMAN_REVIEW",
                 "reviewer_facing": True,
                 "proof_ceiling": EXPECTED_PROOF_CEILING,
                 "evidence_link": (
                     "docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md; "
                     "scripts/verify-lifetime-ledger-backup-drill.py"
                 ),
-                "next_gate": "commit/push/PR/review",
+                "next_gate": "human GitHub review / MERGE_APPROVED",
                 "demo_value": (
                     "reviewer can understand ledger mechanics and recoverability without mutating proof or runtime truth"
                 ),

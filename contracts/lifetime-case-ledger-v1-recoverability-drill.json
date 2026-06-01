@@ -13,6 +13,8 @@
     "canonical_delete_allowed": false
   },
   "expected_current_metrics": {
+    "current_state_fail_closed_control": true,
+    "future_approved_append_update_rule": "Any future approved ledger append must update expected_current_metrics, verifier constants, and this contract in the same bounded change.",
     "total_ledger_events": 4,
     "total_cases": 4,
     "public_safe_count": 0,

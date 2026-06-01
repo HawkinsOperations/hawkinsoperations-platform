@@ -85,6 +85,15 @@ Mechanics:
 - state manifest: records current seed bridge counts and repo authority boundaries
 - proof handoff: proof records live in `hawkinsoperations-proof`; platform mechanics do not create proof
 
+## Future Append Update Rule
+
+The hard-coded 4 events / 4 cases expectation is an intentional current-state
+fail-closed control. Any future approved ledger append must update the expected
+metrics in this document, the recoverability contract, and the verifier
+constants in the same bounded change. If the canonical seed bridge changes but
+those expectations are not updated together, the recoverability drill must fail
+closed.
+
 ## Failure Conditions
 
 The verifier fails closed if:
@@ -107,9 +116,9 @@ The verifier fails closed if:
 - Lane: Platform / Ledger
 - Truth Surface: repo truth / operating control
 - Control Level: real control
-- Receipt Status: READY_FOR_COMMIT_APPROVAL
+- Receipt Status: READY_FOR_HUMAN_REVIEW
 - Reviewer Facing: yes
 - Proof Ceiling: SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY
 - Evidence Link: `docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md`; `scripts/verify-lifetime-ledger-backup-drill.py`
-- Next Gate: commit/push/PR/review
+- Next Gate: human GitHub review / MERGE_APPROVED
 - Demo Value: reviewer can understand ledger mechanics and recoverability without mutating proof or runtime truth
