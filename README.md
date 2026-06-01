@@ -1,52 +1,73 @@
 # HawkinsOperations Platform
 
-Platform contracts, integration logic, and operational plumbing for HawkinsOperations.
+HawkinsOperations Platform is the contract and automation layer for the HawkinsOperations security-engineering system.
 
-Owner identity: Raylee Hawkins, Detection Engineer | SOC Automation | Detection-as-Code | Security Automation.
+It shows how platform mechanics keep detection, validation, ledger, and proof work bounded: schemas define allowed shapes, verifiers enforce guardrails, ledgers preserve controlled state, and automation checks whether the contract still holds.
 
-Official links: [Raylee Hawkins on LinkedIn](https://www.linkedin.com/in/raylee-hawkins) | [Raylee Hawkins on GitHub](https://github.com/raylee-hawkins) | [HawkinsOps legacy/reference portfolio](https://hawkinsops.com) | [HawkinsOperations GitHub organization](https://github.com/HawkinsOperations) | [RayleeOps public operating journal](https://rayleeops.com)
+This repository does not prove live runtime execution, live signal observation, SOCaaS availability, production readiness, public-safe evidence, or analyst-approved disposition.
 
-## Purpose
+## 10-Second Reviewer Path
 
-This repository defines how detection and validation components are wired, promoted, and operated.
+If you have limited time, inspect these first:
 
-## HawkinsOperations Closed SOC Loop 001
+1. `contracts/` - versioned schemas and contract files.
+2. `scripts/` - deterministic verifier and ledger-mechanics checks.
+3. `.github/workflows/` - automation hooks that run contract and guardrail checks where configured.
+4. `docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md` - how the lifetime ledger mechanics are modeled.
+5. `contracts/lifetime-case-ledger-v1-recoverability-drill.json` - tracked seed contract for ledger recoverability validation.
 
-- GitHub Project: pending ProjectV2 access / attachment. Current org project route: https://github.com/orgs/HawkinsOperations/projects
-- Reviewer entry point: https://github.com/HawkinsOperations/.github/blob/main/profile/START_HERE.md
-- Closed SOC Loop 001 route: https://github.com/HawkinsOperations/hawkinsoperations-validation/blob/main/docs/HO-DET-001_CLOSED_LOOP.md
-- Current HO-DET-001 ceiling: CONTROLLED_TEST_VALIDATED
-- HawkinsOperations is the governed successor system; HawkinsOps and older surfaces are legacy/reference unless revalidated.
-- Truth surface: platform contract and architecture truth. This repository defines integration contracts, promotion plumbing, and environment-agnostic operational controls.
-- Sprint thesis: speed with enforcement through deterministic validation, required checks where configured, evidence records, proof contracts, and bounded public claims.
-- AI is labor. Governance is authority.
-- Build loud. Verify hard. Claim tight. Ship receipts.
-- Website/public pages route to proof records; they do not replace proof.
-- Validation PR #18 clone-runnable proof pack: merged into `hawkinsoperations-validation`.
-- Platform runtime contract enforcement: merged through `HawkinsOperations/hawkinsoperations-platform#5`.
-- Platform verifier status: `PLATFORM_RUNTIME_CONTRACT=pass`; this is schema and verifier guardrail only.
-- Lifetime Case Ledger recoverability drill: `scripts/verify-lifetime-ledger-backup-drill.py` copies the tracked SQLite seed bridge to a temporary backup, compares SHA256 and ledger metrics, and verifies `database_modified=false`, `restore_performed=false`, and `append_performed=false`.
-- Ledger mechanics map: `docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md` shows candidate event -> dry run -> approval gate -> append -> dedupe -> correction/superseding model -> state manifest -> proof handoff.
-- Lifetime Case Ledger boundary: tracked platform seed bridge only; current expected state is 4 events / 4 cases for `HO-DET-001`, `HO-DET-011`, and `HO-DET-012`; `public_safe_status=NOT_PUBLIC_SAFE`; `proof_ceiling=SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY`.
-- HO-DET-011 case-packet guardrail: `scripts/verify-ho-det-011-case-packet.py` runs in the governance gate workflow; this is claim-boundary CI only.
-- Platform contract status: non-promotional guardrail; it does not prove live runtime, public-safe signal, public-safe runtime evidence, live Splunk fired, Splunk-proven Runtime Signal 001, Cribl-routed status, Wazuh-routed public proof, AWS-live status, production-ready status, fleet-wide coverage, autonomous SOC operation, AI-approved disposition, or analyst-approved disposition.
-- Next gate: evidence-backed runtime or signal promotion only after separate proof review, privacy review, stale review, wording review, and Raylee approval.
-- Runtime-active and signal-observed claims remain blocked.
-- Cyber Kill Chain coverage: this repo contributes workflow, case-packet, automation, and AI-support boundary truth to the canonical [Cyber Kill Chain coverage map](https://github.com/HawkinsOperations/hawkinsoperations-proof/blob/main/docs/mappings/CYBER_KILL_CHAIN_COVERAGE.md) in `hawkinsoperations-proof`. The map is reviewer navigation, not runtime, signal, production, or public-safe proof authority.
+## What Security Leaders Should Inspect
 
-## Blocked Claims
+- Whether contracts separate source, validation, proof, runtime, and public-safe claims.
+- Whether automation fails closed when required fields, ledgers, or claim boundaries drift.
+- Whether the runtime contract is treated as a schema/verifier guardrail instead of runtime proof.
+- Whether ledger checks preserve recoverability, dedupe, correction, and approval-gate mechanics.
+- Whether README wording, docs, and verifier outputs avoid overclaiming production, signal, public-safe, or SOCaaS status.
 
-This repository does not claim: runtime-active, signal-observed, evidence-linked public proof, public-safe, live Splunk firing, production triage, analyst-approved disposition, LOCAL_GPU_SUPPORT_NODE runtime-active, Cribl-routed, Wazuh-routed, AWS-live, autonomous SOC, production-ready SOC, fleet-wide deployment, or AI-approved disposition.
+## Platform Value
 
-## Scope
+This repo translates HawkinsOperations from "security content exists" into "security work has enforceable interfaces."
 
-- Pipeline contracts and interface definitions
-- Deployment orchestration scripts and integration modules
-- Environment-agnostic operational controls and runbooks
+- **Contracts:** define the fields and boundaries needed for detection, validation, proof, runtime receipt, and case-packet handoffs.
+- **Ledgers:** model controlled state, recoverability, dedupe, correction, and approval-gated append mechanics.
+- **Automation mechanics:** run deterministic checks so reviewer-facing claims are backed by source-controlled guardrails.
+- **Guardrails:** keep platform claims inside the current proof ceiling and block runtime, signal, production, public-safe, or autonomous-SOC language unless separately promoted.
+
+The hiring signal is platform engineering discipline: translating detection and SOC automation work into auditable contracts, bounded claims, and repeatable reviewer paths.
+
+## Current Proof Boundary
+
+Current platform ceiling: source-controlled contracts, schemas, verifier logic, ledger mechanics, and automation guardrails exist in this repository.
+
+The platform can support controlled validation language when a verifier passes within its stated scope.
+
+The platform cannot claim:
+
+- live runtime execution
+- live signal observation
+- public-safe evidence
+- SOCaaS availability
+- production-ready platform status
+- fleet-wide deployment
+- autonomous SOC operation
+- AI-approved disposition
+- analyst-approved disposition
+- live Splunk, Cribl, Wazuh, or AWS status
+- public-proof promotion
+
+Public-safe or runtime-active claims require separate proof review, privacy review, stale review, wording review, and Raylee approval.
+
+## Runtime Contract Guardrail
+
+The HO-DET-001 runtime contract in this repo is a schema and verifier guardrail only.
+
+`PLATFORM_RUNTIME_CONTRACT=pass` means the controlled contract verifier passed for the tracked source inputs in scope. It does not mean a runtime system fired, a live signal was observed, a production SOC path is available, or public-safe proof exists.
+
+Use the runtime contract to inspect whether a runtime receipt would have the required bounded fields before any runtime claim is considered.
 
 ## Contract Baseline
 
-Initial contract package is now defined under `contracts/`:
+The current contract package is defined under `contracts/`:
 
 - `contracts/contract-version.json`
 - `contracts/schemas/detection-artifact.schema.json`
@@ -57,30 +78,70 @@ Initial contract package is now defined under `contracts/`:
 - `contracts/schemas/ho-det-011-case-packet.schema.json`
 - `contracts/lifetime-case-ledger-v1-recoverability-drill.json`
 
-This baseline defines minimum fields required for reproducible
-detection-to-validation-to-proof linkage.
+These files define minimum source-controlled fields for reproducible detection-to-validation-to-proof linkage and case-packet boundary checks.
 
-## Out of Scope
+## Ledger Mechanics
 
-- Host-specific workstation configuration state
-- Public marketing narrative
-- Private credentials, tokens, and secret material
+The lifetime case ledger work in this repo is contract and mechanics truth.
+
+- `scripts/verify-lifetime-ledger-backup-drill.py` checks a tracked SQLite seed bridge by copying it to a temporary backup, comparing SHA256 and ledger metrics, and verifying no restore or append action occurred.
+- `docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md` maps candidate event, dry run, approval gate, append, dedupe, correction, superseding, state manifest, and proof handoff mechanics.
+- Current tracked seed boundary remains source-controlled platform seed only.
+
+Known ledger proof ceiling: `SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY`.
+
+Known public-safe status: `NOT_PUBLIC_SAFE`.
+
+## Automation And Guardrails
+
+Platform automation is intended to make unsafe claim expansion visible before it reaches reviewer or public surfaces.
+
+- Contract schemas define expected fields.
+- Verifier scripts check source-controlled fixtures and ledgers.
+- Governance gate workflow wiring can run claim-boundary checks where configured.
+- Case-packet validation checks whether required boundaries are represented.
+- Guardrail language blocks runtime, signal, production, public-safe, and autonomous-SOC claims unless separately approved.
+
+Automation in this repo is source/validation support. It is not merge authority, publication authority, runtime authority, or public-proof authority.
 
 ## Repository Contract
 
 - Platform behavior must be deterministic and auditable.
 - Integration points must be versioned and explicitly documented.
-- Operational changes require corresponding proof updates in `hawkinsoperations-proof`.
+- Runtime, signal, and public-proof claims must stay outside this repo unless separately proven and approved.
+- Operational changes that affect proof wording or claim ceilings require corresponding proof updates in `hawkinsoperations-proof`.
+- Website or reviewer navigation may point to proof records, but presentation does not replace proof.
 
-## Reviewed External Proof Candidates
+## Scope
 
-- Architecture/control flow diagrams (sanitized)
-- Promotion control descriptions
-- Reproducible integration checks
+In scope:
 
-## Related Repositories
+- Platform contracts and schema definitions
+- Ledger recoverability and state-mechanics checks
+- Case-packet and runtime-receipt guardrails
+- Deterministic verifier scripts
+- Environment-agnostic automation mechanics
+- Reviewer navigation for platform contracts
 
+Out of scope:
+
+- Host-specific workstation configuration state
+- Private credentials, tokens, secrets, or raw evidence
+- Public marketing narrative
+- Runtime execution claims
+- Live telemetry or signal claims
+- SOCaaS availability claims
+- Production-ready platform claims
+- Public-safe promotion
+
+## Related HawkinsOperations Repositories
+
+- Organization profile and reviewer start: [HawkinsOperations/.github](https://github.com/HawkinsOperations/.github)
 - Detections: `hawkinsoperations-detections`
 - Validation: `hawkinsoperations-validation`
 - Proof: `hawkinsoperations-proof`
 - Website: `hawkinsoperations-website`
+
+HawkinsOperations is the governed successor system. HawkinsOps and older surfaces are legacy/reference unless revalidated.
+
+AI is labor. Governance is authority.
