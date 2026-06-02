@@ -2,6 +2,11 @@ name: Runtime Case Collector v0 Windows Route Probe
 
 on:
   workflow_dispatch:
+    inputs:
+      collector_output_route:
+        description: 'Private Windows collector output route to probe'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -30,7 +35,11 @@ jobs:
       - name: Probe private collector output route
         shell: pwsh
         run: |
-          $route = 'C:\Raylee\Data\HawkinsOperations\runtime-case-collector-v0\windows'
+          $route = '${{ inputs.collector_output_route }}'
+          if ([string]::IsNullOrWhiteSpace($route)) {
+            Write-Output "WINDOWS_ROUTE_PROBE=fail_missing_route_input"
+            exit 1
+          }
           $routeExistsBefore = Test-Path -LiteralPath $route
           if (-not $routeExistsBefore) {
             New-Item -ItemType Directory -Path $route -Force | Out-Null
