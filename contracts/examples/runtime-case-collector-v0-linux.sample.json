@@ -1,0 +1,81 @@
+{
+  "candidate_count": 1,
+  "candidates": [
+    {
+      "ai_decided_disposition": false,
+      "ai_support_mode": "AI_SUPPORT_ONLY",
+      "append_to_lifetime_ledger": false,
+      "blocked_claims": [
+        "public-safe runtime proof",
+        "runtime-active public status",
+        "signal-observed public status",
+        "SOCaaS deployment",
+        "production deployment",
+        "autonomous SOC",
+        "AI-decided disposition",
+        "analyst-approved disposition",
+        "case closure",
+        "Lifetime Case Ledger mutation"
+      ],
+      "candidate_hash": "8bb7731c8d3915b1f64fed8440e684d430f4e14da50c0d41e7aac40d7692c55e",
+      "candidate_id": "rccv0-linux-8bb7731c8d3915b1",
+      "candidate_payload_hash": "02bb3acb3ab7b1530d55849e06270d4eb86142f79b01d73d58e8a99619f1a93b",
+      "case_closed": false,
+      "case_status": "RUNTIME_CANDIDATE_ONLY",
+      "collected_at_utc": "2026-06-02T00:00:00Z",
+      "collector_lane": "linux",
+      "collector_run_id": "runtime-case-collector-v0-linux-dry-run",
+      "collector_version": "runtime-case-collector-v0-linux",
+      "detection_family": "process_behavior",
+      "detection_id": "HO-DET-001",
+      "deterministic_close_blocked": true,
+      "deterministic_close_eligible": false,
+      "disposition_status": "NO_DISPOSITION",
+      "human_review_required": true,
+      "notes_boundary": "Linux Runtime Case Collector v0 creates private Linux-side runtime case candidates only. Candidates are not governed cases, are not public-safe proof, do not append the Lifetime Case Ledger, and require later normalizer/import handling plus separate human approval before any append, proof publication, disposition, or closure action.",
+      "observed_time_utc": "2026-05-17T23:59:30Z",
+      "proof_ceiling": "RUNTIME_CASE_COLLECTOR_V0_LINUX_PRIVATE_CANDIDATE_COLLECTION_ONLY",
+      "public_safe_status": "NOT_PUBLIC_SAFE",
+      "runtime_truth_status": "PRIVATE_CANDIDATE_ONLY",
+      "sanitized_event_fingerprint": "linux-runner-ho-gpu-01-runtime-candidate-v0",
+      "signal_truth_status": "NOT_PUBLIC_SIGNAL_PROOF",
+      "source_receipt_refs": [
+        {
+          "ref": "26006504673",
+          "ref_type": "github_actions_run",
+          "status": "pass"
+        },
+        {
+          "ref": "76438823869",
+          "ref_type": "github_actions_job",
+          "status": "pass"
+        }
+      ],
+      "source_system": "linux_private_infrastructure_runner",
+      "source_truth_status": "PRIVATE_WORKFLOW_DISPATCH_RUN_VERIFIED",
+      "triage_status": "HUMAN_REVIEW_REQUIRED"
+    }
+  ],
+  "collector_lane": "linux",
+  "collector_run_id": "runtime-case-collector-v0-linux-dry-run",
+  "collector_version": "runtime-case-collector-v0-linux",
+  "duplicate_count": 0,
+  "generated_output_files": false,
+  "invariants": {
+    "ai_decided_disposition": false,
+    "ai_support_mode": "AI_SUPPORT_ONLY",
+    "append_to_lifetime_ledger": false,
+    "case_closed": false,
+    "github_issue_mutation_allowed": false,
+    "human_review_required": true,
+    "proof_promotion_allowed": false,
+    "public_safe_promotion_allowed": false,
+    "public_safe_status": "NOT_PUBLIC_SAFE",
+    "raw_private_evidence_imported": false,
+    "runtime_candidate_only": true
+  },
+  "notes_boundary": "Linux Runtime Case Collector v0 creates private Linux-side runtime case candidates only. Candidates are not governed cases, are not public-safe proof, do not append the Lifetime Case Ledger, and require later normalizer/import handling plus separate human approval before any append, proof publication, disposition, or closure action.",
+  "proof_ceiling": "RUNTIME_CASE_COLLECTOR_V0_LINUX_PRIVATE_CANDIDATE_COLLECTION_ONLY",
+  "public_safe_status": "NOT_PUBLIC_SAFE",
+  "schema_version": "runtime-case-collector-v0-linux"
+}

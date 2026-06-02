@@ -220,6 +220,11 @@ python -B scripts\ho_factory.py collector-windows-self-test --format json
 python -B scripts\ho_factory.py collector-windows-run-once --dry-run --format json
 python -B scripts\ho_factory.py collector-windows-verify --format json
 python -B scripts\ho_factory.py collector-windows-dedupe-check --format json
+python -B scripts\ho_factory.py collector-linux-preflight --format json
+python -B scripts\ho_factory.py collector-linux-self-test --format json
+python -B scripts\ho_factory.py collector-linux-run-once --dry-run --format json
+python -B scripts\ho_factory.py collector-linux-verify --format json
+python -B scripts\ho_factory.py collector-linux-dedupe-check --format json
 ```
 
 Modes:
@@ -256,6 +261,53 @@ Windows runtime candidates are not governed cases. They remain private outputs
 awaiting separate human append approval. Public-safe status stays
 `NOT_PUBLIC_SAFE`; AI remains `AI_SUPPORT_ONLY`; disposition, publication, and
 case closure remain blocked.
+
+## Runtime Case Collector v0 Linux Lane
+
+The Linux lane is a private candidate collector only. It uses the verified
+workflow_dispatch Local GPU Triage Gate run `26006504673`, job `76438823869`,
+and the narrow runner label set `[self-hosted, ho-gpu-01, gpu, v100]`.
+
+The preferred Linux-private output route is:
+
+```text
+/var/lib/hawkinsoperations/runtime-case-collector-v0/linux/
+```
+
+The fallback Linux-private output route, if the preferred route is unavailable
+and the runner can write it, is:
+
+```text
+/home/runner/hawkinsoperations/runtime-case-collector-v0/linux/
+```
+
+The lane supports:
+
+- `collector-linux-preflight`
+- `collector-linux-self-test`
+- `collector-linux-run-once --dry-run`
+- `collector-linux-run-once --output-route <private Linux route>`
+- `collector-linux-verify`
+- `collector-linux-dedupe-check`
+
+Linux collect mode requires an explicit existing writable Linux-private output
+directory. The collector does not write to the Windows candidate route, does not
+claim Linux candidates are canonical Windows Data records, and does not
+reconcile Linux and Windows streams. A later normalizer/import lane must
+reconcile Linux and Windows private candidates into the governed Data/proof
+flow.
+
+The workflow `.github/workflows/runtime-case-collector-v0-linux.yml` is
+`workflow_dispatch` only. It must not use `pull_request` or
+`pull_request_target`, must not upload private evidence, must not push commits,
+must not create GitHub issues, must not mutate the Lifetime Case Ledger, and
+must not update proof or website repos.
+
+Linux runtime candidates are not governed cases. They remain private outputs
+awaiting separate human append approval. Public-safe status stays
+`NOT_PUBLIC_SAFE`; AI remains `AI_SUPPORT_ONLY`; disposition, publication, and
+case closure remain blocked. Governance Saves ledger accounting remains
+separate from blocked-claim and prevented-promotion metrics.
 
 ## AutoSOC Case Ledger v0
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -198,6 +199,29 @@ RUNTIME_COLLECTOR_WINDOWS_BOUNDARY = (
     "Candidates are not governed cases, are not public-safe proof, do not append the "
     "Lifetime Case Ledger, and require separate human approval before any append, "
     "proof publication, disposition, or closure action."
+)
+RUNTIME_COLLECTOR_LINUX_VERSION = "runtime-case-collector-v0-linux"
+RUNTIME_COLLECTOR_LINUX_SCHEMA = (
+    PLATFORM_ROOT / "contracts" / "schemas" / "runtime-case-collector-v0-linux.schema.json"
+)
+RUNTIME_COLLECTOR_LINUX_SAMPLE = (
+    PLATFORM_ROOT / "contracts" / "examples" / "runtime-case-collector-v0-linux.sample.json"
+)
+RUNTIME_COLLECTOR_LINUX_PROOF_CEILING = "RUNTIME_CASE_COLLECTOR_V0_LINUX_PRIVATE_CANDIDATE_COLLECTION_ONLY"
+RUNTIME_COLLECTOR_LINUX_OUTPUT_ROUTE = "/var/lib/hawkinsoperations/runtime-case-collector-v0/linux/"
+RUNTIME_COLLECTOR_LINUX_ROUTE_FALLBACK = "/home/runner/hawkinsoperations/runtime-case-collector-v0/linux/"
+RUNTIME_COLLECTOR_LINUX_VERIFIED_RUN_ID = "26006504673"
+RUNTIME_COLLECTOR_LINUX_VERIFIED_JOB_ID = "76438823869"
+RUNTIME_COLLECTOR_LINUX_VERIFIED_STATUS = "pass"
+RUNTIME_COLLECTOR_LINUX_RUNNER_LABELS = ("self-hosted", "ho-gpu-01", "gpu", "v100")
+RUNTIME_COLLECTOR_LINUX_REQUIRED_FIELDS = RUNTIME_COLLECTOR_WINDOWS_REQUIRED_FIELDS
+RUNTIME_COLLECTOR_LINUX_DEDUPE_FIELDS = RUNTIME_COLLECTOR_WINDOWS_DEDUPE_FIELDS
+RUNTIME_COLLECTOR_LINUX_BLOCKED_CLAIMS = RUNTIME_COLLECTOR_WINDOWS_BLOCKED_CLAIMS
+RUNTIME_COLLECTOR_LINUX_BOUNDARY = (
+    "Linux Runtime Case Collector v0 creates private Linux-side runtime case candidates only. "
+    "Candidates are not governed cases, are not public-safe proof, do not append the "
+    "Lifetime Case Ledger, and require later normalizer/import handling plus separate "
+    "human approval before any append, proof publication, disposition, or closure action."
 )
 LIFETIME_LEDGER_STATE_MANIFEST_ID = "LIFETIME_CASE_LEDGER_V1_PHASE_8_STATE_MANIFEST"
 LIFETIME_LEDGER_STATE_MANIFEST_VERSION = "phase_8_ledger_state_manifest_v1"
@@ -5034,6 +5058,378 @@ def runtime_collector_windows_dedupe_check(candidate_path: str | None = None) ->
     }
 
 
+def runtime_collector_linux_default_payload() -> dict[str, Any]:
+    return {
+        "detection_id": "HO-DET-001",
+        "detection_family": "process_behavior",
+        "source_system": "linux_private_infrastructure_runner",
+        "source_truth_status": "PRIVATE_WORKFLOW_DISPATCH_RUN_VERIFIED",
+        "runtime_truth_status": "PRIVATE_CANDIDATE_ONLY",
+        "signal_truth_status": "NOT_PUBLIC_SIGNAL_PROOF",
+        "observed_time_utc": "2026-05-17T23:59:30Z",
+        "sanitized_event_fingerprint": "linux-runner-ho-gpu-01-runtime-candidate-v0",
+        "source_receipt_refs": [
+            {
+                "ref_type": "github_actions_run",
+                "ref": RUNTIME_COLLECTOR_LINUX_VERIFIED_RUN_ID,
+                "status": RUNTIME_COLLECTOR_LINUX_VERIFIED_STATUS,
+            },
+            {
+                "ref_type": "github_actions_job",
+                "ref": RUNTIME_COLLECTOR_LINUX_VERIFIED_JOB_ID,
+                "status": RUNTIME_COLLECTOR_LINUX_VERIFIED_STATUS,
+            },
+        ],
+    }
+
+
+def build_runtime_collector_linux_candidate(
+    payload: dict[str, Any] | None = None,
+    *,
+    collector_run_id: str = "runtime-case-collector-v0-linux-dry-run",
+    collected_at_utc: str = "2026-06-02T00:00:00Z",
+) -> dict[str, Any]:
+    payload = dict(payload or runtime_collector_linux_default_payload())
+    candidate_payload = {
+        "detection_id": payload["detection_id"],
+        "source_system": payload["source_system"],
+        "sanitized_event_fingerprint": payload["sanitized_event_fingerprint"],
+        "source_receipt_refs": payload["source_receipt_refs"],
+        "observed_time_utc": payload.get("observed_time_utc"),
+    }
+    candidate_payload_hash = canonical_sha256(candidate_payload)
+    identity = {
+        "collector_version": RUNTIME_COLLECTOR_LINUX_VERSION,
+        "collector_lane": "linux",
+        "detection_id": payload["detection_id"],
+        "source_system": payload["source_system"],
+        "sanitized_event_fingerprint": payload["sanitized_event_fingerprint"],
+        "source_receipt_refs": payload["source_receipt_refs"],
+        "candidate_payload_hash": candidate_payload_hash,
+        "observed_time_utc": payload.get("observed_time_utc"),
+    }
+    candidate_hash = canonical_sha256(identity)
+    return {
+        "collector_version": RUNTIME_COLLECTOR_LINUX_VERSION,
+        "collector_lane": "linux",
+        "collector_run_id": collector_run_id,
+        "collected_at_utc": collected_at_utc,
+        "candidate_id": f"rccv0-linux-{candidate_hash[:16]}",
+        "candidate_hash": candidate_hash,
+        "detection_id": payload["detection_id"],
+        "detection_family": payload["detection_family"],
+        "source_system": payload["source_system"],
+        "source_truth_status": payload["source_truth_status"],
+        "runtime_truth_status": payload["runtime_truth_status"],
+        "signal_truth_status": payload["signal_truth_status"],
+        "proof_ceiling": RUNTIME_COLLECTOR_LINUX_PROOF_CEILING,
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "case_status": "RUNTIME_CANDIDATE_ONLY",
+        "triage_status": "HUMAN_REVIEW_REQUIRED",
+        "disposition_status": "NO_DISPOSITION",
+        "ai_support_mode": "AI_SUPPORT_ONLY",
+        "ai_decided_disposition": False,
+        "human_review_required": True,
+        "deterministic_close_eligible": False,
+        "deterministic_close_blocked": True,
+        "case_closed": False,
+        "append_to_lifetime_ledger": False,
+        "candidate_payload_hash": candidate_payload_hash,
+        "sanitized_event_fingerprint": payload["sanitized_event_fingerprint"],
+        "source_receipt_refs": payload["source_receipt_refs"],
+        "blocked_claims": list(RUNTIME_COLLECTOR_LINUX_BLOCKED_CLAIMS),
+        "notes_boundary": RUNTIME_COLLECTOR_LINUX_BOUNDARY,
+        "observed_time_utc": payload.get("observed_time_utc"),
+    }
+
+
+def load_runtime_collector_linux_packet(candidate_path: Path | None = None) -> dict[str, Any]:
+    if candidate_path:
+        packet = load_json(candidate_path)
+    else:
+        packet = load_json(RUNTIME_COLLECTOR_LINUX_SAMPLE)
+    if not isinstance(packet, dict):
+        raise FactoryError("Runtime Case Collector Linux packet must be an object")
+    return packet
+
+
+def runtime_collector_linux_packet(candidate: dict[str, Any] | None = None) -> dict[str, Any]:
+    candidate = candidate or build_runtime_collector_linux_candidate()
+    return {
+        "schema_version": RUNTIME_COLLECTOR_LINUX_VERSION,
+        "collector_version": RUNTIME_COLLECTOR_LINUX_VERSION,
+        "collector_lane": "linux",
+        "collector_run_id": candidate["collector_run_id"],
+        "generated_output_files": False,
+        "candidate_count": 1,
+        "duplicate_count": 0,
+        "candidates": [candidate],
+        "invariants": {
+            "public_safe_status": "NOT_PUBLIC_SAFE",
+            "ai_support_mode": "AI_SUPPORT_ONLY",
+            "ai_decided_disposition": False,
+            "human_review_required": True,
+            "case_closed": False,
+            "append_to_lifetime_ledger": False,
+            "proof_promotion_allowed": False,
+            "public_safe_promotion_allowed": False,
+            "github_issue_mutation_allowed": False,
+            "raw_private_evidence_imported": False,
+            "runtime_candidate_only": True,
+        },
+        "proof_ceiling": RUNTIME_COLLECTOR_LINUX_PROOF_CEILING,
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "notes_boundary": RUNTIME_COLLECTOR_LINUX_BOUNDARY,
+    }
+
+
+def runtime_collector_linux_dedupe_key(candidate: dict[str, Any]) -> tuple[Any, ...]:
+    values: list[Any] = []
+    for field in RUNTIME_COLLECTOR_LINUX_DEDUPE_FIELDS:
+        value = candidate.get(field)
+        if field == "source_receipt_refs":
+            value = canonical_sha256(value)
+        values.append(value)
+    return tuple(values)
+
+
+def verify_runtime_collector_linux_candidate(candidate: dict[str, Any]) -> dict[str, bool]:
+    missing = sorted(field for field in RUNTIME_COLLECTOR_LINUX_REQUIRED_FIELDS if field not in candidate)
+    if missing:
+        raise FactoryError(f"Linux runtime candidate missing required fields: {', '.join(missing)}")
+    source_receipt_refs = candidate.get("source_receipt_refs")
+    if not isinstance(source_receipt_refs, list) or not source_receipt_refs:
+        raise FactoryError("Linux runtime candidate source_receipt_refs must be a non-empty list")
+    blocked_claims = candidate.get("blocked_claims")
+    if not isinstance(blocked_claims, list) or not set(RUNTIME_COLLECTOR_LINUX_BLOCKED_CLAIMS).issubset(blocked_claims):
+        raise FactoryError("Linux runtime candidate blocked_claims is incomplete")
+    payload_hash_input = {
+        "detection_id": candidate["detection_id"],
+        "source_system": candidate["source_system"],
+        "sanitized_event_fingerprint": candidate["sanitized_event_fingerprint"],
+        "source_receipt_refs": source_receipt_refs,
+        "observed_time_utc": candidate.get("observed_time_utc"),
+    }
+    candidate_payload_hash = canonical_sha256(payload_hash_input)
+    candidate_hash_input = {
+        "collector_version": candidate["collector_version"],
+        "collector_lane": candidate["collector_lane"],
+        "detection_id": candidate["detection_id"],
+        "source_system": candidate["source_system"],
+        "sanitized_event_fingerprint": candidate["sanitized_event_fingerprint"],
+        "source_receipt_refs": source_receipt_refs,
+        "candidate_payload_hash": candidate_payload_hash,
+        "observed_time_utc": candidate.get("observed_time_utc"),
+    }
+    candidate_hash = canonical_sha256(candidate_hash_input)
+    checks = {
+        "collector_version": candidate["collector_version"] == RUNTIME_COLLECTOR_LINUX_VERSION,
+        "collector_lane": candidate["collector_lane"] == "linux",
+        "candidate_payload_hash": candidate["candidate_payload_hash"] == candidate_payload_hash,
+        "candidate_hash": candidate["candidate_hash"] == candidate_hash,
+        "candidate_id": candidate["candidate_id"] == f"rccv0-linux-{candidate_hash[:16]}",
+        "proof_ceiling": candidate["proof_ceiling"] == RUNTIME_COLLECTOR_LINUX_PROOF_CEILING,
+        "public_safe_status": candidate["public_safe_status"] == "NOT_PUBLIC_SAFE",
+        "disposition_status": candidate["disposition_status"] == "NO_DISPOSITION",
+        "ai_support_mode": candidate["ai_support_mode"] == "AI_SUPPORT_ONLY",
+        "ai_decided_disposition_false": candidate["ai_decided_disposition"] is False,
+        "human_review_required": candidate["human_review_required"] is True,
+        "deterministic_close_eligible_false": candidate["deterministic_close_eligible"] is False,
+        "deterministic_close_blocked_true": candidate["deterministic_close_blocked"] is True,
+        "case_closed_false": candidate["case_closed"] is False,
+        "append_to_lifetime_ledger_false": candidate["append_to_lifetime_ledger"] is False,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Linux runtime candidate failed checks: {', '.join(failed)}")
+    return checks
+
+
+def verify_runtime_collector_linux_packet(packet: dict[str, Any]) -> dict[str, Any]:
+    candidates = packet.get("candidates")
+    if not isinstance(candidates, list):
+        raise FactoryError("Linux runtime collector packet candidates must be a list")
+    seen: set[tuple[Any, ...]] = set()
+    duplicate_count = 0
+    candidate_checks: list[dict[str, bool]] = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            raise FactoryError("Linux runtime collector candidate must be an object")
+        candidate_checks.append(verify_runtime_collector_linux_candidate(candidate))
+        key = runtime_collector_linux_dedupe_key(candidate)
+        if key in seen:
+            duplicate_count += 1
+        seen.add(key)
+    checks = {
+        "schema_version": packet.get("schema_version") == RUNTIME_COLLECTOR_LINUX_VERSION,
+        "collector_lane": packet.get("collector_lane") == "linux",
+        "public_safe_status": packet.get("public_safe_status") == "NOT_PUBLIC_SAFE",
+        "proof_ceiling": packet.get("proof_ceiling") == RUNTIME_COLLECTOR_LINUX_PROOF_CEILING,
+        "candidate_count_matches": packet.get("candidate_count") == len(candidates),
+        "duplicate_count_matches": packet.get("duplicate_count", duplicate_count) == duplicate_count,
+        "no_duplicates": duplicate_count == 0,
+        "append_to_lifetime_ledger_blocked": all(
+            candidate.get("append_to_lifetime_ledger") is False for candidate in candidates
+        ),
+        "case_closure_blocked": all(candidate.get("case_closed") is False for candidate in candidates),
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Linux runtime collector packet failed checks: {', '.join(failed)}")
+    return {
+        "status": "pass",
+        "candidate_count": len(candidates),
+        "duplicate_count": duplicate_count,
+        "checks": checks,
+        "candidate_checks": candidate_checks,
+    }
+
+
+def runtime_collector_linux_preflight(output_route: str | None = None) -> dict[str, Any]:
+    route_status: dict[str, Any] = {
+        "preferred_output_route": RUNTIME_COLLECTOR_LINUX_OUTPUT_ROUTE,
+        "fallback_output_route": RUNTIME_COLLECTOR_LINUX_ROUTE_FALLBACK,
+        "output_route_required_for_collect": True,
+        "output_route_supplied": bool(output_route),
+        "route_exists": None,
+        "route_is_dir": None,
+        "route_writable": None,
+        "route_writable_probe": "metadata_only_no_file_created",
+    }
+    if output_route:
+        route_path = Path(output_route).resolve()
+        route_status["route_exists"] = route_path.exists()
+        route_status["route_is_dir"] = route_path.is_dir()
+        route_status["route_writable"] = os.access(route_path, os.W_OK) if route_path.exists() else False
+        if not all((route_status["route_exists"], route_status["route_is_dir"], route_status["route_writable"])):
+            raise FactoryError("Linux collector output route is not an existing writable directory")
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "collector-linux-preflight",
+        "collector_version": RUNTIME_COLLECTOR_LINUX_VERSION,
+        "collector_lane": "linux",
+        "generated_output_files": False,
+        "runner_labels": list(RUNTIME_COLLECTOR_LINUX_RUNNER_LABELS),
+        "verified_workflow_run_id": RUNTIME_COLLECTOR_LINUX_VERIFIED_RUN_ID,
+        "verified_workflow_job_id": RUNTIME_COLLECTOR_LINUX_VERIFIED_JOB_ID,
+        "verified_workflow_status": RUNTIME_COLLECTOR_LINUX_VERIFIED_STATUS,
+        "workflow_trigger_required": "workflow_dispatch",
+        "pull_request_allowed": False,
+        "pull_request_target_allowed": False,
+        "lifetime_case_ledger_mutation_allowed": False,
+        "governed_case_append_allowed": False,
+        "public_safe_promotion_allowed": False,
+        "linux_candidates_require_later_normalizer_import": True,
+        "route_status": route_status,
+        "status": "pass",
+    }
+
+
+def runtime_collector_linux_run_once(dry_run: bool, output_route: str | None = None) -> dict[str, Any]:
+    candidate = build_runtime_collector_linux_candidate()
+    packet = runtime_collector_linux_packet(candidate)
+    verification = verify_runtime_collector_linux_packet(packet)
+    output: dict[str, Any] = {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "collector-linux-run-once",
+        "collector_version": RUNTIME_COLLECTOR_LINUX_VERSION,
+        "collector_lane": "linux",
+        "dry_run": dry_run,
+        "generated_output_files": False,
+        "candidate_count": verification["candidate_count"],
+        "duplicate_count": verification["duplicate_count"],
+        "status": "pass",
+        "packet": packet,
+    }
+    if dry_run:
+        return output
+    if not output_route:
+        raise FactoryError("collector-linux-run-once collect mode requires --output-route")
+    route_path = Path(output_route).resolve()
+    if not route_path.is_dir() or not os.access(route_path, os.W_OK):
+        raise FactoryError("collector-linux-run-once requires an existing writable Linux-private output route")
+    output_file = route_path / f"{candidate['collector_run_id']}-{candidate['candidate_id']}.json"
+    if output_file.exists():
+        output["generated_output_files"] = False
+        output["duplicate_preserved"] = True
+        output["output_file"] = str(output_file)
+        return output
+    output_file.write_text(json.dumps(packet, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    output["generated_output_files"] = True
+    output["duplicate_preserved"] = False
+    output["output_file"] = str(output_file)
+    return output
+
+
+def runtime_collector_linux_self_test() -> dict[str, Any]:
+    packet = runtime_collector_linux_packet()
+    verification = verify_runtime_collector_linux_packet(packet)
+    duplicate_candidates = [packet["candidates"][0], dict(packet["candidates"][0])]
+    duplicate_keys = [runtime_collector_linux_dedupe_key(candidate) for candidate in duplicate_candidates]
+    duplicate_count = len(duplicate_keys) - len(set(duplicate_keys))
+    mutated_candidate = dict(packet["candidates"][0])
+    mutated_candidate["ai_decided_disposition"] = True
+    mutation_blocked = False
+    try:
+        verify_runtime_collector_linux_candidate(mutated_candidate)
+    except FactoryError:
+        mutation_blocked = True
+    checks = {
+        "sample_candidate_valid": verification["status"] == "pass",
+        "duplicate_detected": duplicate_count == 1,
+        "unsupported_disposition_mutation_blocked": mutation_blocked,
+        "verified_workflow_run_passed": RUNTIME_COLLECTOR_LINUX_VERIFIED_STATUS == "pass",
+        "lifetime_case_ledger_mutation_blocked": packet["invariants"]["append_to_lifetime_ledger"] is False,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Linux runtime collector self-test failed checks: {', '.join(failed)}")
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "collector-linux-self-test",
+        "collector_version": RUNTIME_COLLECTOR_LINUX_VERSION,
+        "collector_lane": "linux",
+        "generated_output_files": False,
+        "status": "pass",
+        "candidate_count": verification["candidate_count"],
+        "duplicate_count": verification["duplicate_count"],
+        "checks": checks,
+    }
+
+
+def runtime_collector_linux_verify(candidate_path: str | None = None) -> dict[str, Any]:
+    packet = load_runtime_collector_linux_packet(Path(candidate_path).resolve() if candidate_path else None)
+    verification = verify_runtime_collector_linux_packet(packet)
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "collector-linux-verify",
+        "collector_version": RUNTIME_COLLECTOR_LINUX_VERSION,
+        "collector_lane": "linux",
+        "generated_output_files": False,
+        "status": verification["status"],
+        "candidate_count": verification["candidate_count"],
+        "duplicate_count": verification["duplicate_count"],
+        "checks": verification["checks"],
+    }
+
+
+def runtime_collector_linux_dedupe_check(candidate_path: str | None = None) -> dict[str, Any]:
+    packet = load_runtime_collector_linux_packet(Path(candidate_path).resolve() if candidate_path else None)
+    verification = verify_runtime_collector_linux_packet(packet)
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "collector-linux-dedupe-check",
+        "collector_version": RUNTIME_COLLECTOR_LINUX_VERSION,
+        "collector_lane": "linux",
+        "generated_output_files": False,
+        "status": "pass",
+        "candidate_count": verification["candidate_count"],
+        "duplicate_count": verification["duplicate_count"],
+        "dedupe_fields": list(RUNTIME_COLLECTOR_LINUX_DEDUPE_FIELDS),
+        "dedupe_result": "no_duplicates",
+    }
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Detection Factory Controller v0")
     subparsers = parser.add_subparsers(dest="mode", required=True)
@@ -5140,6 +5536,21 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--candidate")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-windows-dedupe-check")
+    sub.add_argument("--candidate")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("collector-linux-preflight")
+    sub.add_argument("--output-route")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("collector-linux-self-test")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("collector-linux-run-once")
+    sub.add_argument("--dry-run", action="store_true")
+    sub.add_argument("--output-route")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("collector-linux-verify")
+    sub.add_argument("--candidate")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("collector-linux-dedupe-check")
     sub.add_argument("--candidate")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("self-test-id-det-001-missing-surfaces")
@@ -5353,6 +5764,31 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "collector-windows-dedupe-check":
         output = runtime_collector_windows_dedupe_check(args.candidate)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "collector-linux-preflight":
+        output = runtime_collector_linux_preflight(args.output_route)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "collector-linux-self-test":
+        output = runtime_collector_linux_self_test()
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "collector-linux-run-once":
+        output = runtime_collector_linux_run_once(args.dry_run, args.output_route)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "collector-linux-verify":
+        output = runtime_collector_linux_verify(args.candidate)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "collector-linux-dedupe-check":
+        output = runtime_collector_linux_dedupe_check(args.candidate)
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
