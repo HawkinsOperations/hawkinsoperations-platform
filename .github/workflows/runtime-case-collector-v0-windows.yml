@@ -1,0 +1,56 @@
+name: Runtime Case Collector v0 Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      collector_output_route:
+        description: Private Windows collector output route on the trusted runner host
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  collect-windows-candidates:
+    name: Collect Windows runtime candidates
+    runs-on: [self-hosted, Windows, X64]
+    steps:
+      - name: Check out platform repo
+        uses: actions/checkout@v4
+
+      - name: Preflight Windows collector lane
+        shell: pwsh
+        env:
+          COLLECTOR_OUTPUT_ROUTE: ${{ inputs.collector_output_route }}
+        run: |
+          $route = $env:COLLECTOR_OUTPUT_ROUTE
+          python -B scripts\ho_factory.py collector-windows-preflight --output-route "$route" --format json
+
+      - name: Self-test Windows collector lane
+        shell: pwsh
+        run: |
+          python -B scripts\ho_factory.py collector-windows-self-test --format json
+
+      - name: Dry-run Windows collector lane
+        shell: pwsh
+        run: |
+          python -B scripts\ho_factory.py collector-windows-run-once --dry-run --format json
+
+      - name: Collect Windows private candidates
+        shell: pwsh
+        env:
+          COLLECTOR_OUTPUT_ROUTE: ${{ inputs.collector_output_route }}
+        run: |
+          $route = $env:COLLECTOR_OUTPUT_ROUTE
+          python -B scripts\ho_factory.py collector-windows-run-once --output-route "$route" --format json
+
+      - name: Verify Windows collector sample
+        shell: pwsh
+        run: |
+          python -B scripts\ho_factory.py collector-windows-verify --format json
+
+      - name: Check Windows collector dedupe
+        shell: pwsh
+        run: |
+          python -B scripts\ho_factory.py collector-windows-dedupe-check --format json
