@@ -215,6 +215,11 @@ python -B scripts\ho_factory.py plan --detection ID-DET-003 --repo-root .. --for
 python -B scripts\ho_factory.py plan --detection ID-DET-004 --repo-root .. --format json
 python -B scripts\ho_factory.py plan --detection all --repo-root .. --format json
 python -B scripts\ho_factory.py self-test-id-det-001-missing-surfaces --format json
+python -B scripts\ho_factory.py collector-windows-preflight --format json
+python -B scripts\ho_factory.py collector-windows-self-test --format json
+python -B scripts\ho_factory.py collector-windows-run-once --dry-run --format json
+python -B scripts\ho_factory.py collector-windows-verify --format json
+python -B scripts\ho_factory.py collector-windows-dedupe-check --format json
 ```
 
 Modes:
@@ -222,7 +227,35 @@ Modes:
 - `status` prints the current reviewer packet.
 - `plan` prints the same packet with next allowed move and stop conditions.
 
-The CLI writes to stdout only. It must not create generated output files.
+The status, plan, verifier, and dry-run modes write to stdout only. The Windows
+collector collect mode may write private candidate packets only when an explicit
+trusted-runner output route is supplied.
+
+## Runtime Case Collector v0 Windows Lane
+
+The Windows lane is a private candidate collector only. It uses the verified
+Windows self-hosted route probe from GitHub Actions run `26849122652` and the
+runner label set `[self-hosted, Windows, X64]`.
+
+The lane supports:
+
+- `collector-windows-preflight`
+- `collector-windows-self-test`
+- `collector-windows-run-once --dry-run`
+- `collector-windows-run-once --output-route <private Windows route>`
+- `collector-windows-verify`
+- `collector-windows-dedupe-check`
+
+The workflow `.github/workflows/runtime-case-collector-v0-windows.yml` is
+`workflow_dispatch` only. It must not use `pull_request` or
+`pull_request_target`, must not upload private evidence, must not push commits,
+must not create GitHub issues, must not mutate the Lifetime Case Ledger, and
+must not update proof or website repos.
+
+Windows runtime candidates are not governed cases. They remain private outputs
+awaiting separate human append approval. Public-safe status stays
+`NOT_PUBLIC_SAFE`; AI remains `AI_SUPPORT_ONLY`; disposition, publication, and
+case closure remain blocked.
 
 ## AutoSOC Case Ledger v0
 

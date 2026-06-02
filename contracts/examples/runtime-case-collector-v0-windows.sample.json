@@ -1,0 +1,76 @@
+{
+  "candidate_count": 1,
+  "candidates": [
+    {
+      "ai_decided_disposition": false,
+      "ai_support_mode": "AI_SUPPORT_ONLY",
+      "append_to_lifetime_ledger": false,
+      "blocked_claims": [
+        "public-safe runtime proof",
+        "runtime-active public status",
+        "signal-observed public status",
+        "SOCaaS deployment",
+        "production deployment",
+        "autonomous SOC",
+        "AI-decided disposition",
+        "analyst-approved disposition",
+        "case closure",
+        "Lifetime Case Ledger mutation"
+      ],
+      "candidate_hash": "cc6ce762092018a1097528e641d6ced76738d62556812084684d015c98797e18",
+      "candidate_id": "rccv0-win-cc6ce762092018a1",
+      "candidate_payload_hash": "5031ce773144630bf7edf7d5ba5599b2faa4230c2e99b3fc93e173a6df07a0ac",
+      "case_closed": false,
+      "case_status": "RUNTIME_CANDIDATE_ONLY",
+      "collected_at_utc": "2026-06-02T00:00:00Z",
+      "collector_lane": "windows",
+      "collector_run_id": "runtime-case-collector-v0-windows-dry-run",
+      "collector_version": "runtime-case-collector-v0-windows",
+      "deterministic_close_blocked": true,
+      "deterministic_close_eligible": false,
+      "detection_family": "process_behavior",
+      "detection_id": "HO-DET-001",
+      "disposition_status": "NO_DISPOSITION",
+      "human_review_required": true,
+      "notes_boundary": "Windows Runtime Case Collector v0 creates private runtime case candidates only. Candidates are not governed cases, are not public-safe proof, do not append the Lifetime Case Ledger, and require separate human approval before any append, proof publication, disposition, or closure action.",
+      "observed_time_utc": "2026-06-02T00:00:00Z",
+      "proof_ceiling": "RUNTIME_CASE_COLLECTOR_V0_WINDOWS_PRIVATE_CANDIDATE_COLLECTION_ONLY",
+      "public_safe_status": "NOT_PUBLIC_SAFE",
+      "runtime_truth_status": "PRIVATE_CANDIDATE_ONLY",
+      "sanitized_event_fingerprint": "windows-route-probe-ho-det-001-v0",
+      "signal_truth_status": "NOT_PUBLIC_SIGNAL_PROOF",
+      "source_receipt_refs": [
+        {
+          "ref": "26849122652",
+          "ref_type": "github_actions_run",
+          "status": "pass"
+        }
+      ],
+      "source_system": "windows_private_route_probe",
+      "source_truth_status": "PRIVATE_ROUTE_PROBE_VERIFIED",
+      "triage_status": "HUMAN_REVIEW_REQUIRED"
+    }
+  ],
+  "collector_lane": "windows",
+  "collector_run_id": "runtime-case-collector-v0-windows-dry-run",
+  "collector_version": "runtime-case-collector-v0-windows",
+  "duplicate_count": 0,
+  "generated_output_files": false,
+  "invariants": {
+    "ai_decided_disposition": false,
+    "ai_support_mode": "AI_SUPPORT_ONLY",
+    "append_to_lifetime_ledger": false,
+    "case_closed": false,
+    "github_issue_mutation_allowed": false,
+    "human_review_required": true,
+    "proof_promotion_allowed": false,
+    "public_safe_promotion_allowed": false,
+    "public_safe_status": "NOT_PUBLIC_SAFE",
+    "raw_private_evidence_imported": false,
+    "runtime_candidate_only": true
+  },
+  "notes_boundary": "Windows Runtime Case Collector v0 creates private runtime case candidates only. Candidates are not governed cases, are not public-safe proof, do not append the Lifetime Case Ledger, and require separate human approval before any append, proof publication, disposition, or closure action.",
+  "proof_ceiling": "RUNTIME_CASE_COLLECTOR_V0_WINDOWS_PRIVATE_CANDIDATE_COLLECTION_ONLY",
+  "public_safe_status": "NOT_PUBLIC_SAFE",
+  "schema_version": "runtime-case-collector-v0-windows"
+}
