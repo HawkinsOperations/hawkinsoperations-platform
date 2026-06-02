@@ -225,6 +225,11 @@ python -B scripts\ho_factory.py collector-linux-self-test --format json
 python -B scripts\ho_factory.py collector-linux-run-once --dry-run --format json
 python -B scripts\ho_factory.py collector-linux-verify --format json
 python -B scripts\ho_factory.py collector-linux-dedupe-check --format json
+python -B scripts\ho_factory.py collector-normalizer-self-test --format json
+python -B scripts\ho_factory.py collector-normalizer-plan --format json
+python -B scripts\ho_factory.py collector-normalizer-verify --format json
+python -B scripts\ho_factory.py collector-normalizer-dedupe-check --format json
+python -B scripts\ho_factory.py collector-normalizer-append-approved --append-approval "APPEND_APPROVED: promote normalized runtime candidates to Lifetime Case Ledger governed cases" --format json
 ```
 
 Modes:
@@ -308,6 +313,69 @@ awaiting separate human append approval. Public-safe status stays
 `NOT_PUBLIC_SAFE`; AI remains `AI_SUPPORT_ONLY`; disposition, publication, and
 case closure remain blocked. Governance Saves ledger accounting remains
 separate from blocked-claim and prevented-promotion metrics.
+
+## Runtime Case Collector v0 Normalizer and Append Gate
+
+The normalizer and append gate merge the Windows and Linux private runtime
+candidate streams into one canonical append plan. The default behavior is
+plan-only: it normalizes, dedupes, classifies append eligibility, and returns a
+bounded append plan without mutating the Lifetime Case Ledger.
+
+The normalizer supports:
+
+- `collector-normalizer-self-test`
+- `collector-normalizer-plan --windows-candidate <path> --linux-candidate <path>`
+- `collector-normalizer-verify --candidate-plan <path>`
+- `collector-normalizer-dedupe-check --candidate-plan <path>`
+- `collector-normalizer-append-approved --candidate-plan <path> --append-approval "<approval phrase>"`
+
+If candidate paths are omitted, the plan command uses the source-controlled
+Windows and Linux sample packets. The sample plan currently normalizes one
+Windows candidate and one Linux candidate:
+
+- `source_windows_candidate_count=1`
+- `source_linux_candidate_count=1`
+- `normalized_candidate_count=2`
+- `duplicate_count=0`
+- `append_ready_count=2`
+- `blocked_count=0`
+
+Append-ready means only that the normalized candidate passed deterministic
+shape, boundary, and dedupe checks and still requires exact human approval.
+Candidate count is not governed case count. Detection activity count is not
+governed case count. Governance Saves ledger accounting remains separate from
+blocked-claim and prevented-promotion metrics.
+
+The exact approval phrase required before `collector-normalizer-append-approved`
+can mutate the Lifetime Case Ledger is:
+
+```text
+APPEND_APPROVED: promote normalized runtime candidates to Lifetime Case Ledger governed cases
+```
+
+Without that exact phrase, `collector-normalizer-append-approved` returns a
+blocked result with:
+
+- `append_performed=false`
+- `lifetime_ledger_mutated=false`
+- `governed_cases_appended=false`
+
+The append gate re-verifies the candidate plan before any approved append,
+rejects duplicates, preserves `NOT_PUBLIC_SAFE`, keeps `AI_SUPPORT_ONLY`, keeps
+`ai_decided_disposition=false`, keeps `case_closed=false`, and does not publish
+proof, update proof or website repos, create GitHub issues, upload private
+evidence, or promote runtime/signal/SOCaaS/production/disposition/closure
+claims.
+
+The normalizer proof ceiling is:
+
+```text
+RUNTIME_CASE_COLLECTOR_V0_NORMALIZER_APPEND_GATE_EXISTS_NO_LEDGER_MUTATION_UNLESS_APPEND_APPROVED
+```
+
+Runtime candidates are not governed cases until the append gate is run with the
+exact approval phrase and all append invariants pass. Website rendering, GitHub
+Projects, and green CI remain non-authoritative for proof promotion.
 
 ## AutoSOC Case Ledger v0
 
