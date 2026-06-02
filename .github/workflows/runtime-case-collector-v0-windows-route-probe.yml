@@ -1,0 +1,63 @@
+name: Runtime Case Collector v0 Windows Route Probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-case-collector-v0-windows-route-probe
+  cancel-in-progress: false
+
+jobs:
+  windows-route-probe:
+    name: Windows collector private route probe
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
+
+    steps:
+      - name: Confirm safe runner context
+        shell: pwsh
+        run: |
+          Write-Output "RUNNER_OS=$env:RUNNER_OS"
+          Write-Output "PROBE_TIME_UTC=$((Get-Date).ToUniversalTime().ToString('o'))"
+          if ($env:RUNNER_OS -ne 'Windows') {
+            Write-Output "WINDOWS_ROUTE_PROBE=fail_non_windows_runner"
+            exit 1
+          }
+
+      - name: Probe private collector output route
+        shell: pwsh
+        run: |
+          $route = 'C:\Raylee\Data\HawkinsOperations\runtime-case-collector-v0\windows'
+          $routeExistsBefore = Test-Path -LiteralPath $route
+          if (-not $routeExistsBefore) {
+            New-Item -ItemType Directory -Path $route -Force | Out-Null
+          }
+          $probeName = "route-probe-$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT).txt"
+          $probePath = Join-Path -Path $route -ChildPath $probeName
+          $probeBody = @(
+            'WINDOWS_ROUTE_PROBE=pass',
+            "RUN_ID=$env:GITHUB_RUN_ID",
+            "RUN_ATTEMPT=$env:GITHUB_RUN_ATTEMPT",
+            "PROBE_TIME_UTC=$((Get-Date).ToUniversalTime().ToString('o'))"
+          )
+          Set-Content -LiteralPath $probePath -Value $probeBody -Encoding UTF8
+          $writeSucceeded = Test-Path -LiteralPath $probePath
+          Write-Output "ROUTE_EXISTS_BEFORE=$routeExistsBefore"
+          Write-Output "ROUTE_EXISTS_AFTER=$(Test-Path -LiteralPath $route)"
+          Write-Output "WRITE_SUCCEEDED=$writeSucceeded"
+          if (-not $writeSucceeded) {
+            Write-Output "WINDOWS_ROUTE_PROBE=fail_write"
+            exit 1
+          }
+          Write-Output "WINDOWS_ROUTE_PROBE=pass"
+
+      - name: Confirm no collector or ledger mutation
+        shell: pwsh
+        run: |
+          Write-Output "RUNTIME_CASE_COLLECTOR_BUILT=false"
+          Write-Output "LIFETIME_CASE_LEDGER_MUTATED=false"
+          Write-Output "GOVERNED_CASES_APPENDED=false"
+          Write-Output "PUBLIC_SAFE_PROMOTION=false"
