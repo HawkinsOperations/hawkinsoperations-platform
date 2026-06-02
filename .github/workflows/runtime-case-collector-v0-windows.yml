@@ -21,8 +21,11 @@ jobs:
 
       - name: Preflight Windows collector lane
         shell: pwsh
+        env:
+          COLLECTOR_OUTPUT_ROUTE: ${{ inputs.collector_output_route }}
         run: |
-          python -B scripts\ho_factory.py collector-windows-preflight --output-route "${{ inputs.collector_output_route }}" --format json
+          $route = $env:COLLECTOR_OUTPUT_ROUTE
+          python -B scripts\ho_factory.py collector-windows-preflight --output-route "$route" --format json
 
       - name: Self-test Windows collector lane
         shell: pwsh
@@ -36,8 +39,11 @@ jobs:
 
       - name: Collect Windows private candidates
         shell: pwsh
+        env:
+          COLLECTOR_OUTPUT_ROUTE: ${{ inputs.collector_output_route }}
         run: |
-          python -B scripts\ho_factory.py collector-windows-run-once --output-route "${{ inputs.collector_output_route }}" --format json
+          $route = $env:COLLECTOR_OUTPUT_ROUTE
+          python -B scripts\ho_factory.py collector-windows-run-once --output-route "$route" --format json
 
       - name: Verify Windows collector sample
         shell: pwsh
