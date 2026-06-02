@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HawkinsOperations/hawkinsoperations-platform/contracts/schemas/runtime-route-proof-v1-private-candidate.schema.json",
+  "title": "Runtime Route Proof v1 Private Candidate Packet",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "marker_id",
+    "private_route",
+    "receipts",
+    "deterministic_verifier_status",
+    "manifest_verified",
+    "lifetime_governed_cases",
+    "public_safe_count",
+    "public_safe_status",
+    "proof_ceiling",
+    "preservation_ceiling",
+    "reviewer_safe_packet",
+    "claim_boundary"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "runtime-route-proof-v1-private-candidate-v1"
+    },
+    "marker_id": {
+      "const": "HO-RUNTIME-V1-20260601T120922Z-BATCH764"
+    },
+    "private_route": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "Wazuh" },
+        { "const": "Cribl" },
+        { "const": "Splunk" }
+      ],
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "receipts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wazuh", "cribl", "splunk"],
+      "properties": {
+        "wazuh": { "const": "PASS" },
+        "cribl": { "const": "PASS" },
+        "splunk": { "const": "PASS" }
+      }
+    },
+    "deterministic_verifier_status": {
+      "const": "PASS_ROUTE_RECEIPTS"
+    },
+    "manifest_verified": {
+      "type": "boolean",
+      "const": true
+    },
+    "lifetime_governed_cases": {
+      "type": "integer",
+      "const": 4
+    },
+    "public_safe_count": {
+      "type": "integer",
+      "const": 0
+    },
+    "public_safe_status": {
+      "const": "NOT_PUBLIC_SAFE"
+    },
+    "proof_ceiling": {
+      "const": "PRIVATE_RUNTIME_ROUTE_PROOF_V1_CANDIDATE"
+    },
+    "preservation_ceiling": {
+      "const": "PRIVATE_RUNTIME_ROUTE_PROOF_V1_CANDIDATE_PRESERVED"
+    },
+    "reviewer_safe_packet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "sha256", "raw_private_evidence_in_repo"],
+      "properties": {
+        "filename": {
+          "const": "HO-RUNTIME-ROUTE-PROOF-V1-PRIVATE-REVIEWER-SAFE-2026-06-01.zip"
+        },
+        "sha256": {
+          "const": "3a1d4472bffcce68cff6e101c54e06b5a67528338bda174e6fef209fa9b1b278"
+        },
+        "raw_private_evidence_in_repo": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "claim_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "public_safe_runtime_proof",
+        "production_soc_operation",
+        "autonomous_soc_operation",
+        "ai_decided_disposition",
+        "lifetime_governed_case_mutation",
+        "public_publication_approved",
+        "human_review_required"
+      ],
+      "properties": {
+        "public_safe_runtime_proof": { "type": "boolean", "const": false },
+        "production_soc_operation": { "type": "boolean", "const": false },
+        "autonomous_soc_operation": { "type": "boolean", "const": false },
+        "ai_decided_disposition": { "type": "boolean", "const": false },
+        "lifetime_governed_case_mutation": { "type": "boolean", "const": false },
+        "public_publication_approved": { "type": "boolean", "const": false },
+        "human_review_required": { "type": "boolean", "const": true }
+      }
+    }
+  }
+}
