@@ -1,0 +1,60 @@
+name: Runtime Case Collector v0 Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      collect_candidates:
+        description: Write private Linux candidates only after route preflight passes
+        required: true
+        type: boolean
+        default: false
+      collector_output_route:
+        description: Private Linux collector output route on the trusted runner host
+        required: true
+        type: string
+        default: /var/lib/hawkinsoperations/runtime-case-collector-v0/linux/
+
+permissions:
+  contents: read
+
+jobs:
+  collect-linux-candidates:
+    name: Collect Linux runtime candidates
+    runs-on: [self-hosted, ho-gpu-01, gpu, v100]
+    steps:
+      - name: Check out platform repo
+        uses: actions/checkout@v4
+
+      - name: Preflight Linux collector lane
+        run: |
+          python3 -B scripts/ho_factory.py collector-linux-preflight --format json
+
+      - name: Self-test Linux collector lane
+        run: |
+          python3 -B scripts/ho_factory.py collector-linux-self-test --format json
+
+      - name: Dry-run Linux collector lane
+        run: |
+          python3 -B scripts/ho_factory.py collector-linux-run-once --dry-run --format json
+
+      - name: Verify Linux private output route
+        if: ${{ inputs.collect_candidates }}
+        env:
+          COLLECTOR_OUTPUT_ROUTE: ${{ inputs.collector_output_route }}
+        run: |
+          python3 -B scripts/ho_factory.py collector-linux-preflight --output-route "$COLLECTOR_OUTPUT_ROUTE" --format json
+
+      - name: Collect Linux private candidates
+        if: ${{ inputs.collect_candidates }}
+        env:
+          COLLECTOR_OUTPUT_ROUTE: ${{ inputs.collector_output_route }}
+        run: |
+          python3 -B scripts/ho_factory.py collector-linux-run-once --output-route "$COLLECTOR_OUTPUT_ROUTE" --format json
+
+      - name: Verify Linux collector sample
+        run: |
+          python3 -B scripts/ho_factory.py collector-linux-verify --format json
+
+      - name: Check Linux collector dedupe
+        run: |
+          python3 -B scripts/ho_factory.py collector-linux-dedupe-check --format json
