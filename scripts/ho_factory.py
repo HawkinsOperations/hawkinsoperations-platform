@@ -5285,18 +5285,31 @@ def verify_runtime_collector_linux_packet(packet: dict[str, Any]) -> dict[str, A
     }
 
 
+def normalize_linux_collector_route(output_route: str) -> str:
+    normalized = output_route.replace("\\", "/").rstrip("/")
+    allowed = {
+        RUNTIME_COLLECTOR_LINUX_OUTPUT_ROUTE.rstrip("/"),
+        RUNTIME_COLLECTOR_LINUX_ROUTE_FALLBACK.rstrip("/"),
+    }
+    if normalized not in allowed:
+        raise FactoryError("Linux collector output route is not an approved Linux-private collector route")
+    return normalized + "/"
+
+
 def runtime_collector_linux_preflight(output_route: str | None = None) -> dict[str, Any]:
     route_status: dict[str, Any] = {
         "preferred_output_route": RUNTIME_COLLECTOR_LINUX_OUTPUT_ROUTE,
         "fallback_output_route": RUNTIME_COLLECTOR_LINUX_ROUTE_FALLBACK,
         "output_route_required_for_collect": True,
         "output_route_supplied": bool(output_route),
+        "approved_linux_private_route": None,
         "route_exists": None,
         "route_is_dir": None,
         "route_writable": None,
         "route_writable_probe": "metadata_only_no_file_created",
     }
     if output_route:
+        route_status["approved_linux_private_route"] = normalize_linux_collector_route(output_route)
         route_path = Path(output_route).resolve()
         route_status["route_exists"] = route_path.exists()
         route_status["route_is_dir"] = route_path.is_dir()
@@ -5345,6 +5358,7 @@ def runtime_collector_linux_run_once(dry_run: bool, output_route: str | None = N
         return output
     if not output_route:
         raise FactoryError("collector-linux-run-once collect mode requires --output-route")
+    normalize_linux_collector_route(output_route)
     route_path = Path(output_route).resolve()
     if not route_path.is_dir() or not os.access(route_path, os.W_OK):
         raise FactoryError("collector-linux-run-once requires an existing writable Linux-private output route")
