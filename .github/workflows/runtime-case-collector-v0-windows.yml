@@ -7,6 +7,8 @@ on:
         description: Private Windows collector output route on the trusted runner host
         required: true
         type: string
+  schedule:
+    - cron: "0 * * * *"
 
 permissions:
   contents: read
@@ -22,10 +24,25 @@ jobs:
       - name: Preflight Windows collector lane
         shell: pwsh
         env:
-          COLLECTOR_OUTPUT_ROUTE: ${{ inputs.collector_output_route }}
+          COLLECTOR_OUTPUT_ROUTE: ${{ github.event_name == 'schedule' && vars.RCC_WINDOWS_OUTPUT_ROUTE || inputs.collector_output_route }}
         run: |
           $route = $env:COLLECTOR_OUTPUT_ROUTE
-          python -B scripts\ho_factory.py collector-windows-preflight --output-route "$route" --format json
+          if ([string]::IsNullOrWhiteSpace($route)) {
+            Write-Error "RCC_WINDOWS_OUTPUT_ROUTE is required for scheduled collection, and collector_output_route is required for workflow_dispatch."
+            exit 1
+          }
+          $preflight = python -B scripts\ho_factory.py collector-windows-preflight --output-route "$route" --format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $preflightJson = $preflight | ConvertFrom-Json
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Runtime Case Collector v0 Windows"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- collector lane: windows"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- workflow run ID: $env:GITHUB_RUN_ID"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- route approved: $($preflightJson.route_status.approved_windows_private_route -ne $null)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- route exists: $($preflightJson.route_status.route_exists)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- route writable: $($preflightJson.route_status.route_writable)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- append_to_lifetime_ledger: false"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- governed_cases_appended: false"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- public_safe_status: NOT_PUBLIC_SAFE"
 
       - name: Self-test Windows collector lane
         shell: pwsh
@@ -40,10 +57,20 @@ jobs:
       - name: Collect Windows private candidates
         shell: pwsh
         env:
-          COLLECTOR_OUTPUT_ROUTE: ${{ inputs.collector_output_route }}
+          COLLECTOR_OUTPUT_ROUTE: ${{ github.event_name == 'schedule' && vars.RCC_WINDOWS_OUTPUT_ROUTE || inputs.collector_output_route }}
         run: |
           $route = $env:COLLECTOR_OUTPUT_ROUTE
-          python -B scripts\ho_factory.py collector-windows-run-once --output-route "$route" --format json
+          if ([string]::IsNullOrWhiteSpace($route)) {
+            Write-Error "RCC_WINDOWS_OUTPUT_ROUTE is required for scheduled collection, and collector_output_route is required for workflow_dispatch."
+            exit 1
+          }
+          $collect = python -B scripts\ho_factory.py collector-windows-run-once --output-route "$route" --format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $collectJson = $collect | ConvertFrom-Json
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- candidate_count: $($collectJson.candidate_count)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- duplicate_count: $($collectJson.duplicate_count)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- generated_output_files: $($collectJson.generated_output_files)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- final boundary: RUNTIME_CASE_COLLECTOR_V0_WINDOWS_PRIVATE_CANDIDATE_COLLECTION_ONLY"
 
       - name: Verify Windows collector sample
         shell: pwsh
