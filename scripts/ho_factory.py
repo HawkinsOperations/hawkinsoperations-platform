@@ -5881,10 +5881,20 @@ def normalized_candidate_to_lifetime_case_event(candidate: dict[str, Any], inser
         "case_closed": False,
         "legacy_import_count": 0,
         "payload_json": payload,
+        "sanitized_event_fingerprint": candidate["sanitized_event_fingerprint"],
         "source_packet_ref": candidate["normalized_candidate_id"],
     }
     scan_private_markers("Runtime Case Collector v0 normalizer append event", case_event)
     return case_event
+
+
+def normalizer_append_dedupe_event(event: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "event_hash": event["event_hash"],
+        "case_id": event["case_id"],
+        "payload_hash": canonical_sha256(event["payload_json"]),
+        "sanitized_event_fingerprint": event["sanitized_event_fingerprint"],
+    }
 
 
 def runtime_collector_normalizer_append_approved(
@@ -5919,12 +5929,7 @@ def runtime_collector_normalizer_append_approved(
     with connect_read_only_ledger(approved_target) as conn:
         before_metrics = lifetime_ledger_metrics(conn)
         for event in case_events:
-            dedupe = lifetime_append_gate_dedupe(conn, {
-                "event_hash": event["event_hash"],
-                "case_id": event["case_id"],
-                "payload_hash": canonical_sha256(event["payload_json"]),
-                "sanitized_event_fingerprint": event["sanitized_event_fingerprint"],
-            })
+            dedupe = lifetime_append_gate_dedupe(conn, normalizer_append_dedupe_event(event))
             if dedupe["append_would_be_blocked"]:
                 raise FactoryError("BLOCKED: DEDUPE_COLLISION")
     with connect_ledger(approved_target) as conn:
@@ -5983,6 +5988,8 @@ def runtime_collector_normalizer_self_test() -> dict[str, Any]:
         seen.add(key)
     blocked_without_approval = runtime_collector_normalizer_append_approved(None, None)
     blocked_wrong_approval = runtime_collector_normalizer_append_approved(None, "APPEND_APPROVED: wrong phrase")
+    sample_append_event = normalized_candidate_to_lifetime_case_event(plan["candidates"][0], plan["generated_at_utc"])
+    sample_append_dedupe_event = normalizer_append_dedupe_event(sample_append_event)
 
     def expect_normalizer_error(label: str, mutator: Callable[[dict[str, Any]], None]) -> bool:
         candidate = dict(plan["candidates"][0])
@@ -6019,6 +6026,8 @@ def runtime_collector_normalizer_self_test() -> dict[str, Any]:
         and blocked_without_approval["status"] == "blocked",
         "append_wrong_approval_blocked": blocked_wrong_approval["lifetime_ledger_mutated"] is False
         and blocked_wrong_approval["status"] == "blocked",
+        "append_dedupe_fingerprint_present": sample_append_dedupe_event["sanitized_event_fingerprint"]
+        == plan["candidates"][0]["sanitized_event_fingerprint"],
         "ai_decided_disposition_rejected": expect_normalizer_error(
             "ai_decided_disposition", lambda candidate: candidate.update({"ai_decided_disposition": True})
         ),
