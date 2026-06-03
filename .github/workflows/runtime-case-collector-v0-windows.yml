@@ -24,8 +24,19 @@ jobs:
       - name: Check out platform repo
         uses: actions/checkout@v4
 
+      - name: Verify Windows factory script path
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
+          if (-not (Test-Path -LiteralPath $factoryScript)) {
+            Write-Error "Expected checked-out factory script was not found at $factoryScript."
+            exit 1
+          }
+
       - name: Preflight Windows collector lane
         shell: pwsh
+        working-directory: ${{ github.workspace }}
         env:
           COLLECTOR_OUTPUT_ROUTE: ${{ github.event_name == 'schedule' && vars.RCC_WINDOWS_OUTPUT_ROUTE || inputs.collector_output_route }}
         run: |
@@ -34,7 +45,8 @@ jobs:
             Write-Error "RCC_WINDOWS_OUTPUT_ROUTE is required for scheduled collection, and collector_output_route is required for workflow_dispatch."
             exit 1
           }
-          $preflight = python -B scripts\ho_factory.py collector-windows-preflight --output-route "$route" --format json
+          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
+          $preflight = python -B "$factoryScript" collector-windows-preflight --output-route "$route" --format json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $preflightJson = $preflight | ConvertFrom-Json
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Runtime Case Collector v0 Windows"
@@ -49,16 +61,21 @@ jobs:
 
       - name: Self-test Windows collector lane
         shell: pwsh
+        working-directory: ${{ github.workspace }}
         run: |
-          python -B scripts\ho_factory.py collector-windows-self-test --format json
+          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
+          python -B "$factoryScript" collector-windows-self-test --format json
 
       - name: Dry-run Windows collector lane
         shell: pwsh
+        working-directory: ${{ github.workspace }}
         run: |
-          python -B scripts\ho_factory.py collector-windows-run-once --dry-run --format json
+          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
+          python -B "$factoryScript" collector-windows-run-once --dry-run --format json
 
       - name: Collect Windows private candidates
         shell: pwsh
+        working-directory: ${{ github.workspace }}
         env:
           COLLECTOR_OUTPUT_ROUTE: ${{ github.event_name == 'schedule' && vars.RCC_WINDOWS_OUTPUT_ROUTE || inputs.collector_output_route }}
         run: |
@@ -67,7 +84,8 @@ jobs:
             Write-Error "RCC_WINDOWS_OUTPUT_ROUTE is required for scheduled collection, and collector_output_route is required for workflow_dispatch."
             exit 1
           }
-          $collect = python -B scripts\ho_factory.py collector-windows-run-once --output-route "$route" --format json
+          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
+          $collect = python -B "$factoryScript" collector-windows-run-once --output-route "$route" --format json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $collectJson = $collect | ConvertFrom-Json
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- candidate_count: $($collectJson.candidate_count)"
@@ -77,10 +95,14 @@ jobs:
 
       - name: Verify Windows collector sample
         shell: pwsh
+        working-directory: ${{ github.workspace }}
         run: |
-          python -B scripts\ho_factory.py collector-windows-verify --format json
+          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
+          python -B "$factoryScript" collector-windows-verify --format json
 
       - name: Check Windows collector dedupe
         shell: pwsh
+        working-directory: ${{ github.workspace }}
         run: |
-          python -B scripts\ho_factory.py collector-windows-dedupe-check --format json
+          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
+          python -B "$factoryScript" collector-windows-dedupe-check --format json
