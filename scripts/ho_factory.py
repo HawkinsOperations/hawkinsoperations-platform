@@ -139,6 +139,7 @@ RUNTIME_COLLECTOR_WINDOWS_SAMPLE = (
     PLATFORM_ROOT / "contracts" / "examples" / "runtime-case-collector-v0-windows.sample.json"
 )
 RUNTIME_COLLECTOR_WINDOWS_PROOF_CEILING = "RUNTIME_CASE_COLLECTOR_V0_WINDOWS_PRIVATE_CANDIDATE_COLLECTION_ONLY"
+RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTE = "C:\\Raylee\\Data\\HawkinsOperations\\runtime-case-collector-v0\\windows\\"
 RUNTIME_COLLECTOR_WINDOWS_ROUTE_PROBE_RUN_ID = "26849122652"
 RUNTIME_COLLECTOR_WINDOWS_ROUTE_PROBE_STATUS = "pass"
 RUNTIME_COLLECTOR_WINDOWS_RUNNER_LABELS = ("self-hosted", "Windows", "X64")
@@ -4911,6 +4912,14 @@ def runtime_collector_windows_dedupe_key(candidate: dict[str, Any]) -> tuple[Any
     return tuple(values)
 
 
+def normalize_windows_collector_route(output_route: str) -> str:
+    normalized = output_route.strip().strip('"').strip("'").replace("/", "\\").rstrip("\\").casefold()
+    approved = RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTE.rstrip("\\").casefold()
+    if normalized != approved:
+        raise FactoryError("Windows collector output route is not the approved Windows-private collector route")
+    return RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTE
+
+
 def verify_runtime_collector_windows_candidate(candidate: dict[str, Any]) -> dict[str, bool]:
     missing = sorted(field for field in RUNTIME_COLLECTOR_WINDOWS_REQUIRED_FIELDS if field not in candidate)
     if missing:
@@ -5005,14 +5014,22 @@ def verify_runtime_collector_windows_packet(packet: dict[str, Any]) -> dict[str,
 
 def runtime_collector_windows_preflight(output_route: str | None = None) -> dict[str, Any]:
     route_status: dict[str, Any] = {
+        "approved_route_identity": "windows_canonical_private_route",
         "output_route_required_for_collect": True,
         "output_route_supplied": bool(output_route),
+        "approved_windows_private_route": None,
         "route_exists": None,
+        "route_is_dir": None,
+        "route_writable": None,
         "route_writable_probe": "not_run_by_preflight",
     }
     if output_route:
-        route_path = Path(output_route).resolve()
+        approved_route = normalize_windows_collector_route(output_route)
+        route_status["approved_windows_private_route"] = "canonical_windows_private_route"
+        route_path = Path(approved_route).resolve()
         route_status["route_exists"] = route_path.exists()
+        route_status["route_is_dir"] = route_path.is_dir()
+        route_status["route_writable"] = os.access(route_path, os.W_OK) if route_path.exists() else False
     return {
         "controller_version": CONTROLLER_VERSION,
         "mode": "collector-windows-preflight",
@@ -5053,7 +5070,8 @@ def runtime_collector_windows_run_once(dry_run: bool, output_route: str | None =
         return output
     if not output_route:
         raise FactoryError("collector-windows-run-once collect mode requires --output-route")
-    route_path = Path(output_route).resolve()
+    approved_route = normalize_windows_collector_route(output_route)
+    route_path = Path(approved_route).resolve()
     route_path.mkdir(parents=True, exist_ok=True)
     output_file = route_path / f"{candidate['collector_run_id']}-{candidate['candidate_id']}.json"
     if output_file.exists():
@@ -5081,10 +5099,27 @@ def runtime_collector_windows_self_test() -> dict[str, Any]:
         verify_runtime_collector_windows_candidate(mutated_candidate)
     except FactoryError:
         mutation_blocked = True
+
+    approved_route_allowed = normalize_windows_collector_route(
+        "c:/raylee/data/hawkinsoperations/runtime-case-collector-v0/windows/"
+    ) == RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTE
+
+    def expect_route_rejected(route: str) -> bool:
+        try:
+            normalize_windows_collector_route(route)
+        except FactoryError:
+            return True
+        return False
+
     checks = {
         "sample_candidate_valid": verification["status"] == "pass",
         "duplicate_detected": duplicate_count == 1,
         "unsupported_disposition_mutation_blocked": mutation_blocked,
+        "approved_route_allowed": approved_route_allowed,
+        "arbitrary_route_rejected": expect_route_rejected("C:\\not-approved\\runtime-case-collector-v0\\windows\\"),
+        "temp_route_rejected": expect_route_rejected("C:\\Users\\Raylee\\AppData\\Local\\Temp\\runtime-case-collector-v0\\windows\\"),
+        "workspace_route_rejected": expect_route_rejected("C:\\Raylee\\Repo\\HawkinsOperations\\hawkinsoperations-platform\\out\\windows\\"),
+        "wrong_drive_route_rejected": expect_route_rejected("D:\\Raylee\\Data\\HawkinsOperations\\runtime-case-collector-v0\\windows\\"),
         "route_probe_passed": RUNTIME_COLLECTOR_WINDOWS_ROUTE_PROBE_STATUS == "pass",
         "lifetime_case_ledger_mutation_blocked": packet["invariants"]["append_to_lifetime_ledger"] is False,
     }

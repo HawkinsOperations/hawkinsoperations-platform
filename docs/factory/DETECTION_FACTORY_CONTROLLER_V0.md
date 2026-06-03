@@ -257,10 +257,22 @@ The lane supports:
 - `collector-windows-dedupe-check`
 
 The workflow `.github/workflows/runtime-case-collector-v0-windows.yml` is
-`workflow_dispatch` only. It must not use `pull_request` or
-`pull_request_target`, must not upload private evidence, must not push commits,
-must not create GitHub issues, must not mutate the Lifetime Case Ledger, and
-must not update proof or website repos.
+`workflow_dispatch` plus an hourly private-candidate schedule. It must not use
+`pull_request` or `pull_request_target`, must not upload private evidence, must
+not push commits, must not create GitHub issues, must not mutate the Lifetime
+Case Ledger, and must not update proof or website repos.
+
+Windows collect mode is allowlisted to the canonical Windows-private route only:
+
+```text
+C:\Raylee\Data\HawkinsOperations\runtime-case-collector-v0\windows\
+```
+
+The allowlist normalizes slash direction, casing, and trailing slash, but it
+rejects arbitrary routes, temp paths, workspace paths, wrong drives, and
+unapproved directories. Scheduled collection requires the GitHub
+repository/environment variable `RCC_WINDOWS_OUTPUT_ROUTE` to match the approved
+route and fails closed if the variable is missing or wrong.
 
 Windows runtime candidates are not governed cases. They remain private outputs
 awaiting separate human append approval. Public-safe status stays
@@ -303,10 +315,14 @@ reconcile Linux and Windows private candidates into the governed Data/proof
 flow.
 
 The workflow `.github/workflows/runtime-case-collector-v0-linux.yml` is
-`workflow_dispatch` only. It must not use `pull_request` or
-`pull_request_target`, must not upload private evidence, must not push commits,
-must not create GitHub issues, must not mutate the Lifetime Case Ledger, and
-must not update proof or website repos.
+`workflow_dispatch` plus an hourly private-candidate schedule. It must not use
+`pull_request` or `pull_request_target`, must not upload private evidence, must
+not push commits, must not create GitHub issues, must not mutate the Lifetime
+Case Ledger, and must not update proof or website repos.
+
+Scheduled Linux collection requires the GitHub repository/environment variable
+`RCC_LINUX_OUTPUT_ROUTE` to match an approved Linux-private route and fails
+closed if the variable is missing or wrong.
 
 Linux runtime candidates are not governed cases. They remain private outputs
 awaiting separate human append approval. Public-safe status stays
@@ -345,6 +361,19 @@ shape, boundary, and dedupe checks and still requires exact human approval.
 Candidate count is not governed case count. Detection activity count is not
 governed case count. Governance Saves ledger accounting remains separate from
 blocked-claim and prevented-promotion metrics.
+
+Hourly collector workflow summaries may report bounded run-level count fields
+such as collector lane, workflow run ID, route approval booleans, route
+existence/writability booleans, `candidate_count`, `duplicate_count`,
+`generated_output_files`, `append_to_lifetime_ledger=false`,
+`governed_cases_appended=false`, `public_safe_status=NOT_PUBLIC_SAFE`, and the
+collector proof boundary. These GitHub Actions summaries are count visibility
+only. They are not public proof, not website truth, not GitHub Project truth,
+not Lifetime Case Ledger mutation, and not governed case count.
+
+The normalizer plan is not scheduled until an approved cross-host candidate
+aggregation route exists. The collector must not invent an upload/export/sync
+channel between the Windows and Linux private candidate routes.
 
 The exact approval phrase required before `collector-normalizer-append-approved`
 can mutate the Lifetime Case Ledger is:
