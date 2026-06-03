@@ -5923,6 +5923,7 @@ def runtime_collector_normalizer_append_approved(
                 "event_hash": event["event_hash"],
                 "case_id": event["case_id"],
                 "payload_hash": canonical_sha256(event["payload_json"]),
+                "sanitized_event_fingerprint": event["sanitized_event_fingerprint"],
             })
             if dedupe["append_would_be_blocked"]:
                 raise FactoryError("BLOCKED: DEDUPE_COLLISION")
