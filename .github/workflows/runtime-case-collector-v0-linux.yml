@@ -12,7 +12,6 @@ on:
         description: Private Linux collector output route on the trusted runner host
         required: true
         type: string
-        default: /var/lib/hawkinsoperations/runtime-case-collector-v0/linux/
   schedule:
     - cron: "15 * * * *"
 
@@ -23,6 +22,9 @@ jobs:
   collect-linux-candidates:
     name: Collect Linux runtime candidates
     runs-on: [self-hosted, ho-gpu-01, gpu, v100]
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
     steps:
       - name: Check out platform repo
         uses: actions/checkout@v4
@@ -48,8 +50,32 @@ jobs:
             echo "RCC_LINUX_OUTPUT_ROUTE is required for scheduled collection, and collector_output_route is required for workflow_dispatch." >&2
             exit 1
           fi
-          preflight="$(python3 -B scripts/ho_factory.py collector-linux-preflight --output-route "$COLLECTOR_OUTPUT_ROUTE" --format json)"
-          printf '%s\n' "$preflight" | python3 -c 'import json, os, sys; data=json.load(sys.stdin); route=data["route_status"]; summary=os.environ["GITHUB_STEP_SUMMARY"]; lines=["## Runtime Case Collector v0 Linux", "- collector lane: linux", f"- workflow run ID: {os.environ.get(\"GITHUB_RUN_ID\", \"unknown\")}", f"- route approved: {route.get(\"approved_linux_private_route\") is not None}", f"- route exists: {route.get(\"route_exists\")}", f"- route writable: {route.get(\"route_writable\")}", "- append_to_lifetime_ledger: false", "- governed_cases_appended: false", "- public_safe_status: NOT_PUBLIC_SAFE"]; open(summary, "a", encoding="utf-8").write("\\n".join(lines) + "\\n")'
+          preflight_json="${RUNNER_TEMP}/rccv0-linux-preflight.json"
+          python3 -B scripts/ho_factory.py collector-linux-preflight --output-route "$COLLECTOR_OUTPUT_ROUTE" --format json > "$preflight_json"
+          python3 - "$preflight_json" <<'PY'
+          import json
+          import os
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              data = json.load(handle)
+
+          route = data["route_status"]
+          lines = [
+              "## Runtime Case Collector v0 Linux",
+              "- collector lane: linux",
+              f"- workflow run ID: {os.environ.get('GITHUB_RUN_ID', 'unknown')}",
+              f"- route approved: {route.get('approved_linux_private_route') is not None}",
+              f"- route exists: {route.get('route_exists')}",
+              f"- route writable: {route.get('route_writable')}",
+              "- append_to_lifetime_ledger: false",
+              "- governed_cases_appended: false",
+              "- public_safe_status: NOT_PUBLIC_SAFE",
+          ]
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines) + "\n")
+          PY
 
       - name: Collect Linux private candidates
         if: ${{ github.event_name == 'schedule' || inputs.collect_candidates }}
@@ -60,8 +86,26 @@ jobs:
             echo "RCC_LINUX_OUTPUT_ROUTE is required for scheduled collection, and collector_output_route is required for workflow_dispatch." >&2
             exit 1
           fi
-          collect="$(python3 -B scripts/ho_factory.py collector-linux-run-once --output-route "$COLLECTOR_OUTPUT_ROUTE" --format json)"
-          printf '%s\n' "$collect" | python3 -c 'import json, os, sys; data=json.load(sys.stdin); summary=os.environ["GITHUB_STEP_SUMMARY"]; lines=[f"- candidate_count: {data.get(\"candidate_count\")}", f"- duplicate_count: {data.get(\"duplicate_count\")}", f"- generated_output_files: {data.get(\"generated_output_files\")}", "- final boundary: RUNTIME_CASE_COLLECTOR_V0_LINUX_PRIVATE_CANDIDATE_COLLECTION_ONLY"]; open(summary, "a", encoding="utf-8").write("\\n".join(lines) + "\\n")'
+          collect_json="${RUNNER_TEMP}/rccv0-linux-collect.json"
+          python3 -B scripts/ho_factory.py collector-linux-run-once --output-route "$COLLECTOR_OUTPUT_ROUTE" --format json > "$collect_json"
+          python3 - "$collect_json" <<'PY'
+          import json
+          import os
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              data = json.load(handle)
+
+          lines = [
+              f"- candidate_count: {data.get('candidate_count')}",
+              f"- duplicate_count: {data.get('duplicate_count')}",
+              f"- generated_output_files: {data.get('generated_output_files')}",
+              "- final boundary: RUNTIME_CASE_COLLECTOR_V0_LINUX_PRIVATE_CANDIDATE_COLLECTION_ONLY",
+          ]
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines) + "\n")
+          PY
 
       - name: Verify Linux collector sample
         run: |

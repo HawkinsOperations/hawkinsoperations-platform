@@ -17,6 +17,9 @@ jobs:
   collect-windows-candidates:
     name: Collect Windows runtime candidates
     runs-on: [self-hosted, Windows, X64]
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
     steps:
       - name: Check out platform repo
         uses: actions/checkout@v4
