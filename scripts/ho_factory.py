@@ -17,7 +17,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 try:
     import yaml  # type: ignore
@@ -222,6 +222,85 @@ RUNTIME_COLLECTOR_LINUX_BOUNDARY = (
     "Candidates are not governed cases, are not public-safe proof, do not append the "
     "Lifetime Case Ledger, and require later normalizer/import handling plus separate "
     "human approval before any append, proof publication, disposition, or closure action."
+)
+RUNTIME_COLLECTOR_NORMALIZER_VERSION = "runtime-case-collector-v0-normalizer"
+RUNTIME_COLLECTOR_NORMALIZER_SCHEMA = (
+    PLATFORM_ROOT / "contracts" / "schemas" / "runtime-case-collector-v0-normalizer.schema.json"
+)
+RUNTIME_COLLECTOR_NORMALIZER_SAMPLE = (
+    PLATFORM_ROOT / "contracts" / "examples" / "runtime-case-collector-v0-normalizer.sample.json"
+)
+RUNTIME_COLLECTOR_NORMALIZER_PROOF_CEILING = (
+    "RUNTIME_CASE_COLLECTOR_V0_NORMALIZER_APPEND_GATE_EXISTS_NO_LEDGER_MUTATION_UNLESS_APPEND_APPROVED"
+)
+RUNTIME_COLLECTOR_NORMALIZER_APPEND_APPROVAL_PHRASE = (
+    "APPEND_APPROVED: promote normalized runtime candidates to Lifetime Case Ledger governed cases"
+)
+RUNTIME_COLLECTOR_NORMALIZER_BOUNDARY = (
+    "Runtime Case Collector v0 normalizer creates a private append plan only by default. "
+    "Runtime candidates are not governed cases until the exact append approval phrase is supplied "
+    "and the append gate verifies all invariants. No public-safe proof, proof publication, "
+    "disposition, case closure, SOCaaS, production, autonomous SOC, proof repo, or website "
+    "mutation is authorized by this plan."
+)
+RUNTIME_COLLECTOR_NORMALIZER_REQUIRED_FIELDS = (
+    "normalized_candidate_version",
+    "normalized_candidate_id",
+    "normalized_candidate_hash",
+    "source_candidate_id",
+    "source_candidate_hash",
+    "source_collector_lane",
+    "source_collector_version",
+    "source_collector_run_id",
+    "source_system",
+    "detection_id",
+    "detection_family",
+    "observed_time_utc",
+    "sanitized_event_fingerprint",
+    "source_receipt_refs",
+    "candidate_payload_hash",
+    "normalized_payload_hash",
+    "proof_ceiling",
+    "public_safe_status",
+    "runtime_truth_status",
+    "signal_truth_status",
+    "case_status",
+    "append_status",
+    "append_blocked_reason",
+    "triage_status",
+    "disposition_status",
+    "ai_support_mode",
+    "ai_decided_disposition",
+    "human_review_required",
+    "deterministic_close_eligible",
+    "deterministic_close_blocked",
+    "case_closed",
+    "append_to_lifetime_ledger",
+    "blocked_claims",
+    "notes_boundary",
+)
+RUNTIME_COLLECTOR_NORMALIZER_DEDUPE_FIELDS = (
+    "normalized_candidate_hash",
+    "detection_id",
+    "source_system",
+    "sanitized_event_fingerprint",
+    "candidate_payload_hash",
+    "source_receipt_refs_hash",
+    "observed_time_utc",
+)
+RUNTIME_COLLECTOR_NORMALIZER_BLOCKED_CLAIMS = tuple(
+    dict.fromkeys(
+        (
+            *RUNTIME_COLLECTOR_WINDOWS_BLOCKED_CLAIMS,
+            "public proof publication",
+            "proof repo update",
+            "website update",
+            "GitHub issue creation",
+            "raw private evidence upload",
+            "candidate count as governed case count",
+            "Governance Saves ledger as blocked-claim metrics",
+        )
+    )
 )
 LIFETIME_LEDGER_STATE_MANIFEST_ID = "LIFETIME_CASE_LEDGER_V1_PHASE_8_STATE_MANIFEST"
 LIFETIME_LEDGER_STATE_MANIFEST_VERSION = "phase_8_ledger_state_manifest_v1"
@@ -5444,6 +5523,547 @@ def runtime_collector_linux_dedupe_check(candidate_path: str | None = None) -> d
     }
 
 
+def source_receipt_refs_hash(refs: Any) -> str:
+    if not isinstance(refs, list) or not refs:
+        raise FactoryError("normalized runtime candidate source_receipt_refs must be a non-empty list")
+    return canonical_sha256(refs)
+
+
+def load_runtime_collector_normalizer_plan(candidate_plan: Path | None = None) -> dict[str, Any]:
+    if candidate_plan:
+        plan = load_json(candidate_plan)
+    else:
+        plan = runtime_collector_normalizer_plan(None, None)
+    if not isinstance(plan, dict):
+        raise FactoryError("Runtime Case Collector normalizer plan must be an object")
+    return plan
+
+
+def normalize_runtime_collector_candidate(candidate: dict[str, Any], expected_lane: str) -> dict[str, Any]:
+    if expected_lane == "windows":
+        verify_runtime_collector_windows_candidate(candidate)
+    elif expected_lane == "linux":
+        verify_runtime_collector_linux_candidate(candidate)
+    else:
+        raise FactoryError("unsupported normalizer source lane")
+    if candidate.get("collector_lane") != expected_lane:
+        raise FactoryError("unsupported normalizer source lane")
+    refs = candidate["source_receipt_refs"]
+    refs_hash = source_receipt_refs_hash(refs)
+    payload = {
+        "source_collector_lane": candidate["collector_lane"],
+        "source_candidate_hash": candidate["candidate_hash"],
+        "detection_id": candidate["detection_id"],
+        "source_system": candidate["source_system"],
+        "sanitized_event_fingerprint": candidate["sanitized_event_fingerprint"],
+        "candidate_payload_hash": candidate["candidate_payload_hash"],
+        "source_receipt_refs_hash": refs_hash,
+        "observed_time_utc": candidate.get("observed_time_utc"),
+    }
+    normalized_payload_hash = canonical_sha256(payload)
+    identity = {
+        "normalized_candidate_version": RUNTIME_COLLECTOR_NORMALIZER_VERSION,
+        "detection_id": candidate["detection_id"],
+        "source_system": candidate["source_system"],
+        "sanitized_event_fingerprint": candidate["sanitized_event_fingerprint"],
+        "candidate_payload_hash": candidate["candidate_payload_hash"],
+        "source_receipt_refs_hash": refs_hash,
+        "observed_time_utc": candidate.get("observed_time_utc"),
+    }
+    normalized_hash = canonical_sha256(identity)
+    return {
+        "normalized_candidate_version": RUNTIME_COLLECTOR_NORMALIZER_VERSION,
+        "normalized_candidate_id": f"rccv0-normalized-{normalized_hash[:16]}",
+        "normalized_candidate_hash": normalized_hash,
+        "source_candidate_id": candidate["candidate_id"],
+        "source_candidate_hash": candidate["candidate_hash"],
+        "source_collector_lane": candidate["collector_lane"],
+        "source_collector_version": candidate["collector_version"],
+        "source_collector_run_id": candidate["collector_run_id"],
+        "source_system": candidate["source_system"],
+        "detection_id": candidate["detection_id"],
+        "detection_family": candidate["detection_family"],
+        "observed_time_utc": candidate.get("observed_time_utc"),
+        "sanitized_event_fingerprint": candidate["sanitized_event_fingerprint"],
+        "source_receipt_refs": refs,
+        "source_receipt_refs_hash": refs_hash,
+        "candidate_payload_hash": candidate["candidate_payload_hash"],
+        "normalized_payload_hash": normalized_payload_hash,
+        "proof_ceiling": RUNTIME_COLLECTOR_NORMALIZER_PROOF_CEILING,
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "runtime_truth_status": candidate["runtime_truth_status"],
+        "signal_truth_status": candidate["signal_truth_status"],
+        "case_status": "RUNTIME_CANDIDATE_ONLY",
+        "append_status": "APPEND_READY_REQUIRES_EXACT_APPROVAL",
+        "append_blocked_reason": "APPEND_APPROVAL_REQUIRED",
+        "triage_status": "HUMAN_REVIEW_REQUIRED",
+        "disposition_status": "NO_DISPOSITION",
+        "ai_support_mode": "AI_SUPPORT_ONLY",
+        "ai_decided_disposition": False,
+        "human_review_required": True,
+        "deterministic_close_eligible": False,
+        "deterministic_close_blocked": True,
+        "case_closed": False,
+        "append_to_lifetime_ledger": False,
+        "blocked_claims": list(RUNTIME_COLLECTOR_NORMALIZER_BLOCKED_CLAIMS),
+        "notes_boundary": RUNTIME_COLLECTOR_NORMALIZER_BOUNDARY,
+    }
+
+
+def runtime_collector_normalizer_dedupe_key(candidate: dict[str, Any]) -> tuple[Any, ...]:
+    values: list[Any] = []
+    for field in RUNTIME_COLLECTOR_NORMALIZER_DEDUPE_FIELDS:
+        value = candidate.get(field)
+        if field == "source_receipt_refs_hash" and not value:
+            value = source_receipt_refs_hash(candidate.get("source_receipt_refs"))
+        values.append(value)
+    return tuple(values)
+
+
+def verify_runtime_collector_normalized_candidate(candidate: dict[str, Any]) -> dict[str, bool]:
+    missing = sorted(field for field in RUNTIME_COLLECTOR_NORMALIZER_REQUIRED_FIELDS if field not in candidate)
+    if missing:
+        raise FactoryError(f"normalized runtime candidate missing required fields: {', '.join(missing)}")
+    if candidate.get("source_collector_lane") not in {"windows", "linux"}:
+        raise FactoryError("unsupported normalizer source lane")
+    refs_hash = source_receipt_refs_hash(candidate["source_receipt_refs"])
+    payload = {
+        "source_collector_lane": candidate["source_collector_lane"],
+        "source_candidate_hash": candidate["source_candidate_hash"],
+        "detection_id": candidate["detection_id"],
+        "source_system": candidate["source_system"],
+        "sanitized_event_fingerprint": candidate["sanitized_event_fingerprint"],
+        "candidate_payload_hash": candidate["candidate_payload_hash"],
+        "source_receipt_refs_hash": refs_hash,
+        "observed_time_utc": candidate.get("observed_time_utc"),
+    }
+    normalized_payload_hash = canonical_sha256(payload)
+    identity = {
+        "normalized_candidate_version": RUNTIME_COLLECTOR_NORMALIZER_VERSION,
+        "detection_id": candidate["detection_id"],
+        "source_system": candidate["source_system"],
+        "sanitized_event_fingerprint": candidate["sanitized_event_fingerprint"],
+        "candidate_payload_hash": candidate["candidate_payload_hash"],
+        "source_receipt_refs_hash": refs_hash,
+        "observed_time_utc": candidate.get("observed_time_utc"),
+    }
+    normalized_hash = canonical_sha256(identity)
+    blocked_claims = candidate.get("blocked_claims")
+    if not isinstance(blocked_claims, list) or not set(RUNTIME_COLLECTOR_NORMALIZER_BLOCKED_CLAIMS).issubset(blocked_claims):
+        raise FactoryError("normalized runtime candidate blocked_claims is incomplete")
+    checks = {
+        "normalized_candidate_version": candidate["normalized_candidate_version"] == RUNTIME_COLLECTOR_NORMALIZER_VERSION,
+        "normalized_payload_hash": candidate["normalized_payload_hash"] == normalized_payload_hash,
+        "normalized_candidate_hash": candidate["normalized_candidate_hash"] == normalized_hash,
+        "normalized_candidate_id": candidate["normalized_candidate_id"] == f"rccv0-normalized-{normalized_hash[:16]}",
+        "source_receipt_refs_hash": candidate.get("source_receipt_refs_hash") == refs_hash,
+        "proof_ceiling": candidate["proof_ceiling"] == RUNTIME_COLLECTOR_NORMALIZER_PROOF_CEILING,
+        "public_safe_status": candidate["public_safe_status"] == "NOT_PUBLIC_SAFE",
+        "case_status": candidate["case_status"] == "RUNTIME_CANDIDATE_ONLY",
+        "triage_status": candidate["triage_status"] == "HUMAN_REVIEW_REQUIRED",
+        "disposition_status": candidate["disposition_status"] == "NO_DISPOSITION",
+        "ai_support_mode": candidate["ai_support_mode"] == "AI_SUPPORT_ONLY",
+        "ai_decided_disposition_false": candidate["ai_decided_disposition"] is False,
+        "human_review_required": candidate["human_review_required"] is True,
+        "deterministic_close_eligible_false": candidate["deterministic_close_eligible"] is False,
+        "deterministic_close_blocked_true": candidate["deterministic_close_blocked"] is True,
+        "case_closed_false": candidate["case_closed"] is False,
+        "append_to_lifetime_ledger_false": candidate["append_to_lifetime_ledger"] is False,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"normalized runtime candidate failed checks: {', '.join(failed)}")
+    return checks
+
+
+def runtime_collector_normalizer_plan(
+    windows_candidate_path: str | None = None,
+    linux_candidate_path: str | None = None,
+) -> dict[str, Any]:
+    windows_packet = load_runtime_collector_windows_packet(
+        Path(windows_candidate_path).resolve() if windows_candidate_path else None
+    )
+    linux_packet = load_runtime_collector_linux_packet(Path(linux_candidate_path).resolve() if linux_candidate_path else None)
+    windows_verification = verify_runtime_collector_windows_packet(windows_packet)
+    linux_verification = verify_runtime_collector_linux_packet(linux_packet)
+    normalized: list[dict[str, Any]] = []
+    rejected_duplicates: list[dict[str, Any]] = []
+    seen: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for lane, packet in (("windows", windows_packet), ("linux", linux_packet)):
+        for candidate in packet["candidates"]:
+            item = normalize_runtime_collector_candidate(candidate, lane)
+            key = runtime_collector_normalizer_dedupe_key(item)
+            if key in seen:
+                item["append_status"] = "DUPLICATE_REJECTED"
+                item["append_blocked_reason"] = "DUPLICATE_NORMALIZED_RUNTIME_CANDIDATE"
+                rejected_duplicates.append(
+                    {
+                        "normalized_candidate_id": item["normalized_candidate_id"],
+                        "source_candidate_id": item["source_candidate_id"],
+                        "source_collector_lane": item["source_collector_lane"],
+                        "duplicate_of": seen[key]["normalized_candidate_id"],
+                        "dedupe_key_hash": canonical_sha256({"dedupe_key": key}),
+                    }
+                )
+                continue
+            seen[key] = item
+            normalized.append(item)
+    append_ready_count = sum(1 for candidate in normalized if candidate["append_status"] == "APPEND_READY_REQUIRES_EXACT_APPROVAL")
+    duplicate_count = len(rejected_duplicates)
+    plan = {
+        "schema_version": RUNTIME_COLLECTOR_NORMALIZER_VERSION,
+        "generated_at_utc": "2026-06-02T00:00:00Z",
+        "source_windows_candidate_count": windows_verification["candidate_count"],
+        "source_linux_candidate_count": linux_verification["candidate_count"],
+        "normalized_candidate_count": len(normalized),
+        "duplicate_count": duplicate_count,
+        "append_ready_count": append_ready_count,
+        "blocked_count": duplicate_count,
+        "candidates": normalized,
+        "rejected_duplicates": rejected_duplicates,
+        "append_gate_status": "PLAN_ONLY_APPEND_APPROVAL_REQUIRED",
+        "append_requires_human_approval": True,
+        "lifetime_ledger_mutated": False,
+        "governed_cases_appended": False,
+        "proof_ceiling": RUNTIME_COLLECTOR_NORMALIZER_PROOF_CEILING,
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "boundary_summary": RUNTIME_COLLECTOR_NORMALIZER_BOUNDARY,
+    }
+    verify_runtime_collector_normalizer_plan(plan)
+    return plan
+
+
+def verify_runtime_collector_normalizer_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    required = (
+        "schema_version",
+        "generated_at_utc",
+        "source_windows_candidate_count",
+        "source_linux_candidate_count",
+        "normalized_candidate_count",
+        "duplicate_count",
+        "append_ready_count",
+        "blocked_count",
+        "candidates",
+        "rejected_duplicates",
+        "append_gate_status",
+        "append_requires_human_approval",
+        "lifetime_ledger_mutated",
+        "proof_ceiling",
+        "public_safe_status",
+        "boundary_summary",
+    )
+    missing = sorted(field for field in required if field not in plan)
+    if missing:
+        raise FactoryError(f"normalizer append plan missing required fields: {', '.join(missing)}")
+    candidates = plan.get("candidates")
+    rejected_duplicates = plan.get("rejected_duplicates")
+    if not isinstance(candidates, list):
+        raise FactoryError("normalizer append plan candidates must be a list")
+    if not isinstance(rejected_duplicates, list):
+        raise FactoryError("normalizer append plan rejected_duplicates must be a list")
+    seen: set[tuple[Any, ...]] = set()
+    duplicate_count = 0
+    candidate_checks: list[dict[str, bool]] = []
+    append_ready_count = 0
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            raise FactoryError("normalizer append plan candidate must be an object")
+        candidate_checks.append(verify_runtime_collector_normalized_candidate(candidate))
+        key = runtime_collector_normalizer_dedupe_key(candidate)
+        if key in seen:
+            duplicate_count += 1
+        seen.add(key)
+        if candidate.get("append_status") == "APPEND_READY_REQUIRES_EXACT_APPROVAL":
+            append_ready_count += 1
+    duplicate_count += len(rejected_duplicates)
+    checks = {
+        "schema_version": plan["schema_version"] == RUNTIME_COLLECTOR_NORMALIZER_VERSION,
+        "public_safe_status": plan["public_safe_status"] == "NOT_PUBLIC_SAFE",
+        "proof_ceiling": plan["proof_ceiling"] == RUNTIME_COLLECTOR_NORMALIZER_PROOF_CEILING,
+        "append_requires_human_approval": plan["append_requires_human_approval"] is True,
+        "lifetime_ledger_mutated_false": plan["lifetime_ledger_mutated"] is False,
+        "normalized_candidate_count_matches": plan["normalized_candidate_count"] == len(candidates),
+        "duplicate_count_matches": plan["duplicate_count"] == duplicate_count,
+        "append_ready_count_matches": plan["append_ready_count"] == append_ready_count,
+        "blocked_count_matches": plan["blocked_count"] == len(rejected_duplicates),
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"normalizer append plan failed checks: {', '.join(failed)}")
+    return {
+        "status": "pass",
+        "candidate_count": len(candidates),
+        "duplicate_count": duplicate_count,
+        "append_ready_count": append_ready_count,
+        "blocked_count": len(rejected_duplicates),
+        "checks": checks,
+        "candidate_checks": candidate_checks,
+    }
+
+
+def runtime_collector_normalizer_verify(candidate_plan: str | None = None) -> dict[str, Any]:
+    plan = load_runtime_collector_normalizer_plan(Path(candidate_plan).resolve() if candidate_plan else None)
+    verification = verify_runtime_collector_normalizer_plan(plan)
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "collector-normalizer-verify",
+        "normalizer_version": RUNTIME_COLLECTOR_NORMALIZER_VERSION,
+        "generated_output_files": False,
+        "status": verification["status"],
+        "candidate_count": verification["candidate_count"],
+        "duplicate_count": verification["duplicate_count"],
+        "append_ready_count": verification["append_ready_count"],
+        "blocked_count": verification["blocked_count"],
+        "checks": verification["checks"],
+    }
+
+
+def runtime_collector_normalizer_dedupe_check(candidate_plan: str | None = None) -> dict[str, Any]:
+    plan = load_runtime_collector_normalizer_plan(Path(candidate_plan).resolve() if candidate_plan else None)
+    verification = verify_runtime_collector_normalizer_plan(plan)
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "collector-normalizer-dedupe-check",
+        "normalizer_version": RUNTIME_COLLECTOR_NORMALIZER_VERSION,
+        "generated_output_files": False,
+        "status": "pass",
+        "candidate_count": verification["candidate_count"],
+        "duplicate_count": verification["duplicate_count"],
+        "append_ready_count": verification["append_ready_count"],
+        "blocked_count": verification["blocked_count"],
+        "dedupe_fields": list(RUNTIME_COLLECTOR_NORMALIZER_DEDUPE_FIELDS),
+        "dedupe_result": "no_cross_lane_duplicates" if verification["duplicate_count"] == 0 else "duplicates_rejected",
+    }
+
+
+def normalized_candidate_to_lifetime_case_event(candidate: dict[str, Any], inserted_at: str) -> dict[str, Any]:
+    verify_runtime_collector_normalized_candidate(candidate)
+    payload = {
+        **candidate,
+        "append_phase": "runtime_case_collector_v0_normalizer_append_gate",
+        "truth_boundary": (
+            "Normalized private runtime candidate appended only after exact append approval. "
+            "Still not public-safe proof, not public runtime proof, not public signal proof, "
+            "not disposition authority, and not case closure."
+        ),
+    }
+    event_hash_input = {
+        "ledger_version": CASE_LEDGER_VERSION,
+        "case_id": f"LCL-RCCV0-{candidate['detection_id']}-{candidate['normalized_candidate_hash'][:16].upper()}",
+        "detection_id": candidate["detection_id"],
+        "truth_class": "PRIVATE_RUNTIME_EVIDENCE",
+        "case_status": "RUNTIME_CANDIDATE_ONLY",
+        "proof_ceiling": candidate["proof_ceiling"],
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "payload_json": payload,
+    }
+    event_hash = hashlib.sha256(stable_json(event_hash_input).encode("utf-8")).hexdigest()
+    case_event = {
+        "event_hash": event_hash,
+        "inserted_at": inserted_at,
+        "ledger_version": CASE_LEDGER_VERSION,
+        "case_id": event_hash_input["case_id"],
+        "detection_id": candidate["detection_id"],
+        "truth_class": "PRIVATE_RUNTIME_EVIDENCE",
+        "case_status": "RUNTIME_CANDIDATE_ONLY",
+        "proof_ceiling": candidate["proof_ceiling"],
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "ai_support_mode": "AI_SUPPORT_ONLY",
+        "ai_decided_disposition": False,
+        "recommended_disposition": None,
+        "deterministic_close_eligible": False,
+        "deterministic_close_blocked": True,
+        "human_review_required": True,
+        "gpu_supported": candidate["source_collector_lane"] == "linux",
+        "public_safe": False,
+        "proof_blocked": True,
+        "github_issue_mutation_allowed": False,
+        "case_closed": False,
+        "legacy_import_count": 0,
+        "payload_json": payload,
+        "sanitized_event_fingerprint": candidate["sanitized_event_fingerprint"],
+        "source_packet_ref": candidate["normalized_candidate_id"],
+    }
+    scan_private_markers("Runtime Case Collector v0 normalizer append event", case_event)
+    return case_event
+
+
+def normalizer_append_dedupe_event(event: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "event_hash": event["event_hash"],
+        "case_id": event["case_id"],
+        "payload_hash": canonical_sha256(event["payload_json"]),
+        "sanitized_event_fingerprint": event["sanitized_event_fingerprint"],
+    }
+
+
+def runtime_collector_normalizer_append_approved(
+    candidate_plan: str | None,
+    append_approval: str | None,
+    ledger_path: Path = DEFAULT_CASE_LEDGER,
+) -> dict[str, Any]:
+    if append_approval != RUNTIME_COLLECTOR_NORMALIZER_APPEND_APPROVAL_PHRASE:
+        return {
+            "controller_version": CONTROLLER_VERSION,
+            "mode": "collector-normalizer-append-approved",
+            "normalizer_version": RUNTIME_COLLECTOR_NORMALIZER_VERSION,
+            "status": "blocked",
+            "append_gate_status": "BLOCKED: APPEND_APPROVAL_REQUIRED",
+            "append_performed": False,
+            "lifetime_ledger_mutated": False,
+            "governed_cases_appended": False,
+            "proof_ceiling": RUNTIME_COLLECTOR_NORMALIZER_PROOF_CEILING,
+            "public_safe_status": "NOT_PUBLIC_SAFE",
+            "boundary_summary": RUNTIME_COLLECTOR_NORMALIZER_BOUNDARY,
+        }
+    approved_target = approved_lifetime_append_target(ledger_path)
+    plan = load_runtime_collector_normalizer_plan(Path(candidate_plan).resolve() if candidate_plan else None)
+    verification = verify_runtime_collector_normalizer_plan(plan)
+    append_ready = [
+        candidate for candidate in plan["candidates"] if candidate["append_status"] == "APPEND_READY_REQUIRES_EXACT_APPROVAL"
+    ]
+    if len(append_ready) != verification["append_ready_count"]:
+        raise FactoryError("BLOCKED: APPEND_READY_COUNT_MISMATCH")
+    inserted_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    case_events = [normalized_candidate_to_lifetime_case_event(candidate, inserted_at) for candidate in append_ready]
+    with connect_read_only_ledger(approved_target) as conn:
+        before_metrics = lifetime_ledger_metrics(conn)
+        for event in case_events:
+            dedupe = lifetime_append_gate_dedupe(conn, normalizer_append_dedupe_event(event))
+            if dedupe["append_would_be_blocked"]:
+                raise FactoryError("BLOCKED: DEDUPE_COLLISION")
+    with connect_ledger(approved_target) as conn:
+        for event in case_events:
+            insert_case_event_unchecked(conn, event)
+        conn.commit()
+    with connect_read_only_ledger(approved_target) as conn:
+        after_metrics = lifetime_ledger_metrics(conn)
+        verify_ledger(conn, "runtime_case_collector_v0_normalizer_append_gate_private_candidate_only")
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "collector-normalizer-append-approved",
+        "normalizer_version": RUNTIME_COLLECTOR_NORMALIZER_VERSION,
+        "status": "pass",
+        "append_gate_status": "APPEND_APPROVED_EXACT_PHRASE_ACCEPTED",
+        "append_performed": bool(case_events),
+        "lifetime_ledger_mutated": bool(case_events),
+        "governed_cases_appended": bool(case_events),
+        "inserted_count": len(case_events),
+        "inserted_case_ids": [event["case_id"] for event in case_events],
+        "inserted_event_hashes": [event["event_hash"] for event in case_events],
+        "before_lifetime_metrics": before_metrics,
+        "after_lifetime_metrics": after_metrics,
+        "proof_ceiling": RUNTIME_COLLECTOR_NORMALIZER_PROOF_CEILING,
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "case_closed": False,
+        "ai_decided_disposition": False,
+        "boundary_summary": RUNTIME_COLLECTOR_NORMALIZER_BOUNDARY,
+    }
+
+
+def runtime_collector_normalizer_self_test() -> dict[str, Any]:
+    plan = runtime_collector_normalizer_plan(None, None)
+    verification = verify_runtime_collector_normalizer_plan(plan)
+    duplicate_windows = runtime_collector_windows_packet(
+        build_runtime_collector_windows_candidate(
+            {
+                **runtime_collector_windows_default_payload(),
+                "source_system": runtime_collector_linux_default_payload()["source_system"],
+                "sanitized_event_fingerprint": runtime_collector_linux_default_payload()["sanitized_event_fingerprint"],
+                "source_receipt_refs": runtime_collector_linux_default_payload()["source_receipt_refs"],
+                "observed_time_utc": runtime_collector_linux_default_payload()["observed_time_utc"],
+            }
+        )
+    )
+    duplicate_plan_inputs = [
+        normalize_runtime_collector_candidate(duplicate_windows["candidates"][0], "windows"),
+        normalize_runtime_collector_candidate(runtime_collector_linux_packet()["candidates"][0], "linux"),
+    ]
+    seen: set[tuple[Any, ...]] = set()
+    duplicate_count = 0
+    for candidate in duplicate_plan_inputs:
+        key = runtime_collector_normalizer_dedupe_key(candidate)
+        if key in seen:
+            duplicate_count += 1
+        seen.add(key)
+    blocked_without_approval = runtime_collector_normalizer_append_approved(None, None)
+    blocked_wrong_approval = runtime_collector_normalizer_append_approved(None, "APPEND_APPROVED: wrong phrase")
+    sample_append_event = normalized_candidate_to_lifetime_case_event(plan["candidates"][0], plan["generated_at_utc"])
+    sample_append_dedupe_event = normalizer_append_dedupe_event(sample_append_event)
+
+    def expect_normalizer_error(label: str, mutator: Callable[[dict[str, Any]], None]) -> bool:
+        candidate = dict(plan["candidates"][0])
+        mutator(candidate)
+        try:
+            verify_runtime_collector_normalized_candidate(candidate)
+        except FactoryError:
+            return True
+        raise FactoryError(f"normalizer negative test did not fail closed: {label}")
+
+    unsupported_lane_candidate = build_runtime_collector_windows_candidate()
+    unsupported_lane_candidate["collector_lane"] = "macos"
+    unsupported_lane_blocked = False
+    try:
+        normalize_runtime_collector_candidate(unsupported_lane_candidate, "macos")
+    except FactoryError:
+        unsupported_lane_blocked = True
+    claim_candidate = dict(plan["candidates"][0])
+    claim_candidate["blocked_claims"] = []
+    claim_promotion_blocked = False
+    try:
+        verify_runtime_collector_normalized_candidate(claim_candidate)
+    except FactoryError:
+        claim_promotion_blocked = True
+    checks = {
+        "plan_verifies": verification["status"] == "pass",
+        "source_windows_candidate_count": plan["source_windows_candidate_count"] == 1,
+        "source_linux_candidate_count": plan["source_linux_candidate_count"] == 1,
+        "normalized_candidate_count": plan["normalized_candidate_count"] == 2,
+        "duplicate_count": plan["duplicate_count"] == 0,
+        "append_ready_count": plan["append_ready_count"] == 2,
+        "blocked_count": plan["blocked_count"] == 0,
+        "append_without_approval_blocked": blocked_without_approval["lifetime_ledger_mutated"] is False
+        and blocked_without_approval["status"] == "blocked",
+        "append_wrong_approval_blocked": blocked_wrong_approval["lifetime_ledger_mutated"] is False
+        and blocked_wrong_approval["status"] == "blocked",
+        "append_dedupe_fingerprint_present": sample_append_dedupe_event["sanitized_event_fingerprint"]
+        == plan["candidates"][0]["sanitized_event_fingerprint"],
+        "ai_decided_disposition_rejected": expect_normalizer_error(
+            "ai_decided_disposition", lambda candidate: candidate.update({"ai_decided_disposition": True})
+        ),
+        "case_closed_rejected": expect_normalizer_error("case_closed", lambda candidate: candidate.update({"case_closed": True})),
+        "public_safe_status_rejected": expect_normalizer_error(
+            "public_safe_status", lambda candidate: candidate.update({"public_safe_status": "PUBLIC_SAFE"})
+        ),
+        "append_to_lifetime_ledger_rejected": expect_normalizer_error(
+            "append_to_lifetime_ledger", lambda candidate: candidate.update({"append_to_lifetime_ledger": True})
+        ),
+        "duplicate_candidate_detected": duplicate_count == 1,
+        "missing_receipt_refs_rejected": expect_normalizer_error(
+            "source_receipt_refs", lambda candidate: candidate.update({"source_receipt_refs": []})
+        ),
+        "unsupported_lane_rejected": unsupported_lane_blocked,
+        "claim_promotion_rejected": claim_promotion_blocked,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"normalizer self-test failed checks: {', '.join(failed)}")
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "collector-normalizer-self-test",
+        "normalizer_version": RUNTIME_COLLECTOR_NORMALIZER_VERSION,
+        "generated_output_files": False,
+        "status": "pass",
+        "candidate_count": verification["candidate_count"],
+        "duplicate_count": verification["duplicate_count"],
+        "append_ready_count": verification["append_ready_count"],
+        "blocked_count": verification["blocked_count"],
+        "lifetime_ledger_mutated": False,
+        "governed_cases_appended": False,
+        "checks": checks,
+    }
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Detection Factory Controller v0")
     subparsers = parser.add_subparsers(dest="mode", required=True)
@@ -5566,6 +6186,22 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-linux-dedupe-check")
     sub.add_argument("--candidate")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("collector-normalizer-self-test")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("collector-normalizer-plan")
+    sub.add_argument("--windows-candidate")
+    sub.add_argument("--linux-candidate")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("collector-normalizer-verify")
+    sub.add_argument("--candidate-plan")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("collector-normalizer-dedupe-check")
+    sub.add_argument("--candidate-plan")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("collector-normalizer-append-approved")
+    sub.add_argument("--candidate-plan")
+    sub.add_argument("--append-approval")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("self-test-id-det-001-missing-surfaces")
     sub.add_argument("--format", default="json", choices=("json",))
@@ -5803,6 +6439,31 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "collector-linux-dedupe-check":
         output = runtime_collector_linux_dedupe_check(args.candidate)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "collector-normalizer-self-test":
+        output = runtime_collector_normalizer_self_test()
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "collector-normalizer-plan":
+        output = runtime_collector_normalizer_plan(args.windows_candidate, args.linux_candidate)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "collector-normalizer-verify":
+        output = runtime_collector_normalizer_verify(args.candidate_plan)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "collector-normalizer-dedupe-check":
+        output = runtime_collector_normalizer_dedupe_check(args.candidate_plan)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "collector-normalizer-append-approved":
+        output = runtime_collector_normalizer_append_approved(args.candidate_plan, args.append_approval)
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
