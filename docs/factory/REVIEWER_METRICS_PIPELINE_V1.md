@@ -2,10 +2,38 @@
 
 This contract separates the strict Lifetime Case Ledger count from reviewer-visible activity volume.
 
+## Current Reconciliation Note
+
+The v1 state file is a materialized platform reporting surface, but the `4/4`
+Lifetime values below are retained as a Reviewer Metrics Pipeline v1 closeout
+snapshot / historical point-in-time value. They are not current governed case
+truth.
+
+Current governed case truth is:
+
+- Governed Lifetime Case Ledger cases: `6`
+- Lifetime Ledger events: `6`
+- Public-safe cases: `0`
+- Closed cases: `0`
+
+The current `6/6` count is sourced from the canonical tracked SQLite ledger
+`evidence/autosoc-case-ledger-v0.sqlite` and
+`contracts/lifetime-case-ledger-v1-state-manifest.json`.
+
+Current activity growth remains separate from governed cases:
+
+- Detection activity count: `49`
+- Validation cases: `106`
+- Proof records: `8`
+- Blocked claims: `31`
+- Append-ready runtime candidates: `2`
+- Duplicate normalized runtime candidates: `0`
+- Append gate: exact human approval required
+
 | Metric | Count | Owner |
 | --- | ---: | --- |
-| Lifetime Governed Cases | 4 | `hawkinsoperations-platform` |
-| Lifetime Ledger Events | 4 | `hawkinsoperations-platform` |
+| Lifetime Governed Cases v1 closeout snapshot | 4 | `hawkinsoperations-platform` |
+| Lifetime Ledger Events v1 closeout snapshot | 4 | `hawkinsoperations-platform` |
 | Detection Activity Count | 49 | `hawkinsoperations-validation` |
 | Controlled Validation Fire Count | 49 | `hawkinsoperations-validation` |
 | Validation Case Count | 106 | `hawkinsoperations-validation` |
