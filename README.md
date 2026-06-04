@@ -1,115 +1,122 @@
 # HawkinsOperations Platform
 
-HawkinsOperations Platform is the contract and automation layer for the HawkinsOperations security-engineering system.
+HawkinsOperations Platform is the contract, verifier, ledger, and automation guardrail layer for HawkinsOperations.
 
-It shows how platform mechanics keep detection, validation, ledger, and proof work bounded: schemas define allowed shapes, verifiers enforce guardrails, ledgers preserve controlled state, and automation checks whether the contract still holds.
+It shows how AI-assisted SOC and detection work can be controlled before it becomes security truth: detections move through schemas, deterministic verifiers, case-packet rules, runtime-receipt shapes, ledger mechanics, reviewer metrics, and proof handoff boundaries instead of relying on generated output or presentation alone.
 
-This repository does not prove live runtime execution, live signal observation, SOCaaS availability, production readiness, public-safe evidence, or analyst-approved disposition.
+## 10-Second Platform Signal
 
-## 10-Second Reviewer Path
+Open this repo when you want to see the control layer between AI-assisted security labor and validated security claims.
 
-If you have limited time, inspect these first:
+| Platform receipt | What to inspect | Why it matters |
+| --- | --- | --- |
+| Detection Factory Controller v0 | `scripts/ho_factory.py`, `docs/factory/DETECTION_FACTORY_CONTROLLER_V0.md` | Produces read-only reviewer packets with gate summaries, decisions, truth boundaries, blocked claims, and next legal moves for `HO-DET-*` and `ID-DET-*` lanes. |
+| Lifetime Case Ledger spine | `contracts/lifetime-case-ledger-v1-state-manifest.json`, `docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md`, `scripts/verify-lifetime-ledger-backup-drill.py` | Models governed case state, recoverability, append gates, correction gates, dedupe, and proof handoff support without mutating canonical ledger state. |
+| Runtime and case-packet guardrails | `contracts/schemas/ho-det-001-runtime-contract.schema.json`, `contracts/schemas/ho-det-011-case-packet.schema.json`, `scripts/verify-ho-det-011-case-packet.py`, `scripts/verify-soar-case-packet-v0.py` | Defines the fields a runtime receipt or case packet must carry before it can support review. The guardrail is the receipt shape, not a runtime claim. |
+| Reviewer metrics pipeline | `contracts/reviewer-metrics-pipeline-v1-state.json`, `docs/factory/REVIEWER_METRICS_PIPELINE_V1.md`, `scripts/verify-reviewer-metrics-pipeline.py` | Separates strict governed case counts from reviewer-visible validation, proof, blocked-claim, and detection-family metrics. |
+| AI support and telemetry boundary lanes | `docs/factory/LOCAL_GPU_TRIAGE_PIPELINE_V0.md`, `docs/factory/TELEMETRY_COVERAGE_CONTRACT_V0.md`, `scripts/verify_local_gpu_triage.py`, `scripts/verify-telemetry-coverage-contract.py` | Shows support-only AI/GPU triage and telemetry coverage contracts with deterministic checks and explicit human-review gates. |
 
-1. `contracts/` - versioned schemas and contract files.
-2. `scripts/` - deterministic verifier and ledger-mechanics checks.
-3. `.github/workflows/` - automation hooks that run contract and guardrail checks where configured.
-4. `docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md` - how the lifetime ledger mechanics are modeled.
-5. `contracts/lifetime-case-ledger-v1-recoverability-drill.json` - tracked seed contract for ledger recoverability validation.
+## What This Repo Owns
 
-## What Security Leaders Should Inspect
+Platform owns enforceable interface mechanics for HawkinsOperations:
 
-- Whether contracts separate source, validation, proof, runtime, and public-safe claims.
-- Whether automation fails closed when required fields, ledgers, or claim boundaries drift.
-- Whether the runtime contract is treated as a schema/verifier guardrail instead of runtime proof.
-- Whether ledger checks preserve recoverability, dedupe, correction, and approval-gate mechanics.
-- Whether README wording, docs, and verifier outputs avoid overclaiming production, signal, public-safe, or SOCaaS status.
+- **Contracts and schemas** for detection artifacts, validation reports, proof records, runtime receipts, case packets, SOAR packets, collector eligibility, telemetry coverage, and reviewer metrics.
+- **Deterministic verifiers** that fail closed when required fields, boundaries, or fixture shapes drift.
+- **Ledger mechanics** for governed case state, recoverability drills, append gates, correction gates, manual-fire modeling, and state manifests.
+- **Runtime-receipt and case-packet guardrails** that describe what a safe packet must include before a runtime, signal, or proof claim can even be reviewed.
+- **Reviewer metrics state** that makes activity volume visible without inflating proof, runtime, or public-safe status.
+- **Automation checks** that run platform contract and guardrail verification in GitHub workflows where configured.
 
-## Platform Value
+The hiring signal is platform engineering discipline: Raylee can design the control layer between AI-assisted SOC work and security truth.
 
-This repo translates HawkinsOperations from "security content exists" into "security work has enforceable interfaces."
+## Strongest Platform Receipts
 
-- **Contracts:** define the fields and boundaries needed for detection, validation, proof, runtime receipt, and case-packet handoffs.
-- **Ledgers:** model controlled state, recoverability, dedupe, correction, and approval-gated append mechanics.
-- **Automation mechanics:** run deterministic checks so reviewer-facing claims are backed by source-controlled guardrails.
-- **Guardrails:** keep platform claims inside the current proof ceiling and block runtime, signal, production, public-safe, or autonomous-SOC language unless separately promoted.
+| Receipt | Route | What it proves | What it does not prove |
+| --- | --- | --- | --- |
+| Detection Factory Controller v0 | `scripts/ho_factory.py` and `docs/factory/DETECTION_FACTORY_CONTROLLER_V0.md` | A source-controlled, read-only platform controller can emit bounded reviewer packets for supported detection IDs with explicit state, gate, boundary, and next-action fields. | It does not promote proof, publish evidence, update websites, create PRs, merge changes, or claim runtime-active, signal-observed, production, public-safe, AI-approved, or analyst-approved status. |
+| Lifetime Case Ledger v1 mechanics | `contracts/lifetime-case-ledger-v1-state-manifest.json`, `contracts/lifetime-case-ledger-v1-recoverability-drill.json`, `scripts/verify-lifetime-ledger-backup-drill.py` | The repo contains verifier-backed ledger state and recoverability mechanics for governed case handling, including backup comparison and no-mutation drill behavior. | It does not append a real case, restore production state, prove runtime truth, close a case, or create public proof. |
+| HO-DET-011 case-packet guardrail | `contracts/schemas/ho-det-011-case-packet.schema.json`, `contracts/examples/ho-det-011-case-packet.sample.json`, `scripts/verify-ho-det-011-case-packet.py` | The platform can enforce controlled case-packet shape and boundary fields for a current detection workflow. | It does not prove live runtime execution, live signal observation, public-safe runtime proof, production deployment, or disposition approval. |
+| Runtime Route Proof v1 private candidate shape | `docs/factory/RUNTIME_ROUTE_PROOF_V1_PRIVATE_CANDIDATE.md`, `contracts/schemas/runtime-route-proof-v1-private-candidate.schema.json`, `scripts/verify-runtime-route-proof-v1-private-candidate.py` | The platform can validate a reviewer-safe private route-proof packet reference while preserving manifest, receipt, and public-safe-count boundaries. | It does not run markers, query Wazuh/Cribl/Splunk, mutate runtime systems, include raw private evidence, or approve public publication. |
+| Local GPU Triage Pipeline v0 | `docs/factory/LOCAL_GPU_TRIAGE_PIPELINE_V0.md`, `contracts/schemas/local-gpu-triage-support-v0.schema.json`, `.github/workflows/local-gpu-triage-gate.yml` | The repo defines a support-only AI/GPU triage contract and manual workflow gate with deterministic verifier checks and human review required. | It does not run model prompts in CI, decide disposition, approve analyst action, publish private output, or prove public-safe/runtime-active/signal-observed status. |
+| Reviewer Metrics Pipeline v1 | `contracts/reviewer-metrics-pipeline-v1-state.json`, `docs/factory/REVIEWER_METRICS_PIPELINE_V1.md` | Reviewer-facing activity metrics are separated from strict Lifetime Case Ledger counts and proof/public-safe status. | Metrics volume does not prove runtime execution, signal observation, public-safe proof, production coverage, or deployment maturity. |
+| Telemetry Coverage Contract v0 | `docs/factory/TELEMETRY_COVERAGE_CONTRACT_V0.md`, `contracts/examples/telemetry-coverage-contract-v0.sample.json`, `scripts/verify-telemetry-coverage-contract.py` | `HO-NDR-001` and `HO-PIPE-001` have bounded contract truth for NDR visibility and pipeline route integrity concepts. | It does not prove packet capture, observed Security Onion telemetry, live Splunk results, Cribl-routed proof, Wazuh-routed proof, or production NDR coverage. |
 
-The hiring signal is platform engineering discipline: translating detection and SOC automation work into auditable contracts, bounded claims, and repeatable reviewer paths.
+## How Platform Fits HawkinsOperations
 
-## Current Proof Boundary
+HawkinsOperations separates work into truth surfaces:
 
-Current platform ceiling: source-controlled contracts, schemas, verifier logic, ledger mechanics, and automation guardrails exist in this repository.
+```text
+Detection source
+  -> controlled validation
+  -> platform contracts and verifiers
+  -> case packet / runtime receipt guardrails
+  -> proof records and reviewer metrics
+  -> public routing only after approval
+```
 
-The platform can support controlled validation language when a verifier passes within its stated scope.
+Platform is the enforceable interface layer in that chain. It does not replace detections, validation, proof, or human governance. It makes the handoff between them auditable.
 
-The platform cannot claim:
+## Reviewer Path
 
-- live runtime execution
-- live signal observation
-- public-safe evidence
-- SOCaaS availability
-- production-ready platform status
-- fleet-wide deployment
-- autonomous SOC operation
-- AI-approved disposition
-- analyst-approved disposition
-- live Splunk, Cribl, Wazuh, or AWS status
-- public-proof promotion
+Start here:
 
-Public-safe or runtime-active claims require separate proof review, privacy review, stale review, wording review, and Raylee approval.
+1. Read `contracts/README.md` for the contract inventory and current platform lanes.
+2. Inspect `scripts/ho_factory.py` and `docs/factory/DETECTION_FACTORY_CONTROLLER_V0.md` for the reviewer-packet controller.
+3. Inspect `docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md` and `contracts/lifetime-case-ledger-v1-state-manifest.json` for ledger mechanics.
+4. Inspect `docs/factory/REVIEWER_METRICS_PIPELINE_V1.md` and `contracts/reviewer-metrics-pipeline-v1-state.json` for reviewer metrics boundaries.
+5. Inspect `.github/workflows/governance-gate.yml` for platform verifier automation.
 
-## Runtime Contract Guardrail
+Useful local checks:
 
-The HO-DET-001 runtime contract in this repo is a schema and verifier guardrail only.
+```powershell
+python -B scripts/ho_factory.py --help
+python -B scripts/verify-lifetime-ledger-backup-drill.py --format json
+python -B scripts/verify-ho-det-011-case-packet.py
+python -B scripts/verify-reviewer-metrics-pipeline.py
+python -B scripts/verify-runtime-route-proof-v1-private-candidate.py
+python -B scripts/verify-runtime-collector-eligibility-v0.py --registry contracts/examples/runtime-collector-eligibility-v0.sample.json --schema contracts/schemas/runtime-collector-eligibility-v0.schema.json
+python -B scripts/verify-soar-case-packet-v0.py
+python -B scripts/verify-telemetry-coverage-contract.py
+python -B scripts/verify_local_gpu_triage.py contracts/examples/local-gpu-triage-support-v0.sample.json --self-test
+```
 
-`PLATFORM_RUNTIME_CONTRACT=pass` means the controlled contract verifier passed for the tracked source inputs in scope. It does not mean a runtime system fired, a live signal was observed, a production SOC path is available, or public-safe proof exists.
-
-Use the runtime contract to inspect whether a runtime receipt would have the required bounded fields before any runtime claim is considered.
-
-## Contract Baseline
-
-The current contract package is defined under `contracts/`:
-
-- `contracts/contract-version.json`
-- `contracts/schemas/detection-artifact.schema.json`
-- `contracts/schemas/validation-report.schema.json`
-- `contracts/schemas/proof-record.schema.json`
-- `contracts/schemas/local-llm-runtime-receipt.schema.json`
-- `contracts/schemas/ho-det-001-runtime-contract.schema.json`
-- `contracts/schemas/ho-det-011-case-packet.schema.json`
-- `contracts/lifetime-case-ledger-v1-recoverability-drill.json`
-
-These files define minimum source-controlled fields for reproducible detection-to-validation-to-proof linkage and case-packet boundary checks.
-
-## Ledger Mechanics
-
-The lifetime case ledger work in this repo is contract and mechanics truth.
-
-- `scripts/verify-lifetime-ledger-backup-drill.py` checks a tracked SQLite seed bridge by copying it to a temporary backup, comparing SHA256 and ledger metrics, and verifying no restore or append action occurred.
-- `docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md` maps candidate event, dry run, approval gate, append, dedupe, correction, superseding, state manifest, and proof handoff mechanics.
-- Current tracked seed boundary remains source-controlled platform seed only.
-
-Known ledger proof ceiling: `SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY`.
-
-Known public-safe status: `NOT_PUBLIC_SAFE`.
+Some controller commands expect a local HawkinsOperations organization mirror with sibling repositories. If those siblings are absent, treat the result as a local-environment limitation, not as proof failure or proof promotion.
 
 ## Automation And Guardrails
 
-Platform automation is intended to make unsafe claim expansion visible before it reaches reviewer or public surfaces.
+The governance workflow currently wires multiple platform checks, including required-file presence, ledger recoverability context, HO-DET-011 case-packet validation, Runtime Route Proof v1 private candidate shape, runtime collector eligibility, and Lifetime Case Ledger v1 gate checks.
 
-- Contract schemas define expected fields.
-- Verifier scripts check source-controlled fixtures and ledgers.
-- Governance gate workflow wiring can run claim-boundary checks where configured.
-- Case-packet validation checks whether required boundaries are represented.
-- Guardrail language blocks runtime, signal, production, public-safe, and autonomous-SOC claims unless separately approved.
+Automation in this repo supports source and validation truth. It is not merge authority, publication authority, runtime authority, or proof authority.
 
-Automation in this repo is source/validation support. It is not merge authority, publication authority, runtime authority, or public-proof authority.
+## Current Claim Boundary
+
+This repo can claim source-controlled contracts, schemas, examples, verifier scripts, workflow wiring, and bounded documentation exist.
+
+It can claim a deterministic verifier passed only within that verifier's stated source-controlled scope.
+
+It does not claim:
+
+- live runtime execution
+- live signal observation
+- public-safe runtime proof
+- production SOCaaS
+- customer deployment
+- autonomous SOC
+- AI-decided disposition
+- AI-approved disposition
+- analyst-approved disposition
+- live Splunk, Wazuh, Cribl, Security Onion, AWS, or FortiSIEM proof
+- fleet-wide deployment
+- production-ready platform status
+
+Private runtime, signal, evidence, or support context stays private unless it is separately reviewed, bounded, redacted, and approved for a public or reviewer surface.
 
 ## Repository Contract
 
 - Platform behavior must be deterministic and auditable.
 - Integration points must be versioned and explicitly documented.
-- Runtime, signal, and public-proof claims must stay outside this repo unless separately proven and approved.
-- Operational changes that affect proof wording or claim ceilings require corresponding proof updates in `hawkinsoperations-proof`.
+- Runtime, signal, evidence, proof, and public-safe claims must stay in their proven trust classes.
+- Operational proof wording belongs in `hawkinsoperations-proof`, not in platform by implication.
 - Website or reviewer navigation may point to proof records, but presentation does not replace proof.
 
 ## Scope
@@ -118,21 +125,21 @@ In scope:
 
 - Platform contracts and schema definitions
 - Ledger recoverability and state-mechanics checks
-- Case-packet and runtime-receipt guardrails
+- Case-packet, SOAR-packet, runtime-receipt, and collector guardrails
 - Deterministic verifier scripts
 - Environment-agnostic automation mechanics
-- Reviewer navigation for platform contracts
+- Reviewer navigation for platform contracts and metrics
 
 Out of scope:
 
 - Host-specific workstation configuration state
 - Private credentials, tokens, secrets, or raw evidence
-- Public marketing narrative
 - Runtime execution claims
 - Live telemetry or signal claims
 - SOCaaS availability claims
 - Production-ready platform claims
 - Public-safe promotion
+- Disposition approval authority
 
 ## Related HawkinsOperations Repositories
 
