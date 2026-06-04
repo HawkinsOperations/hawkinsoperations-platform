@@ -16,6 +16,28 @@ Open this repo when you want to see the control layer between AI-assisted securi
 | Reviewer metrics pipeline | `contracts/reviewer-metrics-pipeline-v1-state.json`, `docs/factory/REVIEWER_METRICS_PIPELINE_V1.md`, `scripts/verify-reviewer-metrics-pipeline.py` | Separates strict governed case counts from reviewer-visible validation, proof, blocked-claim, and detection-family metrics. |
 | AI support and telemetry boundary lanes | `docs/factory/LOCAL_GPU_TRIAGE_PIPELINE_V0.md`, `docs/factory/TELEMETRY_COVERAGE_CONTRACT_V0.md`, `scripts/verify_local_gpu_triage.py`, `scripts/verify-telemetry-coverage-contract.py` | Shows support-only AI/GPU triage and telemetry coverage contracts with deterministic checks and explicit human-review gates. |
 
+## Current Metric Reconciliation
+
+Use these numbers as separate surfaces. Do not add collector, candidate, validation, proof, or blocked-claim activity into governed cases.
+
+| Surface | Current value | Source | Boundary |
+| --- | ---: | --- | --- |
+| Governed Lifetime Case Ledger cases | 6 | `evidence/autosoc-case-ledger-v0.sqlite`; `contracts/lifetime-case-ledger-v1-state-manifest.json` | Canonical governed ledger count. |
+| Lifetime Ledger events | 6 | `evidence/autosoc-case-ledger-v0.sqlite`; `contracts/lifetime-case-ledger-v1-state-manifest.json` | Matches current state manifest. |
+| Public-safe cases | 0 | `contracts/lifetime-case-ledger-v1-state-manifest.json` | No public-safe promotion. |
+| Closed cases | 0 | `contracts/lifetime-case-ledger-v1-state-manifest.json` | No case closure authority. |
+| Detection activity count | 49 | `contracts/reviewer-metrics-pipeline-v1-state.json` activity metric | Activity growth only; not governed cases. |
+| Validation cases | 106 | `contracts/reviewer-metrics-pipeline-v1-state.json` activity metric | Validation volume only. |
+| Proof records | 8 | `contracts/reviewer-metrics-pipeline-v1-state.json` activity metric | Proof-record count only; not proof promotion. |
+| Blocked claims | 31 | `contracts/reviewer-metrics-pipeline-v1-state.json` activity metric | Reviewer boundary volume only. |
+| Windows runtime collector sample candidates | 1 | `contracts/examples/runtime-case-collector-v0-windows.sample.json` | Private runtime candidate only. |
+| Linux runtime collector sample candidates | 1 | `contracts/examples/runtime-case-collector-v0-linux.sample.json` | Private runtime candidate only. |
+| Normalized runtime candidates | 2 | `contracts/examples/runtime-case-collector-v0-normalizer.sample.json` | Candidate plan only. |
+| Duplicate normalized candidates | 0 | `scripts/ho_factory.py collector-normalizer-dedupe-check` | Duplicate suppression count. |
+| Append-ready runtime candidates | 2 | `contracts/examples/runtime-case-collector-v0-normalizer.sample.json` | Requires exact human append approval before ledger mutation. |
+
+`contracts/reviewer-metrics-pipeline-v1-state.json` still contains a Reviewer Metrics Pipeline v1 closeout snapshot value of `lifetime_governed_cases=4` and `lifetime_ledger_events=4`. Treat that `4/4` as a historical point-in-time reviewer-metrics snapshot, not current governed case truth. Current governed case truth is `6/6` from the canonical SQLite ledger and Lifetime Ledger state manifest.
+
 ## What This Repo Owns
 
 Platform owns enforceable interface mechanics for HawkinsOperations:
