@@ -20,10 +20,10 @@ EXPECTED_PROOF_CEILING = "SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY"
 EXPECTED_LEDGER_BOUNDARY = "tracked platform seed bridge, not runtime truth, not signal truth, not public proof"
 EXPECTED_LEDGER_PATH = Path("evidence/autosoc-case-ledger-v0.sqlite")
 EXPECTED_CONTRACT_PATH = Path("contracts/lifetime-case-ledger-v1-recoverability-drill.json")
-EXPECTED_EVENT_COUNT = 4
-EXPECTED_CASE_COUNT = 4
+EXPECTED_EVENT_COUNT = 6
+EXPECTED_CASE_COUNT = 6
 EXPECTED_DETECTION_COUNTS = {
-    "HO-DET-001": 2,
+    "HO-DET-001": 4,
     "HO-DET-011": 1,
     "HO-DET-012": 1,
 }
@@ -118,9 +118,11 @@ def compare_metrics(left: dict[str, Any], right: dict[str, Any]) -> bool:
 
 def validate_metrics(metrics: dict[str, Any], label: str) -> None:
     if metrics.get("total_ledger_events") != EXPECTED_EVENT_COUNT:
-        raise DrillError(f"{label} expected 4 ledger events, got {metrics.get('total_ledger_events')}")
+        raise DrillError(
+            f"{label} expected {EXPECTED_EVENT_COUNT} ledger events, got {metrics.get('total_ledger_events')}"
+        )
     if metrics.get("total_cases") != EXPECTED_CASE_COUNT:
-        raise DrillError(f"{label} expected 4 cases, got {metrics.get('total_cases')}")
+        raise DrillError(f"{label} expected {EXPECTED_CASE_COUNT} cases, got {metrics.get('total_cases')}")
     if metrics.get("cases_by_detection") != EXPECTED_DETECTION_COUNTS:
         raise DrillError(f"{label} detection counts mismatch: {metrics.get('cases_by_detection')}")
     if metrics.get("public_safe_count") != 0:

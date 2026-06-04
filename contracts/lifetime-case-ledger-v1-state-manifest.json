@@ -2,7 +2,7 @@
   "manifest_id": "LIFETIME_CASE_LEDGER_V1_PHASE_8_STATE_MANIFEST",
   "manifest_version": "phase_8_ledger_state_manifest_v1",
   "source_controlled_manifest": true,
-  "state_basis": "post_phase_7_merged_main",
+  "state_basis": "post_runtime_case_collector_v0_first_governed_append",
   "platform_commit_sha": "eff2f8ea6c79c8b63aeaefc151d70539ba199eee",
   "six_repo_state": [
     {
@@ -51,8 +51,8 @@
   "ledger_target": "evidence/autosoc-case-ledger-v0.sqlite",
   "ledger_boundary": "tracked platform seed bridge, not runtime truth, not signal truth, not public proof",
   "current_ledger_counts": {
-    "total_ledger_events": 4,
-    "total_cases": 4,
+    "total_ledger_events": 6,
+    "total_cases": 6,
     "public_safe_count": 0,
     "closed_case_count": 0,
     "correction_event_count": 0,

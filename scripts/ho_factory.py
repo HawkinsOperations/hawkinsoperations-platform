@@ -306,8 +306,8 @@ RUNTIME_COLLECTOR_NORMALIZER_BLOCKED_CLAIMS = tuple(
 LIFETIME_LEDGER_STATE_MANIFEST_ID = "LIFETIME_CASE_LEDGER_V1_PHASE_8_STATE_MANIFEST"
 LIFETIME_LEDGER_STATE_MANIFEST_VERSION = "phase_8_ledger_state_manifest_v1"
 LIFETIME_LEDGER_STATE_MANIFEST_REQUIRED_COUNTS = {
-    "total_ledger_events": 4,
-    "total_cases": 4,
+    "total_ledger_events": 6,
+    "total_cases": 6,
     "public_safe_count": 0,
     "closed_case_count": 0,
     "correction_event_count": 0,
