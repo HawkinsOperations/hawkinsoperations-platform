@@ -1,24 +1,27 @@
 # HawkinsOperations Platform
 
-HawkinsOperations Platform is the contract, verifier, ledger, and automation guardrail layer for HawkinsOperations.
+HawkinsOperations Platform is the executable governance and control layer for HawkinsOperations.
 
-It shows how AI-assisted SOC and detection work can be controlled before it becomes security truth: detections move through schemas, deterministic verifiers, case-packet rules, runtime-receipt shapes, ledger mechanics, reviewer metrics, and proof handoff boundaries instead of relying on generated output or presentation alone.
+It prevents AI-assisted detection work from becoming unverified security claims by forcing it through contracts, deterministic verifiers, ledger mechanics, runtime-receipt shapes, case-packet guardrails, reviewer metrics, and proof handoff checks.
 
 ## 10-Second Platform Signal
 
-Open this repo when you want to see the control layer between AI-assisted security labor and validated security claims.
+Open this repo first when reviewing the control layer between AI-assisted security labor and validated security claims.
+
+**Current platform truth:** `6` governed cases / `6` ledger events; `49` detection activity records; `106` validation cases; `8` proof records; `31` blocked claims; `2` append-ready runtime candidates; `0` duplicate normalized candidates; `0` public-safe cases; `0` closed cases.
 
 | Platform receipt | What to inspect | Why it matters |
 | --- | --- | --- |
 | Detection Factory Controller v0 | `scripts/ho_factory.py`, `docs/factory/DETECTION_FACTORY_CONTROLLER_V0.md` | Produces read-only reviewer packets with gate summaries, decisions, truth boundaries, blocked claims, and next legal moves for `HO-DET-*` and `ID-DET-*` lanes. |
-| Lifetime Case Ledger spine | `contracts/lifetime-case-ledger-v1-state-manifest.json`, `docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md`, `scripts/verify-lifetime-ledger-backup-drill.py` | Models governed case state, recoverability, append gates, correction gates, dedupe, and proof handoff support without mutating canonical ledger state. |
-| Runtime and case-packet guardrails | `contracts/schemas/ho-det-001-runtime-contract.schema.json`, `contracts/schemas/ho-det-011-case-packet.schema.json`, `scripts/verify-ho-det-011-case-packet.py`, `scripts/verify-soar-case-packet-v0.py` | Defines the fields a runtime receipt or case packet must carry before it can support review. The guardrail is the receipt shape, not a runtime claim. |
-| Reviewer metrics pipeline | `contracts/reviewer-metrics-pipeline-v1-state.json`, `docs/factory/REVIEWER_METRICS_PIPELINE_V1.md`, `scripts/verify-reviewer-metrics-pipeline.py` | Separates strict governed case counts from reviewer-visible validation, proof, blocked-claim, and detection-family metrics. |
+| Lifetime Case Ledger v1 | `contracts/lifetime-case-ledger-v1-state-manifest.json`, `docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md`, `scripts/ho_factory.py` | Verifies current `6/6` governed ledger state, append/correction gates, recoverability, dedupe, and exact human approval before append. |
+| Runtime and SOAR guardrails | `contracts/schemas/ho-det-001-runtime-contract.schema.json`, `contracts/schemas/ho-det-011-case-packet.schema.json`, `scripts/verify-soar-case-packet-v0.py` | Defines the packet shape for runtime, SOAR, and case-review support without allowing AI or automation to decide disposition. |
+| Runtime candidate controls | `contracts/examples/runtime-case-collector-v0-normalizer.sample.json`, `scripts/ho_factory.py` collector normalizer checks | Shows `2` append-ready candidates and `0` duplicates while keeping ledger append blocked until exact human approval. |
+| Reviewer metrics pipeline | `contracts/reviewer-metrics-pipeline-v1-state.json`, `docs/factory/REVIEWER_METRICS_PIPELINE_V1.md`, `scripts/verify-reviewer-metrics-pipeline.py` | Separates governed cases from activity growth: `49` detection activity records, `106` validation cases, `8` proof records, and `31` blocked claims. |
 | AI support and telemetry boundary lanes | `docs/factory/LOCAL_GPU_TRIAGE_PIPELINE_V0.md`, `docs/factory/TELEMETRY_COVERAGE_CONTRACT_V0.md`, `scripts/verify_local_gpu_triage.py`, `scripts/verify-telemetry-coverage-contract.py` | Shows support-only AI/GPU triage and telemetry coverage contracts with deterministic checks and explicit human-review gates. |
 
 ## Current Metric Reconciliation
 
-Use these numbers as separate surfaces. Do not add collector, candidate, validation, proof, or blocked-claim activity into governed cases.
+Use these numbers as separate surfaces. Do not add collector, candidate, validation, proof, activity, or blocked-claim volume into governed cases.
 
 | Surface | Current value | Source | Boundary |
 | --- | ---: | --- | --- |
@@ -33,10 +36,12 @@ Use these numbers as separate surfaces. Do not add collector, candidate, validat
 | Windows runtime collector sample candidates | 1 | `contracts/examples/runtime-case-collector-v0-windows.sample.json` | Private runtime candidate only. |
 | Linux runtime collector sample candidates | 1 | `contracts/examples/runtime-case-collector-v0-linux.sample.json` | Private runtime candidate only. |
 | Normalized runtime candidates | 2 | `contracts/examples/runtime-case-collector-v0-normalizer.sample.json` | Candidate plan only. |
-| Duplicate normalized candidates | 0 | `scripts/ho_factory.py collector-normalizer-dedupe-check` | Duplicate suppression count. |
+| Duplicate normalized candidates | 0 | `scripts/ho_factory.py`, `collector-normalizer-dedupe-check` | Duplicate suppression count. |
 | Append-ready runtime candidates | 2 | `contracts/examples/runtime-case-collector-v0-normalizer.sample.json` | Requires exact human append approval before ledger mutation. |
 
 `contracts/reviewer-metrics-pipeline-v1-state.json` still contains a Reviewer Metrics Pipeline v1 closeout snapshot value of `lifetime_governed_cases=4` and `lifetime_ledger_events=4`. Treat that `4/4` as a historical point-in-time reviewer-metrics snapshot, not current governed case truth. Current governed case truth is `6/6` from the canonical SQLite ledger and Lifetime Ledger state manifest.
+
+The append-ready candidate count is operationally useful but authority-blocked: candidates can be normalized and deduped, but the ledger append gate still requires exact human approval before any canonical case mutation.
 
 ## What This Repo Owns
 
@@ -82,25 +87,22 @@ Platform is the enforceable interface layer in that chain. It does not replace d
 
 Start here:
 
-1. Read `contracts/README.md` for the contract inventory and current platform lanes.
-2. Inspect `scripts/ho_factory.py` and `docs/factory/DETECTION_FACTORY_CONTROLLER_V0.md` for the reviewer-packet controller.
-3. Inspect `docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md` and `contracts/lifetime-case-ledger-v1-state-manifest.json` for ledger mechanics.
-4. Inspect `docs/factory/REVIEWER_METRICS_PIPELINE_V1.md` and `contracts/reviewer-metrics-pipeline-v1-state.json` for reviewer metrics boundaries.
-5. Inspect `.github/workflows/governance-gate.yml` for platform verifier automation.
+1. Read the first table above for the platform impact shape.
+2. Read `contracts/README.md` for the contract inventory and current lanes.
+3. Inspect `scripts/ho_factory.py` and `docs/factory/DETECTION_FACTORY_CONTROLLER_V0.md` for reviewer-packet control.
+4. Inspect `contracts/lifetime-case-ledger-v1-state-manifest.json` and `docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md` for governed case mechanics.
+5. Inspect `docs/factory/REVIEWER_METRICS_PIPELINE_V1.md` for metric separation and the historical `4/4` snapshot boundary.
 
-Useful local checks:
+Run these first:
 
-```powershell
-python -B scripts/ho_factory.py --help
-python -B scripts/verify-lifetime-ledger-backup-drill.py --format json
-python -B scripts/verify-ho-det-011-case-packet.py
-python -B scripts/verify-reviewer-metrics-pipeline.py
-python -B scripts/verify-runtime-route-proof-v1-private-candidate.py
-python -B scripts/verify-runtime-collector-eligibility-v0.py --registry contracts/examples/runtime-collector-eligibility-v0.sample.json --schema contracts/schemas/runtime-collector-eligibility-v0.schema.json
-python -B scripts/verify-soar-case-packet-v0.py
-python -B scripts/verify-telemetry-coverage-contract.py
-python -B scripts/verify_local_gpu_triage.py contracts/examples/local-gpu-triage-support-v0.sample.json --self-test
-```
+| Command | What it proves | What it does not prove |
+| --- | --- | --- |
+| Lifetime ledger | `python -B scripts/ho_factory.py lifetime-ledger-verify --repo-root .. --format json` | Current ledger spine verifies in the local organization mirror. | Runtime execution, signal observation, public proof, case closure, or production readiness. |
+| State manifest | `python -B scripts/ho_factory.py lifetime-ledger-state-manifest-verify --repo-root .. --format json` | Current governed counts align: `6` cases, `6` events, `0` public-safe cases, `0` closed cases. | That reviewer activity, validation cases, proof records, or candidates are governed cases. |
+| Reviewer metrics | `python -B scripts/verify-reviewer-metrics-pipeline.py` | Activity metrics remain proof-bounded and separate from current governed case truth. | Public-safe proof, runtime truth, signal truth, or proof promotion. |
+| Candidate normalizer | `python -B scripts/ho_factory.py collector-normalizer-verify --format json` | Runtime collector candidates normalize structurally and remain candidate truth only. | Ledger append, runtime collection, live telemetry, or human approval. |
+| Candidate dedupe | `python -B scripts/ho_factory.py collector-normalizer-dedupe-check --format json` | Normalized runtime candidates have `0` duplicates in the checked sample path. | Broad collector coverage, production deployment, or future candidate uniqueness. |
+| SOAR case packet | `python -B scripts/verify-soar-case-packet-v0.py` | SOAR-style case packet support is deterministic, human-review-required, and AI-support-only. | AI-decided disposition, analyst-approved disposition, case closure, or autonomous response. |
 
 Some controller commands expect a local HawkinsOperations organization mirror with sibling repositories. If those siblings are absent, treat the result as a local-environment limitation, not as proof failure or proof promotion.
 
