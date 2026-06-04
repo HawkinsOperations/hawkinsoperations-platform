@@ -2,13 +2,13 @@
 
 HawkinsOperations Platform is the executable governance and control layer for HawkinsOperations.
 
-It turns AI-assisted SOC and detection work into contracts, deterministic verifiers, ledger mechanics, runtime-receipt shapes, case-packet guardrails, reviewer metrics, and proof handoff checks before anything can be treated as security truth.
+It prevents AI-assisted detection work from becoming unverified security claims by forcing it through contracts, deterministic verifiers, ledger mechanics, runtime-receipt shapes, case-packet guardrails, reviewer metrics, and proof handoff checks.
 
 ## 10-Second Platform Signal
 
 Open this repo first when reviewing the control layer between AI-assisted security labor and validated security claims.
 
-**Current platform impact:** `6` governed Lifetime Case Ledger cases, `6` ledger events, `49` detection activity records, `106` validation cases, `8` proof records, `31` blocked claims, `2` append-ready runtime candidates, `0` duplicate normalized candidates, `0` public-safe cases, and `0` closed cases.
+**Current platform truth:** `6` governed cases / `6` ledger events; `49` detection activity records; `106` validation cases; `8` proof records; `31` blocked claims; `2` append-ready runtime candidates; `0` duplicate normalized candidates; `0` public-safe cases; `0` closed cases.
 
 | Platform receipt | What to inspect | Why it matters |
 | --- | --- | --- |
@@ -36,7 +36,7 @@ Use these numbers as separate surfaces. Do not add collector, candidate, validat
 | Windows runtime collector sample candidates | 1 | `contracts/examples/runtime-case-collector-v0-windows.sample.json` | Private runtime candidate only. |
 | Linux runtime collector sample candidates | 1 | `contracts/examples/runtime-case-collector-v0-linux.sample.json` | Private runtime candidate only. |
 | Normalized runtime candidates | 2 | `contracts/examples/runtime-case-collector-v0-normalizer.sample.json` | Candidate plan only. |
-| Duplicate normalized candidates | 0 | `scripts/ho_factory.py collector-normalizer-dedupe-check` | Duplicate suppression count. |
+| Duplicate normalized candidates | 0 | `scripts/ho_factory.py`, `collector-normalizer-dedupe-check` | Duplicate suppression count. |
 | Append-ready runtime candidates | 2 | `contracts/examples/runtime-case-collector-v0-normalizer.sample.json` | Requires exact human append approval before ledger mutation. |
 
 `contracts/reviewer-metrics-pipeline-v1-state.json` still contains a Reviewer Metrics Pipeline v1 closeout snapshot value of `lifetime_governed_cases=4` and `lifetime_ledger_events=4`. Treat that `4/4` as a historical point-in-time reviewer-metrics snapshot, not current governed case truth. Current governed case truth is `6/6` from the canonical SQLite ledger and Lifetime Ledger state manifest.
@@ -97,12 +97,12 @@ Run these first:
 
 | Command | What it proves | What it does not prove |
 | --- | --- | --- |
-| `python -B scripts/ho_factory.py lifetime-ledger-verify --repo-root .. --format json` | The current Lifetime Case Ledger spine verifies within the local organization mirror. | Runtime execution, signal observation, public proof, case closure, or production readiness. |
-| `python -B scripts/ho_factory.py lifetime-ledger-state-manifest-verify --repo-root .. --format json` | The state manifest aligns with current governed ledger counts, including `6` cases, `6` events, `0` public-safe cases, and `0` closed cases. | That reviewer activity, validation cases, proof records, or candidates are governed cases. |
-| `python -B scripts/verify-reviewer-metrics-pipeline.py` | Reviewer metrics remain proof-bounded and activity metrics stay separate from current governed case truth. | Public-safe proof, runtime truth, signal truth, or proof promotion. |
-| `python -B scripts/ho_factory.py collector-normalizer-verify --format json` | Runtime collector candidate normalization is structurally valid and append-ready candidates remain candidate truth only. | Ledger append, runtime collection, live telemetry, or human approval. |
-| `python -B scripts/ho_factory.py collector-normalizer-dedupe-check --format json` | Normalized runtime candidates have `0` duplicates in the checked sample path. | Broad collector coverage, production deployment, or future candidate uniqueness. |
-| `python -B scripts/verify-soar-case-packet-v0.py` | SOAR-style case packet support remains deterministic, human-review-required, and AI-support-only. | AI-decided disposition, analyst-approved disposition, case closure, or autonomous response. |
+| Lifetime ledger | `python -B scripts/ho_factory.py lifetime-ledger-verify --repo-root .. --format json` | Current ledger spine verifies in the local organization mirror. | Runtime execution, signal observation, public proof, case closure, or production readiness. |
+| State manifest | `python -B scripts/ho_factory.py lifetime-ledger-state-manifest-verify --repo-root .. --format json` | Current governed counts align: `6` cases, `6` events, `0` public-safe cases, `0` closed cases. | That reviewer activity, validation cases, proof records, or candidates are governed cases. |
+| Reviewer metrics | `python -B scripts/verify-reviewer-metrics-pipeline.py` | Activity metrics remain proof-bounded and separate from current governed case truth. | Public-safe proof, runtime truth, signal truth, or proof promotion. |
+| Candidate normalizer | `python -B scripts/ho_factory.py collector-normalizer-verify --format json` | Runtime collector candidates normalize structurally and remain candidate truth only. | Ledger append, runtime collection, live telemetry, or human approval. |
+| Candidate dedupe | `python -B scripts/ho_factory.py collector-normalizer-dedupe-check --format json` | Normalized runtime candidates have `0` duplicates in the checked sample path. | Broad collector coverage, production deployment, or future candidate uniqueness. |
+| SOAR case packet | `python -B scripts/verify-soar-case-packet-v0.py` | SOAR-style case packet support is deterministic, human-review-required, and AI-support-only. | AI-decided disposition, analyst-approved disposition, case closure, or autonomous response. |
 
 Some controller commands expect a local HawkinsOperations organization mirror with sibling repositories. If those siblings are absent, treat the result as a local-environment limitation, not as proof failure or proof promotion.
 
