@@ -406,6 +406,123 @@ Runtime candidates are not governed cases until the append gate is run with the
 exact approval phrase and all append invariants pass. Website rendering, GitHub
 Projects, and green CI remain non-authoritative for proof promotion.
 
+## Runtime Collector Eligibility Map v0
+
+This map controls which detections are eligible for runtime candidate
+collection. It does not prove runtime signal, public-safe runtime proof,
+production readiness, SOCaaS status, disposition approval, analyst approval, AI
+approval, or case closure. Collector rows remain private/runtime candidates
+unless separately reviewed and promoted through proof gates.
+
+### Machine-readable registry
+
+The machine-readable companion registry lives at
+`contracts/examples/runtime-collector-eligibility-v0.sample.json` and is governed
+by `contracts/schemas/runtime-collector-eligibility-v0.schema.json`.
+
+The registry is verified by
+`scripts/verify-runtime-collector-eligibility-v0.py`. It is a
+contract/control artifact only: it does not change collector runtime behavior,
+does not make the collector enumerate detections, and does not authorize
+appends, proof promotion, or public promotion.
+
+### Current collector scope
+
+Windows and Linux runtime collector workflows are scheduled. The current
+collector target is `HO-DET-001` only. The collector does not currently
+enumerate all detections, does not currently read an org-wide detection
+registry, and does not currently implement per-detection eligibility.
+
+Collector append is approval-gated. Collector rows are runtime candidates only
+unless proof gates promote them. Detection listing, source existence,
+validation, or proof record existence does not make a detection collector
+eligible, collector targeted, collector observed, public-safe, approved for
+disposition, or closed.
+
+### Scope truth table
+
+| Question | Current answer |
+| --- | --- |
+| Org-wide auto collection | NO |
+| Scoped collection | YES |
+| Proven target detections | `HO-DET-001` |
+| Collector-marker rows | 2 |
+| Collector row status | `RUNTIME_CANDIDATE_ONLY` |
+| Public-safe runtime rows | 0 |
+| Case-closure rows | 0 |
+| AI/analyst disposition rows | 0 |
+| Windows lane | Scheduled; self-hosted runner availability may affect queued runs |
+| Linux lane | Scheduled |
+
+### Detection eligibility matrix
+
+| Detection ID | Source/listed status | Validation status | Proof status | Collector eligibility | Collector target proven | Collector row observed | Collector row count | Current safe status | Next gate |
+| --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- |
+| HO-DET-001 | Source exists/listed | Controlled-test validation exists | Proof record exists | ELIGIBLE_CURRENT_TARGET | YES | YES | 2 | RUNTIME_CANDIDATE_ONLY / NOT_PUBLIC_SAFE | Decide whether to keep single-target collection or introduce registry-based eligibility |
+| HO-DET-011 | Source exists/listed | Controlled-test validation exists | Proof record exists | ELIGIBLE_PENDING_REGISTRY | NO | NO | 0 | Private evidence or ledger history does not equal runtime collector collection | Add explicit collector eligibility and target mapping before collection claim |
+| HO-DET-012 | Source exists/listed | Controlled-test validation exists | Proof record exists | ELIGIBLE_PENDING_REGISTRY | NO | NO | 0 | Private receipt or ledger history does not equal runtime collector collection | Add explicit collector eligibility and target mapping before collection claim |
+| HO-DET-013 | Source exists/listed | Validation planned | No collector-linked proof observed | NEEDS_VALIDATION | NO | NO | 0 | Source-only / NOT_COLLECTOR_ELIGIBLE_YET | Complete validation before collector eligibility |
+| ID-DET-001 | Source exists/listed | Controlled-test validation exists | No collector-linked proof observed | NEEDS_COLLECTOR_DESIGN | NO | NO | 0 | Controlled validation only; no runtime collection claim | Identity collector design is required before runtime collection claim |
+| ID-DET-002 | Source exists/listed | Controlled-test validation exists | No collector-linked proof observed | NEEDS_COLLECTOR_DESIGN | NO | NO | 0 | Controlled validation only; no runtime collection claim | Identity collector design is required before runtime collection claim |
+| ID-DET-003 | Source exists/listed | Controlled-test validation exists | No collector-linked proof observed | NEEDS_COLLECTOR_DESIGN | NO | NO | 0 | Controlled validation only; no runtime collection claim | Identity collector design is required before runtime collection claim |
+| ID-DET-004 | Source exists/listed | Controlled-test validation exists | No collector-linked proof observed | NEEDS_COLLECTOR_DESIGN | NO | NO | 0 | Controlled validation only; no runtime collection claim | Identity collector design is required before runtime collection claim |
+| AWS-DET-001 | Source exists/listed | Controlled-test validation exists | Proof record exists | NEEDS_COLLECTOR_DESIGN | NO | NO | 0 | Controlled validation only; AWS-live remains blocked unless separately proven | Cloud collector design is required before runtime collection claim |
+| HO-PIPE-001 | Source/contract listed | Validation artifact appears present | No collector-linked proof observed | NEEDS_TELEMETRY_CONTRACT | NO | NO | 0 | Pipeline/telemetry contract only; no runtime collector claim | Finish telemetry contract and collector design before collection claim |
+| HO-NDR-002 | Listed as telemetry contract need | UNKNOWN | No collector-linked proof observed | NEEDS_TELEMETRY_CONTRACT | NO | NO | 0 | Listed only; no runtime collector claim | Define telemetry contract before collector eligibility |
+| HO-DET-002 through HO-DET-010 | Listed/planned | Validation planned or not proven here | No collector-linked proof observed | NOT_COLLECTOR_ELIGIBLE_YET | NO | NO | 0 | Planned/listed only; no runtime collector claim | Create source and validation gates before collector eligibility |
+| HO-DET-014 through HO-DET-016 | Listed as telemetry/source expansion candidates | Validation planned or not proven here | No collector-linked proof observed | NEEDS_TELEMETRY_CONTRACT | NO | NO | 0 | Listed only; no runtime collector claim | Define telemetry/source contract before collector eligibility |
+
+### Eligibility states
+
+- `ELIGIBLE_CURRENT_TARGET`: the collector code currently targets this
+  detection and governed collector rows have been observed.
+- `ELIGIBLE_PENDING_REGISTRY`: the detection may be eligible for future
+  collector work, but it needs explicit registry or eligibility-map wiring
+  before any collection claim.
+- `NEEDS_SOURCE`: source artifacts must exist before eligibility can be
+  considered.
+- `NEEDS_VALIDATION`: controlled validation must exist before eligibility can be
+  considered.
+- `NEEDS_TELEMETRY_CONTRACT`: required telemetry fields, routes, or event
+  contracts must be defined before eligibility can be considered.
+- `NEEDS_COLLECTOR_DESIGN`: a lane-specific collector design is required before
+  runtime collection can be claimed.
+- `BLOCKED_PUBLIC_CLAIM`: public-safe, runtime, signal, production, SOCaaS,
+  disposition, analyst approval, AI approval, or closure wording is blocked.
+- `NOT_COLLECTOR_ELIGIBLE_YET`: no current collector eligibility is proven.
+- `UNKNOWN`: current evidence is insufficient to classify safely.
+
+### Promotion rules
+
+- Detection listed does not prove collector collection.
+- Source exists does not prove collector collection.
+- Validation passed does not prove collector collection.
+- Proof record exists does not prove collector collection unless linked to
+  collector rows.
+- Collector candidate row does not prove public-safe runtime proof.
+- Candidate count does not prove signal-observed public proof.
+- Scheduled workflow does not prove successful collection.
+- Queued runner does not prove code failure.
+- Website rendering is not proof.
+- Public proof requires proof repo linkage and approved claim ceiling.
+
+### Current blockers / next work
+
+- Current collector is hardcoded/scoped to `HO-DET-001`.
+- Org-wide collection requires a registry or eligibility map consumed by
+  collector code.
+- Windows self-hosted runner queue/availability should be checked separately.
+- Artifact behavior should be intentionally decided: host-only private
+  candidate files vs sanitized uploaded artifacts.
+- Public/reviewer summaries may need count alignment later if 4 vs 6 appears,
+  but public surfaces are not updated by this platform map.
+
+### Interview-safe statement
+
+"The runtime collector is scheduled, but currently scoped to HO-DET-001. It
+produces governed runtime-candidate rows only; it does not yet collect every
+detection across the org or promote public-safe runtime proof."
+
 ## AutoSOC Case Ledger v0
 
 AutoSOC Case Ledger v0 is a platform-owned SQLite seed ledger for durable

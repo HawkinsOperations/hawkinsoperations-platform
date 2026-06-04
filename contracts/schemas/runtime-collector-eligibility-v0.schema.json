@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HawkinsOperations/hawkinsoperations-platform/contracts/schemas/runtime-collector-eligibility-v0.schema.json",
+  "title": "Runtime Collector Eligibility Registry v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "registry_name",
+    "registry_version",
+    "generated_for",
+    "proof_ceiling",
+    "public_safe_status",
+    "org_wide_auto_collection",
+    "current_collector_scope",
+    "append_requires_human_approval",
+    "collector_behavior_changed_by_this_registry",
+    "detections"
+  ],
+  "properties": {
+    "registry_name": {
+      "const": "Runtime Collector Eligibility Registry v0"
+    },
+    "registry_version": {
+      "const": "runtime-collector-eligibility-v0"
+    },
+    "generated_for": {
+      "type": "string",
+      "minLength": 1
+    },
+    "proof_ceiling": {
+      "enum": [
+        "PRIVATE_RUNTIME_CANDIDATE_ONLY",
+        "CONTROLLED_TEST_VALIDATED"
+      ]
+    },
+    "public_safe_status": {
+      "const": "NOT_PUBLIC_SAFE"
+    },
+    "org_wide_auto_collection": {
+      "const": false
+    },
+    "current_collector_scope": {
+      "const": "HO-DET-001_ONLY"
+    },
+    "append_requires_human_approval": {
+      "const": true
+    },
+    "collector_behavior_changed_by_this_registry": {
+      "const": false
+    },
+    "detections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/detection_entry"
+      }
+    }
+  },
+  "$defs": {
+    "detection_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "detection_id",
+        "source_status",
+        "validation_status",
+        "proof_status",
+        "collector_eligibility",
+        "collector_target_proven",
+        "collector_row_observed",
+        "collector_row_count",
+        "current_safe_status",
+        "next_gate",
+        "public_claim_allowed",
+        "runtime_claim_allowed",
+        "case_closure_allowed",
+        "disposition_allowed",
+        "notes"
+      ],
+      "properties": {
+        "detection_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "validation_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proof_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "collector_eligibility": {
+          "enum": [
+            "ELIGIBLE_CURRENT_TARGET",
+            "ELIGIBLE_PENDING_REGISTRY",
+            "NEEDS_SOURCE",
+            "NEEDS_VALIDATION",
+            "NEEDS_TELEMETRY_CONTRACT",
+            "NEEDS_COLLECTOR_DESIGN",
+            "BLOCKED_PUBLIC_CLAIM",
+            "NOT_COLLECTOR_ELIGIBLE_YET",
+            "UNKNOWN"
+          ]
+        },
+        "collector_target_proven": {
+          "type": "boolean"
+        },
+        "collector_row_observed": {
+          "type": "boolean"
+        },
+        "collector_row_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "current_safe_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "next_gate": {
+          "type": "string",
+          "minLength": 1
+        },
+        "public_claim_allowed": {
+          "const": false
+        },
+        "runtime_claim_allowed": {
+          "const": false
+        },
+        "case_closure_allowed": {
+          "const": false
+        },
+        "disposition_allowed": {
+          "const": false
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

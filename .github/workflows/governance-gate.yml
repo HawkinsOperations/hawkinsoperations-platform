@@ -2,6 +2,7 @@ name: Governance Gate
 
 on:
   pull_request:
+  workflow_dispatch:
   push:
     branches: [main]
 
@@ -59,6 +60,16 @@ jobs:
         run: python -m json.tool contracts/examples/runtime-route-proof-v1-private-candidate.sample.json >/dev/null
       - name: Verify Runtime Route Proof v1 private candidate packet
         run: python scripts/verify-runtime-route-proof-v1-private-candidate.py >/dev/null
+
+  runtime-collector-eligibility-v0:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install schema validation dependency
+        run: python -m pip install jsonschema
+      - name: Verify Runtime Collector Eligibility Registry v0
+        run: |
+          python scripts/verify-runtime-collector-eligibility-v0.py --registry contracts/examples/runtime-collector-eligibility-v0.sample.json --schema contracts/schemas/runtime-collector-eligibility-v0.schema.json
 
   lifetime-case-ledger-v1:
     runs-on: ubuntu-latest
