@@ -7,8 +7,9 @@ on:
         description: Private Windows collector output route on the trusted runner host
         required: true
         type: string
-  schedule:
-    - cron: "0 * * * *"
+  # Scheduled runs paused while self-hosted runtime runners/main PC are offline. Manual workflow_dispatch remains available for approved runtime reentry.
+  # schedule:
+  #   - cron: "0 * * * *"
 
 permissions:
   contents: read
