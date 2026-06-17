@@ -119,7 +119,8 @@
       "hoxline_gauntlet_status",
       "hoxline_v1_source_manifest",
       "validation_bridge_status",
-      "proof_bridge_status"
+      "proof_bridge_status",
+      "public_safe_candidate_reviews"
     ],
     "website_must_not_source_from_website_only_data": [
       "lifetime_governed_cases",
@@ -143,7 +144,8 @@
       "ai_or_analyst_disposition_status",
       "hoxline_product_status",
       "hoxline_gauntlet_status",
-      "hoxline_v1_source_manifest"
+      "hoxline_v1_source_manifest",
+      "public_safe_candidate_reviews"
     ],
     "website_rendering_is_proof": false,
     "no_proof_promotion_statement": "This contract does not promote proof. The website may render only bounded source-contract fields and must not treat rendering as proof, runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, disposition approval, final authorization, or case closure."
@@ -399,6 +401,56 @@
     "public_safe_source_required": "hawkinsoperations-proof",
     "website_may_not_promote_public_safe": true
   },
+  "public_safe_candidate_reviews": [
+    {
+      "artifact_id": "HO-DET-001",
+      "review_lane": "PUBLIC_SAFE_CANDIDATE_REVIEW_V1",
+      "review_version": "v1",
+      "source_artifact": "contracts/public-status-source-contract-v1.json",
+      "evidence_authority_surface": "PLATFORM_CONTRACT_ENFORCEMENT_ONLY",
+      "privacy_review": "PENDING",
+      "stale_review": "PENDING",
+      "evidence_linkage_review": "PENDING",
+      "wording_approval": "PENDING",
+      "public_safe_status": "NOT_PUBLIC_SAFE",
+      "runtime_active": false,
+      "signal_observed": false,
+      "human_review_required": true,
+      "proof_ceiling": "CONTROLLED_VALIDATION_ONLY",
+      "allowed_claims": [
+        "HO-DET-001 has controlled validation evidence and remains under governed public-safe candidate review."
+      ],
+      "blocked_claims": [
+        "runtime active",
+        "runtime proven",
+        "signal observed",
+        "public-safe approved",
+        "public-safe proof",
+        "production ready",
+        "production SOC",
+        "SOC deployed",
+        "SOCaaS deployed",
+        "customer deployed",
+        "customer validated",
+        "analyst approved",
+        "AI approved",
+        "autonomous approval",
+        "final human authorization",
+        "case closed",
+        "green CI as approval",
+        "website rendering as proof",
+        "GitHub rendering as proof"
+      ],
+      "promotion_blockers": [
+        "privacy_review_pending",
+        "stale_review_pending",
+        "evidence_linkage_review_pending",
+        "wording_approval_pending",
+        "human_review_required",
+        "proof_ceiling_controlled_validation_only"
+      ]
+    }
+  ],
   "reviewer_actions_source_routes": [
     {
       "route": "lifetime-ledger-state-manifest-verify",
