@@ -61,8 +61,8 @@
       "role": "Hoxline product and Gauntlet field owner",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
-      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR",
-      "authority_boundary": "pending direct Hoxline Gauntlet v1 source routes only; not main/default-branch truth, runtime truth, signal truth, public-safe truth, production readiness, customer deployment, SOCaaS deployment, approval, authorization, or closure"
+      "source_status": "SOURCE_CAPTURED_PENDING_PR",
+      "authority_boundary": "pending Hoxline Gauntlet v1 source manifest and reviewer command routes only; not main/default-branch truth, runtime truth, signal truth, public-safe truth, production readiness, customer deployment, SOCaaS deployment, approval, authorization, or closure"
     }
   ],
   "source_paths": {
@@ -74,7 +74,7 @@
     "proof_reviewer_map": "../hawkinsoperations-proof/proof/indexes/reviewer-proof-map.json",
     "detections_promotion_matrix": "../hawkinsoperations-detections/detections/DETECTION_PROMOTION_MATRIX.yml",
     "website_generated_status_consumer": "../hawkinsoperations-website/UNKNOWN_SOURCE_NOT_CAPTURED",
-    "hoxline_v1_source_manifest": "UNKNOWN_SOURCE_NOT_CAPTURED",
+    "hoxline_v1_source_manifest": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json",
     "hoxline_gauntlet_run_v1": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
     "hoxline_gauntlet_run_v1_overclaim": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-run-v1-overclaim.json",
     "hoxline_evidence_graph_v1": "../aevumguard/examples/gauntlet/ho-det-001-evidence-graph-v1.json",
@@ -117,6 +117,7 @@
       "reviewer_actions_source_routes",
       "hoxline_product_status",
       "hoxline_gauntlet_status",
+      "hoxline_v1_source_manifest",
       "validation_bridge_status",
       "proof_bridge_status"
     ],
@@ -141,7 +142,8 @@
       "case_closure_status",
       "ai_or_analyst_disposition_status",
       "hoxline_product_status",
-      "hoxline_gauntlet_status"
+      "hoxline_gauntlet_status",
+      "hoxline_v1_source_manifest"
     ],
     "website_rendering_is_proof": false,
     "no_proof_promotion_statement": "This contract does not promote proof. The website may render only bounded source-contract fields and must not treat rendering as proof, runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, disposition approval, final authorization, or case closure."
@@ -345,12 +347,14 @@
     },
     "hoxline_v1_source_manifest": {
       "owner_repo": "hoxline/aevumguard",
-      "source_path": "UNKNOWN_SOURCE_NOT_CAPTURED",
-      "source_json_pointer": "UNKNOWN_SOURCE_NOT_CAPTURED",
-      "current_value": "UNKNOWN_SOURCE_NOT_CAPTURED",
-      "render_allowed": false,
-      "source_status": "UNKNOWN_SOURCE_NOT_CAPTURED",
-      "freshness_policy": "Preferred Hoxline v1 source manifest was not present in PR #15 inspection; keep unknown until captured."
+      "source_path": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json",
+      "source_json_pointer": "/manifest_id",
+      "current_value": "SEE_HOXLINE_V1_SOURCE_MANIFEST",
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED_PENDING_PR",
+      "source_pr": 15,
+      "source_branch": "feature/hoxline-gauntlet-v1-engine",
+      "freshness_policy": "Render only bounded pending Hoxline v1 source-route metadata until PR #15 is merged; do not treat the source manifest as proof, runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, approval, authorization, or closure."
     },
     "validation_bridge_status": {
       "owner_repo": "hawkinsoperations-validation",

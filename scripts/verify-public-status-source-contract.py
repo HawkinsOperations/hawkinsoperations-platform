@@ -14,6 +14,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "contracts" / "public-status-source-contract-v1.json"
 UNKNOWN = "UNKNOWN_SOURCE_NOT_CAPTURED"
+HOXLINE_SOURCE_MANIFEST_PATH = "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json"
 ALLOWED_SOURCE_STATUSES = {
     "SOURCE_CAPTURED",
     "SOURCE_CAPTURED_PENDING_PR",
@@ -313,12 +314,23 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
         require_owner(public_fields, field, "hawkinsoperations-validation")
     for field in PROOF_BRIDGE_FIELDS:
         require_owner(public_fields, field, "hawkinsoperations-proof")
-    verify_unknown_field(public_fields, "hoxline_v1_source_manifest")
-
     if public_fields["hoxline_product_status"].get("source_status") != "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR":
         fail("hoxline_product_status must be captured as direct v1 paths pending PR")
     if public_fields["hoxline_gauntlet_status"].get("source_status") != "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR":
         fail("hoxline_gauntlet_status must be captured as direct v1 paths pending PR")
+    hoxline_source_manifest = public_fields["hoxline_v1_source_manifest"]
+    if hoxline_source_manifest.get("source_status") != "SOURCE_CAPTURED_PENDING_PR":
+        fail("hoxline_v1_source_manifest must be captured as pending PR source")
+    if hoxline_source_manifest.get("source_pr") != 15:
+        fail("hoxline_v1_source_manifest must reference PR #15")
+    if hoxline_source_manifest.get("source_branch") != "feature/hoxline-gauntlet-v1-engine":
+        fail("hoxline_v1_source_manifest must reference the Hoxline Gauntlet v1 branch")
+    if hoxline_source_manifest.get("source_path") != HOXLINE_SOURCE_MANIFEST_PATH:
+        fail("hoxline_v1_source_manifest must point to the Hoxline v1 source manifest")
+    if hoxline_source_manifest.get("current_value") != "SEE_HOXLINE_V1_SOURCE_MANIFEST":
+        fail("hoxline_v1_source_manifest must render only bounded source-route metadata")
+    if hoxline_source_manifest.get("render_allowed") is not True:
+        fail("hoxline_v1_source_manifest must be renderable as bounded source-route metadata")
     gauntlet_value = public_fields["hoxline_gauntlet_status"].get("current_value")
     if not isinstance(gauntlet_value, dict):
         fail("hoxline_gauntlet_status current_value must be bounded metadata")
@@ -365,8 +377,8 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
     missing_source_path_keys = REQUIRED_SOURCE_PATH_KEYS - set(source_paths)
     if missing_source_path_keys:
         fail(f"source_paths missing Hoxline/bridge routes: {sorted(missing_source_path_keys)}")
-    if source_paths.get("hoxline_v1_source_manifest") != UNKNOWN:
-        fail(f"hoxline_v1_source_manifest must remain {UNKNOWN} until captured")
+    if source_paths.get("hoxline_v1_source_manifest") != HOXLINE_SOURCE_MANIFEST_PATH:
+        fail("source_paths.hoxline_v1_source_manifest must point to the Hoxline v1 source manifest")
     for key, value in source_paths.items():
         if not isinstance(value, str) or not value:
             fail(f"source path {key} must be a string")

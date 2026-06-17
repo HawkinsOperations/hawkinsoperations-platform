@@ -29,8 +29,11 @@
     },
     "hoxline_v1_source_manifest": {
       "owner_repo": "hoxline/aevumguard",
-      "source_path": "UNKNOWN_SOURCE_NOT_CAPTURED",
-      "current_value": "UNKNOWN_SOURCE_NOT_CAPTURED"
+      "source_path": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json",
+      "source_status": "SOURCE_CAPTURED_PENDING_PR",
+      "source_pr": 15,
+      "source_branch": "feature/hoxline-gauntlet-v1-engine",
+      "current_value": "SEE_HOXLINE_V1_SOURCE_MANIFEST"
     },
     "validation_bridge_status": {
       "owner_repo": "hawkinsoperations-validation",
