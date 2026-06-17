@@ -314,13 +314,13 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
         require_owner(public_fields, field, "hawkinsoperations-validation")
     for field in PROOF_BRIDGE_FIELDS:
         require_owner(public_fields, field, "hawkinsoperations-proof")
-    if public_fields["hoxline_product_status"].get("source_status") != "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR":
-        fail("hoxline_product_status must be captured as direct v1 paths pending PR")
-    if public_fields["hoxline_gauntlet_status"].get("source_status") != "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR":
-        fail("hoxline_gauntlet_status must be captured as direct v1 paths pending PR")
+    if public_fields["hoxline_product_status"].get("source_status") != "SOURCE_CAPTURED":
+        fail("hoxline_product_status must be captured from landed PR #15 source")
+    if public_fields["hoxline_gauntlet_status"].get("source_status") != "SOURCE_CAPTURED":
+        fail("hoxline_gauntlet_status must be captured from landed PR #15 source")
     hoxline_source_manifest = public_fields["hoxline_v1_source_manifest"]
-    if hoxline_source_manifest.get("source_status") != "SOURCE_CAPTURED_PENDING_PR":
-        fail("hoxline_v1_source_manifest must be captured as pending PR source")
+    if hoxline_source_manifest.get("source_status") != "SOURCE_CAPTURED":
+        fail("hoxline_v1_source_manifest must be captured from landed PR #15 source")
     if hoxline_source_manifest.get("source_pr") != 15:
         fail("hoxline_v1_source_manifest must reference PR #15")
     if hoxline_source_manifest.get("source_branch") != "feature/hoxline-gauntlet-v1-engine":
@@ -340,10 +340,10 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
         fail("Hoxline Gauntlet v1 metadata must keep public-safe state blocked")
     if gauntlet_value.get("hoxline_gauntlet_v1_proof_ceiling") != "CONTROLLED_TEST_VALIDATED":
         fail("Hoxline Gauntlet v1 metadata must keep controlled-test proof ceiling")
-    if public_fields["validation_bridge_status"].get("source_status") != "SOURCE_CAPTURED_PENDING_PR":
-        fail("validation_bridge_status must be pending PR source")
-    if public_fields["proof_bridge_status"].get("source_status") != "SOURCE_CAPTURED_PENDING_PR":
-        fail("proof_bridge_status must be pending PR source")
+    if public_fields["validation_bridge_status"].get("source_status") != "SOURCE_CAPTURED":
+        fail("validation_bridge_status must be captured from landed PR #67 source")
+    if public_fields["proof_bridge_status"].get("source_status") != "SOURCE_CAPTURED":
+        fail("proof_bridge_status must be captured from landed PR #81 source")
 
     public_safe_policy = contract.get("public_safe_policy")
     proof_ceiling_policy = contract.get("proof_ceiling_policy")

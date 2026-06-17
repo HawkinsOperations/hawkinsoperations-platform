@@ -32,11 +32,11 @@
     },
     {
       "repo": "hawkinsoperations-validation",
-      "role": "pending Hoxline Gauntlet validation bridge source route owner",
+      "role": "landed Hoxline Gauntlet validation bridge source route owner",
       "source_pr": 67,
       "source_branch": "feature/hoxline-gauntlet-validation-bridge-v1",
-      "source_status": "SOURCE_CAPTURED_PENDING_PR",
-      "authority_boundary": "pending validation bridge route only; not main/default-branch truth, runtime truth, signal truth, proof authority, or public-safe truth"
+      "source_status": "SOURCE_CAPTURED",
+      "authority_boundary": "landed validation bridge route only; not runtime truth, signal truth, proof authority, or public-safe truth"
     },
     {
       "repo": "hawkinsoperations-proof",
@@ -45,11 +45,11 @@
     },
     {
       "repo": "hawkinsoperations-proof",
-      "role": "pending Hoxline Gauntlet proof bridge source route owner",
+      "role": "landed Hoxline Gauntlet proof bridge source route owner",
       "source_pr": 81,
       "source_branch": "feature/hoxline-gauntlet-proof-bridge-v1",
-      "source_status": "SOURCE_CAPTURED_PENDING_PR",
-      "authority_boundary": "pending proof bridge route only; not main/default-branch truth, proof promotion, runtime truth, signal truth, or public-safe truth"
+      "source_status": "SOURCE_CAPTURED",
+      "authority_boundary": "landed proof bridge route only; not proof promotion, runtime truth, signal truth, or public-safe truth"
     },
     {
       "repo": "hawkinsoperations-website",
@@ -61,8 +61,8 @@
       "role": "Hoxline product and Gauntlet field owner",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
-      "source_status": "SOURCE_CAPTURED_PENDING_PR",
-      "authority_boundary": "pending Hoxline Gauntlet v1 source manifest and reviewer command routes only; not main/default-branch truth, runtime truth, signal truth, public-safe truth, production readiness, customer deployment, SOCaaS deployment, approval, authorization, or closure"
+      "source_status": "SOURCE_CAPTURED",
+      "authority_boundary": "landed Hoxline Gauntlet v1 source manifest and reviewer command routes only; not runtime truth, signal truth, public-safe truth, production readiness, customer deployment, SOCaaS deployment, approval, authorization, or closure"
     }
   ],
   "source_paths": {
@@ -322,10 +322,10 @@
       "source_json_pointer": "/product",
       "current_value": "Hoxline by HawkinsOperations",
       "render_allowed": true,
-      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR",
+      "source_status": "SOURCE_CAPTURED",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
-      "freshness_policy": "Render only as pending Hoxline product source metadata until PR #15 is merged; never treat product rendering as proof, runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, approval, authorization, or closure."
+      "freshness_policy": "Render only as landed Hoxline product source metadata from PR #15; never treat product rendering as proof, runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, approval, authorization, or closure."
     },
     "hoxline_gauntlet_status": {
       "owner_repo": "hoxline/aevumguard",
@@ -340,10 +340,10 @@
         "hoxline_gauntlet_v1_human_review_required": true
       },
       "render_allowed": true,
-      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR",
+      "source_status": "SOURCE_CAPTURED",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
-      "freshness_policy": "Render only bounded pending Hoxline Gauntlet v1 metadata until PR #15 is merged; do not render runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, AI approval, analyst approval, final authorization, or case closure."
+      "freshness_policy": "Render only bounded landed Hoxline Gauntlet v1 metadata from PR #15; do not render runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, AI approval, analyst approval, final authorization, or case closure."
     },
     "hoxline_v1_source_manifest": {
       "owner_repo": "hoxline/aevumguard",
@@ -351,10 +351,10 @@
       "source_json_pointer": "/manifest_id",
       "current_value": "SEE_HOXLINE_V1_SOURCE_MANIFEST",
       "render_allowed": true,
-      "source_status": "SOURCE_CAPTURED_PENDING_PR",
+      "source_status": "SOURCE_CAPTURED",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
-      "freshness_policy": "Render only bounded pending Hoxline v1 source-route metadata until PR #15 is merged; do not treat the source manifest as proof, runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, approval, authorization, or closure."
+      "freshness_policy": "Render only bounded landed Hoxline v1 source-route metadata from PR #15; do not treat the source manifest as proof, runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, approval, authorization, or closure."
     },
     "validation_bridge_status": {
       "owner_repo": "hawkinsoperations-validation",
@@ -362,10 +362,10 @@
       "source_json_pointer": "/controlled_validation_status",
       "current_value": "VALIDATION_BRIDGE_REVIEWER_PATH_RECORDED",
       "render_allowed": true,
-      "source_status": "SOURCE_CAPTURED_PENDING_PR",
+      "source_status": "SOURCE_CAPTURED",
       "source_pr": 67,
       "source_branch": "feature/hoxline-gauntlet-validation-bridge-v1",
-      "freshness_policy": "Render only as pending validation bridge source metadata until PR #67 is merged; bridge route is not main/default-branch truth and does not create runtime, signal, proof, public-safe, production, customer, SOCaaS, approval, authorization, or closure truth."
+      "freshness_policy": "Render only as landed validation bridge source metadata from PR #67; bridge route does not create runtime, signal, proof, public-safe, production, customer, SOCaaS, approval, authorization, or closure truth."
     },
     "proof_bridge_status": {
       "owner_repo": "hawkinsoperations-proof",
@@ -373,10 +373,10 @@
       "source_json_pointer": "/proof_bridge_kind",
       "current_value": "hoxline_gauntlet_proof_bridge",
       "render_allowed": true,
-      "source_status": "SOURCE_CAPTURED_PENDING_PR",
+      "source_status": "SOURCE_CAPTURED",
       "source_pr": 81,
       "source_branch": "feature/hoxline-gauntlet-proof-bridge-v1",
-      "freshness_policy": "Render only as pending proof bridge source metadata until PR #81 is merged; bridge route is not main/default-branch truth and does not promote proof, runtime, signal, public-safe, production, customer, SOCaaS, approval, authorization, or closure truth."
+      "freshness_policy": "Render only as landed proof bridge source metadata from PR #81; bridge route does not promote proof, runtime, signal, public-safe, production, customer, SOCaaS, approval, authorization, or closure truth."
     }
   },
   "freshness_policy": {
@@ -426,7 +426,7 @@
       "owner_repo": "hoxline/aevumguard",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
-      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR"
+      "source_status": "SOURCE_CAPTURED"
     },
     {
       "route": "hoxline-gauntlet-v1-summarize",
@@ -434,7 +434,7 @@
       "owner_repo": "hoxline/aevumguard",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
-      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR"
+      "source_status": "SOURCE_CAPTURED"
     },
     {
       "route": "hoxline-claim-authority-v1-decide",
@@ -442,7 +442,7 @@
       "owner_repo": "hoxline/aevumguard",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
-      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR"
+      "source_status": "SOURCE_CAPTURED"
     },
     {
       "route": "hoxline-proofcard-v1-render",
@@ -450,7 +450,7 @@
       "owner_repo": "hoxline/aevumguard",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
-      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR"
+      "source_status": "SOURCE_CAPTURED"
     },
     {
       "route": "hoxline-gauntlet-v1-overclaim-verify",
@@ -458,7 +458,7 @@
       "owner_repo": "hoxline/aevumguard",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
-      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR",
+      "source_status": "SOURCE_CAPTURED",
       "expected_result": "PASS_FAIL_CLOSED"
     },
     {
@@ -467,7 +467,7 @@
       "owner_repo": "hawkinsoperations-validation",
       "source_pr": 67,
       "source_branch": "feature/hoxline-gauntlet-validation-bridge-v1",
-      "source_status": "SOURCE_CAPTURED_PENDING_PR"
+      "source_status": "SOURCE_CAPTURED"
     },
     {
       "route": "hoxline-gauntlet-proof-bridge-v1-verify",
@@ -475,7 +475,7 @@
       "owner_repo": "hawkinsoperations-proof",
       "source_pr": 81,
       "source_branch": "feature/hoxline-gauntlet-proof-bridge-v1",
-      "source_status": "SOURCE_CAPTURED_PENDING_PR"
+      "source_status": "SOURCE_CAPTURED"
     }
   ],
   "future_generated_status_v1_extraction": {
@@ -483,9 +483,9 @@
       "Read this contract first.",
       "Read only the declared source_paths for renderable fields.",
       "Preserve owner_repo per field in generated output.",
-      "Preserve source_pr, source_branch, and pending/unmerged source_status for pending PR fields.",
+      "Preserve source_pr and source_branch provenance for landed source fields, and preserve pending/unmerged source_status for any future pending PR fields.",
       "Emit UNKNOWN_SOURCE_NOT_CAPTURED when a source route is absent, unsafe, or not represented in this contract.",
-      "Treat SOURCE_CAPTURED_PENDING_PR and SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR as pending source routes, not main/default-branch truth.",
+      "Treat SOURCE_CAPTURED routes as landed source metadata only, and treat SOURCE_CAPTURED_PENDING_PR or SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR as pending source routes, not main/default-branch truth.",
       "Render stale values only with explicit stale status.",
       "Keep website as consumer only.",
       "Fail closed if a website-only file attempts to source status, proof, runtime, signal, public-safe, production, customer, SOCaaS, disposition, authorization, or closure fields."
