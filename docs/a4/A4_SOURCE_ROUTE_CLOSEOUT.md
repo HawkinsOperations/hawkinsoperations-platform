@@ -1,5 +1,94 @@
 # A4 Source Route Closeout
 
+## Public Reviewer Packet: Don't Trust the Page. Check the Route.
+
+Purpose: This packet gives reviewers a public route to check the current HawkinsOperations public status surface without treating the website as proof authority.
+
+Supported claim: Hoxline has a merged v1 source route from product engine to validation bridge, proof bridge, and platform public-status source contract under controlled scope.
+
+Route chain:
+
+```text
+Public status JSON
+→ Hoxline source route
+→ validation bridge
+→ proof bridge
+→ platform source contract
+→ reviewer clone / run path
+```
+
+Public state metrics:
+
+* 72 controls fired
+* 31 claims blocked
+* 106 validation cases
+* 8 proof records
+* 0 public-safe promotions
+
+The `0 public-safe promotions` value is intentional: the public surface must not promote runtime/public-safe status unless the owning evidence route supports it.
+
+Reviewer links:
+
+* [public status JSON](https://hawkinsoperations.com/data/public-status.json)
+* [Hoxline Gauntlet v1 run](https://github.com/HawkinsOperations/hoxline/blob/main/examples/gauntlet/ho-det-001-gauntlet-run-v1.json)
+* [Hoxline Claim Authority v1](https://github.com/HawkinsOperations/hoxline/blob/main/docs/claim-authority/CLAIM_AUTHORITY_V1.md)
+* [validation bridge](https://github.com/HawkinsOperations/hawkinsoperations-validation/blob/main/validation/hoxline/HO-DET-001_HOXLINE_GAUNTLET_VALIDATION_BRIDGE_V1.md)
+* [proof bridge](https://github.com/HawkinsOperations/hawkinsoperations-proof/blob/main/proof/records/HO-DET-001_HOXLINE_GAUNTLET_BRIDGE_V1.md)
+* [platform public-status source contract](https://github.com/HawkinsOperations/hawkinsoperations-platform/blob/main/contracts/PUBLIC_STATUS_SOURCE_CONTRACT_V1.md)
+
+Reviewer commands:
+
+Hoxline:
+
+```bash
+python -B -m hoxline gauntlet verify --input examples/gauntlet/ho-det-001-gauntlet-run-v1.json --schema schemas/gauntlet-run-v1.schema.json
+```
+
+Validation:
+
+```bash
+python -B scripts/verify_hoxline_gauntlet_validation_bridge.py --format json
+```
+
+Proof:
+
+```bash
+python -B scripts/verify-hoxline-gauntlet-proof-bridge.py --format json
+python -B scripts/verify-proof-pack-001-release.py
+```
+
+Platform:
+
+```bash
+python -B scripts/verify-public-status-source-contract.py --format json
+python -B scripts/ho_factory.py public-status-source-contract-verify --format json
+```
+
+Still blocked:
+
+* runtime truth
+* signal truth
+* public-safe runtime proof
+* production readiness
+* customer deployment
+* SOCaaS deployment
+* AI-approved disposition
+* analyst-approved disposition
+* final authorization
+* case closure
+
+Proof ceiling:
+
+Hoxline Gauntlet v1 remains bounded by `CONTROLLED_TEST_VALIDATED`.
+
+Platform public-status source contract remains bounded by `SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY`.
+
+Website boundary:
+
+The website can render status, route reviewers, and expose public reviewer actions. It cannot create proof authority, runtime truth, signal truth, public-safe status, production readiness, customer deployment, approval, authorization, or case closure.
+
+This supports a bounded public reviewer route under controlled scope.
+
 ## Purpose
 
 A4 closed the source-route chain for Hoxline Gauntlet v1 under controlled scope.
