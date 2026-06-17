@@ -92,6 +92,7 @@ Start here:
 3. Inspect `scripts/ho_factory.py` and `docs/factory/DETECTION_FACTORY_CONTROLLER_V0.md` for reviewer-packet control.
 4. Inspect `contracts/lifetime-case-ledger-v1-state-manifest.json` and `docs/factory/LIFETIME_CASE_LEDGER_RECOVERABILITY_DRILL.md` for governed case mechanics.
 5. Inspect `docs/factory/REVIEWER_METRICS_PIPELINE_V1.md` for metric separation and the historical `4/4` snapshot boundary.
+6. Inspect `contracts/public-status-source-contract-v1.json` and `contracts/PUBLIC_STATUS_SOURCE_CONTRACT_V1.md` for the platform-owned source contract behind future website generated public status.
 
 Run these first:
 
@@ -103,8 +104,15 @@ Run these first:
 | Candidate normalizer | `python -B scripts/ho_factory.py collector-normalizer-verify --format json` | Runtime collector candidates normalize structurally and remain candidate truth only. | Ledger append, runtime collection, live telemetry, or human approval. |
 | Candidate dedupe | `python -B scripts/ho_factory.py collector-normalizer-dedupe-check --format json` | Normalized runtime candidates have `0` duplicates in the checked sample path. | Broad collector coverage, production deployment, or future candidate uniqueness. |
 | SOAR case packet | `python -B scripts/verify-soar-case-packet-v0.py` | SOAR-style case packet support is deterministic, human-review-required, and AI-support-only. | AI-decided disposition, analyst-approved disposition, case closure, or autonomous response. |
+| Public status source contract | `python -B scripts/verify-public-status-source-contract.py --format json` | Website-bound public status fields have explicit source routes, owners, freshness rules, and non-authority boundaries. | Public proof, runtime truth, signal truth, public-safe status, production readiness, SOCaaS/customer deployment, disposition, authorization, or closure. |
 
 Some controller commands expect a local HawkinsOperations organization mirror with sibling repositories. If those siblings are absent, treat the result as a local-environment limitation, not as proof failure or proof promotion.
+
+## Public Status Source Contract v1
+
+`contracts/public-status-source-contract-v1.json` is the platform-owned source contract for future website generated public status. It defines where public fields may come from, who owns them, what the website may render, and which fields must never be sourced from website-only data.
+
+Reviewers verify it with `python -B scripts/verify-public-status-source-contract.py --format json` or `python -B scripts/ho_factory.py public-status-source-contract-verify --format json`. It does not prove runtime truth, signal truth, public-safe status, production readiness, customer or SOCaaS deployment, disposition approval, final authorization, or case closure.
 
 ## Automation And Guardrails
 
