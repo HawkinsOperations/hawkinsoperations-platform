@@ -1,0 +1,360 @@
+{
+  "manifest_id": "PUBLIC_STATUS_SOURCE_CONTRACT_V1",
+  "version": "public_status_source_contract_v1",
+  "owner_repo": "hawkinsoperations-platform",
+  "consumer": "hawkinsoperations-website",
+  "generated_at": "2026-06-16T22:06:47.5510594-05:00",
+  "freshness_window_days": 14,
+  "platform_role": {
+    "source_contract": true,
+    "ledger_mechanics_owner": true,
+    "state_manifest_owner": true,
+    "website_rendering_authority": false,
+    "proof_authority": false,
+    "runtime_authority": false,
+    "signal_authority": false
+  },
+  "source_repos": [
+    {
+      "repo": "hawkinsoperations-platform",
+      "role": "source-contract, ledger mechanics, runtime candidate guardrails, and state manifest owner",
+      "authority_boundary": "platform mechanics and source routing only; not runtime truth, signal truth, public proof, or website authority"
+    },
+    {
+      "repo": "hawkinsoperations-detections",
+      "role": "detection source truth owner",
+      "authority_boundary": "detection source truth only; not validation, runtime, signal, proof, or public-safe truth"
+    },
+    {
+      "repo": "hawkinsoperations-validation",
+      "role": "controlled validation and activity ledger owner",
+      "authority_boundary": "controlled validation truth only; not runtime truth, signal truth, proof authority, or public-safe truth"
+    },
+    {
+      "repo": "hawkinsoperations-proof",
+      "role": "proof record, blocked claim, proof ceiling, and public-safe boundary owner",
+      "authority_boundary": "proof source records and proof boundaries only; website rendering does not create proof"
+    },
+    {
+      "repo": "hawkinsoperations-website",
+      "role": "consumer and public rendering surface",
+      "authority_boundary": "presentation only; never source authority for status, proof, runtime, signal, public-safe, or closure fields"
+    },
+    {
+      "repo": "hoxline/aevumguard",
+      "role": "Hoxline product and Gauntlet field owner",
+      "authority_boundary": "product/Gauntlet source truth only when a safe source artifact is captured; no value is captured in this platform contract"
+    }
+  ],
+  "source_paths": {
+    "platform_lifetime_state_manifest": "contracts/lifetime-case-ledger-v1-state-manifest.json",
+    "platform_reviewer_metrics_state": "contracts/reviewer-metrics-pipeline-v1-state.json",
+    "platform_runtime_candidate_normalizer_sample": "contracts/examples/runtime-case-collector-v0-normalizer.sample.json",
+    "validation_activity_ledger": "../hawkinsoperations-validation/activity/detection-activity-ledger-v1.json",
+    "proof_lifetime_summary": "../hawkinsoperations-proof/proof/records/lifetime-case-ledger-v1-public-summary.json",
+    "proof_reviewer_map": "../hawkinsoperations-proof/proof/indexes/reviewer-proof-map.json",
+    "detections_promotion_matrix": "../hawkinsoperations-detections/detections/DETECTION_PROMOTION_MATRIX.yml",
+    "website_generated_status_consumer": "../hawkinsoperations-website/UNKNOWN_SOURCE_NOT_CAPTURED",
+    "hoxline_product_source": "UNKNOWN_SOURCE_NOT_CAPTURED",
+    "hoxline_gauntlet_source": "UNKNOWN_SOURCE_NOT_CAPTURED"
+  },
+  "public_rendering_contract": {
+    "website_may_render": [
+      "lifetime_governed_cases",
+      "lifetime_ledger_events",
+      "append_ready_runtime_candidates",
+      "detection_activity_count",
+      "controlled_validation_fire_count",
+      "validation_case_count",
+      "proof_record_count",
+      "blocked_claim_count",
+      "public_safe_count",
+      "closed_case_count",
+      "proof_ceiling",
+      "public_safe_state",
+      "source_repos",
+      "source_paths",
+      "generated_at",
+      "freshness_window_days",
+      "reviewer_actions_source_routes"
+    ],
+    "website_must_not_source_from_website_only_data": [
+      "lifetime_governed_cases",
+      "lifetime_ledger_events",
+      "append_ready_runtime_candidates",
+      "detection_activity_count",
+      "controlled_validation_fire_count",
+      "validation_case_count",
+      "proof_record_count",
+      "blocked_claim_count",
+      "public_safe_count",
+      "closed_case_count",
+      "proof_ceiling",
+      "public_safe_state",
+      "runtime_truth_status",
+      "signal_truth_status",
+      "production_status",
+      "customer_deployment_status",
+      "SOCaaS_deployment_status",
+      "case_closure_status",
+      "ai_or_analyst_disposition_status",
+      "hoxline_product_status",
+      "hoxline_gauntlet_status"
+    ],
+    "website_rendering_is_proof": false,
+    "no_proof_promotion_statement": "This contract does not promote proof. The website may render only bounded source-contract fields and must not treat rendering as proof, runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, disposition approval, final authorization, or case closure."
+  },
+  "public_fields": {
+    "lifetime_governed_cases": {
+      "owner_repo": "hawkinsoperations-platform",
+      "source_path": "contracts/lifetime-case-ledger-v1-state-manifest.json",
+      "source_json_pointer": "/current_ledger_counts/total_cases",
+      "current_value": 6,
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED",
+      "freshness_policy": "Refresh from the lifetime state manifest within freshness_window_days; stale render must show source-stale status."
+    },
+    "lifetime_ledger_events": {
+      "owner_repo": "hawkinsoperations-platform",
+      "source_path": "contracts/lifetime-case-ledger-v1-state-manifest.json",
+      "source_json_pointer": "/current_ledger_counts/total_ledger_events",
+      "current_value": 6,
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED",
+      "freshness_policy": "Refresh from the lifetime state manifest within freshness_window_days; stale render must show source-stale status."
+    },
+    "append_ready_runtime_candidates": {
+      "owner_repo": "hawkinsoperations-platform",
+      "source_path": "contracts/examples/runtime-case-collector-v0-normalizer.sample.json",
+      "source_json_pointer": "/append_ready_count",
+      "current_value": 2,
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED",
+      "freshness_policy": "Refresh from the normalizer plan sample only as candidate truth; stale render must preserve append approval required status."
+    },
+    "detection_activity_count": {
+      "owner_repo": "hawkinsoperations-validation",
+      "source_path": "contracts/reviewer-metrics-pipeline-v1-state.json",
+      "upstream_source_path": "../hawkinsoperations-validation/activity/detection-activity-ledger-v1.json",
+      "source_json_pointer": "/metrics/detection_activity_count",
+      "current_value": 49,
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED",
+      "freshness_policy": "Refresh from validation-owned activity source route; stale render must not convert activity into governed cases."
+    },
+    "controlled_validation_fire_count": {
+      "owner_repo": "hawkinsoperations-validation",
+      "source_path": "contracts/reviewer-metrics-pipeline-v1-state.json",
+      "upstream_source_path": "../hawkinsoperations-validation/activity/detection-activity-ledger-v1.json",
+      "source_json_pointer": "/metrics/controlled_validation_fire_count",
+      "current_value": 49,
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED",
+      "freshness_policy": "Refresh from validation-owned activity source route; stale render must not imply live signal observation."
+    },
+    "validation_case_count": {
+      "owner_repo": "hawkinsoperations-validation",
+      "source_path": "contracts/reviewer-metrics-pipeline-v1-state.json",
+      "upstream_source_path": "../hawkinsoperations-validation/activity/detection-activity-ledger-v1.json",
+      "source_json_pointer": "/metrics/validation_case_count",
+      "current_value": 106,
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED",
+      "freshness_policy": "Refresh from validation-owned activity source route; stale render must remain validation volume only."
+    },
+    "proof_record_count": {
+      "owner_repo": "hawkinsoperations-proof",
+      "source_path": "contracts/reviewer-metrics-pipeline-v1-state.json",
+      "upstream_source_path": "../hawkinsoperations-proof/proof/indexes/reviewer-proof-map.json",
+      "source_json_pointer": "/metrics/proof_record_count",
+      "current_value": 8,
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED",
+      "freshness_policy": "Refresh from proof-owned source route; stale render must not imply proof promotion."
+    },
+    "blocked_claim_count": {
+      "owner_repo": "hawkinsoperations-proof",
+      "source_path": "contracts/reviewer-metrics-pipeline-v1-state.json",
+      "upstream_source_path": "../hawkinsoperations-proof/proof/indexes/reviewer-proof-map.json",
+      "source_json_pointer": "/metrics/blocked_claim_count",
+      "current_value": 31,
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED",
+      "freshness_policy": "Refresh from proof-owned reviewer map route; stale render must preserve blocked-claim boundary."
+    },
+    "public_safe_count": {
+      "owner_repo": "hawkinsoperations-proof",
+      "source_path": "contracts/lifetime-case-ledger-v1-state-manifest.json",
+      "source_json_pointer": "/current_ledger_counts/public_safe_count",
+      "current_value": 0,
+      "render_allowed": true,
+      "source_status": "BOUNDARY_DEFAULT_NOT_PROMOTED",
+      "freshness_policy": "Remain 0 unless a proof-owned public-safe source explicitly changes it and this contract is updated."
+    },
+    "closed_case_count": {
+      "owner_repo": "hawkinsoperations-platform",
+      "source_path": "contracts/lifetime-case-ledger-v1-state-manifest.json",
+      "source_json_pointer": "/current_ledger_counts/closed_case_count",
+      "current_value": 0,
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED",
+      "freshness_policy": "Refresh from the lifetime state manifest; stale render must not imply case closure."
+    },
+    "proof_ceiling": {
+      "owner_repo": "hawkinsoperations-proof",
+      "source_path": "contracts/lifetime-case-ledger-v1-state-manifest.json",
+      "source_json_pointer": "/proof_ceiling",
+      "current_value": "SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY",
+      "render_allowed": true,
+      "source_status": "BOUNDARY_DEFAULT_NOT_PROMOTED",
+      "freshness_policy": "Remain at the proof ceiling unless proof-owned records explicitly authorize a narrower or newer ceiling and this contract is updated."
+    },
+    "public_safe_state": {
+      "owner_repo": "hawkinsoperations-proof",
+      "source_path": "contracts/lifetime-case-ledger-v1-state-manifest.json",
+      "source_json_pointer": "/public_safe_status",
+      "current_value": "NOT_PUBLIC_SAFE",
+      "render_allowed": true,
+      "source_status": "BOUNDARY_DEFAULT_NOT_PROMOTED",
+      "freshness_policy": "Remain NOT_PUBLIC_SAFE unless a proof-owned public-safe source explicitly changes it and this contract is updated."
+    },
+    "source_repos": {
+      "owner_repo": "hawkinsoperations-platform",
+      "source_path": "contracts/public-status-source-contract-v1.json",
+      "source_json_pointer": "/source_repos",
+      "current_value": "SEE_SOURCE_REPOS",
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED",
+      "freshness_policy": "Refresh when the contract source repo list changes."
+    },
+    "source_paths": {
+      "owner_repo": "hawkinsoperations-platform",
+      "source_path": "contracts/public-status-source-contract-v1.json",
+      "source_json_pointer": "/source_paths",
+      "current_value": "SEE_SOURCE_PATHS",
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED",
+      "freshness_policy": "Refresh when the contract source path list changes."
+    },
+    "generated_at": {
+      "owner_repo": "hawkinsoperations-platform",
+      "source_path": "contracts/public-status-source-contract-v1.json",
+      "source_json_pointer": "/generated_at",
+      "current_value": "2026-06-16T22:06:47.5510594-05:00",
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED",
+      "freshness_policy": "Generated status v1 must update this timestamp when it regenerates from source artifacts."
+    },
+    "freshness_window_days": {
+      "owner_repo": "hawkinsoperations-platform",
+      "source_path": "contracts/public-status-source-contract-v1.json",
+      "source_json_pointer": "/freshness_window_days",
+      "current_value": 14,
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED",
+      "freshness_policy": "Generated status v1 must mark any source older than this window as stale unless the field is explicitly unknown."
+    },
+    "reviewer_actions_source_routes": {
+      "owner_repo": "hawkinsoperations-platform",
+      "source_path": "contracts/public-status-source-contract-v1.json",
+      "source_json_pointer": "/reviewer_actions_source_routes",
+      "current_value": "SEE_REVIEWER_ACTIONS_SOURCE_ROUTES",
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED",
+      "freshness_policy": "Refresh when reviewer routes or verifier commands change."
+    },
+    "detection_source_truth": {
+      "owner_repo": "hawkinsoperations-detections",
+      "source_path": "../hawkinsoperations-detections/detections/DETECTION_PROMOTION_MATRIX.yml",
+      "source_json_pointer": "UNKNOWN_SOURCE_NOT_CAPTURED",
+      "current_value": "UNKNOWN_SOURCE_NOT_CAPTURED",
+      "render_allowed": false,
+      "source_status": "UNKNOWN_SOURCE_NOT_CAPTURED",
+      "freshness_policy": "Do not render until generated-status v1 captures a bounded detections-owned value."
+    },
+    "hoxline_product_status": {
+      "owner_repo": "hoxline/aevumguard",
+      "source_path": "UNKNOWN_SOURCE_NOT_CAPTURED",
+      "source_json_pointer": "UNKNOWN_SOURCE_NOT_CAPTURED",
+      "current_value": "UNKNOWN_SOURCE_NOT_CAPTURED",
+      "render_allowed": false,
+      "source_status": "UNKNOWN_SOURCE_NOT_CAPTURED",
+      "freshness_policy": "Do not render from platform or website-only data; capture only from a safe Hoxline-owned source route."
+    },
+    "hoxline_gauntlet_status": {
+      "owner_repo": "hoxline/aevumguard",
+      "source_path": "UNKNOWN_SOURCE_NOT_CAPTURED",
+      "source_json_pointer": "UNKNOWN_SOURCE_NOT_CAPTURED",
+      "current_value": "UNKNOWN_SOURCE_NOT_CAPTURED",
+      "render_allowed": false,
+      "source_status": "UNKNOWN_SOURCE_NOT_CAPTURED",
+      "freshness_policy": "Do not render from platform or website-only data; capture only from a safe Hoxline-owned Gauntlet source route."
+    }
+  },
+  "freshness_policy": {
+    "default_window_days": 14,
+    "generated_status_behavior": "Generated public status v1 must read source artifacts, compare source timestamps or contract generated_at against freshness_window_days, and mark stale fields instead of inventing replacements.",
+    "stale_render_rule": "A stale field may render only with explicit stale status and original source route; stale values must not become proof, public-safe, runtime, signal, production, customer, SOCaaS, disposition, authorization, or closure claims.",
+    "unknown_rule": "If a source artifact or safe extraction route is missing, generated-status v1 must emit UNKNOWN_SOURCE_NOT_CAPTURED."
+  },
+  "proof_ceiling_policy": {
+    "proof_ceiling": "SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY",
+    "no_proof_promotion": true,
+    "website_rendering_is_proof": false,
+    "public_safe_status": "NOT_PUBLIC_SAFE",
+    "public_safe_count": 0,
+    "blocked_claim_boundary": "Proof, public-safe, runtime, signal, production, customer, SOCaaS, disposition, authorization, and closure claims remain blocked unless a proof-owned source explicitly authorizes them and this platform contract is updated."
+  },
+  "public_safe_policy": {
+    "public_safe": false,
+    "public_safe_state": "NOT_PUBLIC_SAFE",
+    "public_safe_source_required": "hawkinsoperations-proof",
+    "website_may_not_promote_public_safe": true
+  },
+  "reviewer_actions_source_routes": [
+    {
+      "route": "lifetime-ledger-state-manifest-verify",
+      "command": "python -B scripts/ho_factory.py lifetime-ledger-state-manifest-verify --repo-root .. --format json",
+      "owner_repo": "hawkinsoperations-platform"
+    },
+    {
+      "route": "reviewer-metrics-pipeline-verify",
+      "command": "python -B scripts/verify-reviewer-metrics-pipeline.py --format json",
+      "owner_repo": "hawkinsoperations-platform"
+    },
+    {
+      "route": "collector-normalizer-verify",
+      "command": "python -B scripts/ho_factory.py collector-normalizer-verify --format json",
+      "owner_repo": "hawkinsoperations-platform"
+    },
+    {
+      "route": "public-status-source-contract-verify",
+      "command": "python -B scripts/verify-public-status-source-contract.py --format json",
+      "owner_repo": "hawkinsoperations-platform"
+    }
+  ],
+  "future_generated_status_v1_extraction": {
+    "extractor_should": [
+      "Read this contract first.",
+      "Read only the declared source_paths for renderable fields.",
+      "Preserve owner_repo per field in generated output.",
+      "Emit UNKNOWN_SOURCE_NOT_CAPTURED when a source route is absent, unsafe, or not represented in this contract.",
+      "Render stale values only with explicit stale status.",
+      "Keep website as consumer only.",
+      "Fail closed if a website-only file attempts to source status, proof, runtime, signal, public-safe, production, customer, SOCaaS, disposition, authorization, or closure fields."
+    ],
+    "extractor_must_not": [
+      "Run runtime collectors.",
+      "Dispatch workflows.",
+      "Append to ledgers.",
+      "Mutate databases.",
+      "Import raw evidence.",
+      "Read website-only dashboard values as authority.",
+      "Do not promote proof or public-safe status from presentation text."
+    ]
+  },
+  "verifier": {
+    "command": "python -B scripts/verify-public-status-source-contract.py --format json",
+    "factory_command": "python -B scripts/ho_factory.py public-status-source-contract-verify --format json"
+  }
+}

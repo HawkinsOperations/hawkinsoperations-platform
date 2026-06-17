@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -6238,6 +6239,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--candidate-plan")
     sub.add_argument("--append-approval")
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("public-status-source-contract-verify")
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("self-test-id-det-001-missing-surfaces")
     sub.add_argument("--format", default="json", choices=("json",))
     return parser.parse_args(argv)
@@ -6501,6 +6504,14 @@ def main(argv: list[str] | None = None) -> int:
         output = runtime_collector_normalizer_append_approved(args.candidate_plan, args.append_approval)
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
+
+    if args.mode == "public-status-source-contract-verify":
+        verifier = PLATFORM_ROOT / "scripts" / "verify-public-status-source-contract.py"
+        result = subprocess.run(
+            [sys.executable, "-B", str(verifier), "--format", args.format],
+            check=False,
+        )
+        return result.returncode
 
     if args.mode == "self-test-id-det-001-missing-surfaces":
         output = id_det_001_missing_surface_self_test()

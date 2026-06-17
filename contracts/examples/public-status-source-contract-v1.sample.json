@@ -1,0 +1,24 @@
+{
+  "manifest_id": "PUBLIC_STATUS_SOURCE_CONTRACT_V1_SAMPLE",
+  "version": "public_status_source_contract_v1",
+  "consumer": "hawkinsoperations-website",
+  "sample_boundary": "Shape example only. Values in the canonical contract remain the source of this platform-owned public status source boundary.",
+  "public_fields": {
+    "lifetime_governed_cases": {
+      "owner_repo": "hawkinsoperations-platform",
+      "source_path": "contracts/lifetime-case-ledger-v1-state-manifest.json",
+      "current_value": 6
+    },
+    "proof_record_count": {
+      "owner_repo": "hawkinsoperations-proof",
+      "source_path": "contracts/reviewer-metrics-pipeline-v1-state.json",
+      "current_value": 8
+    },
+    "hoxline_gauntlet_status": {
+      "owner_repo": "hoxline/aevumguard",
+      "source_path": "UNKNOWN_SOURCE_NOT_CAPTURED",
+      "current_value": "UNKNOWN_SOURCE_NOT_CAPTURED"
+    }
+  },
+  "verifier_command": "python -B scripts/verify-public-status-source-contract.py --format json"
+}

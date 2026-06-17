@@ -49,6 +49,28 @@ Minimal examples live in:
 - `contracts/examples/local-gpu-triage-support-v0.sample.json`
 - `contracts/examples/telemetry-coverage-contract-v0.sample.json`
 - `contracts/examples/ho-det-001-socaas-pilot-receipt.sample.json`
+- `contracts/examples/public-status-source-contract-v1.sample.json`
+
+## Public Status Source Contract v1
+
+Public Status Source Contract v1 is documented in:
+
+- `contracts/PUBLIC_STATUS_SOURCE_CONTRACT_V1.md`
+
+The source contract is:
+
+- `contracts/public-status-source-contract-v1.json`
+
+The deterministic verifier is:
+
+- `python -B scripts/verify-public-status-source-contract.py --format json`
+
+The contract makes `hawkinsoperations-website` a consumer, not authority. It
+defines source owners, source paths, renderable fields, freshness rules, unknown
+source behavior, and proof/public-safe boundaries for future generated public
+status. It does not promote proof, runtime truth, signal truth, public-safe
+status, production readiness, customer deployment, SOCaaS deployment,
+disposition approval, authorization, or case closure.
 
 ## Contract Intent
 
