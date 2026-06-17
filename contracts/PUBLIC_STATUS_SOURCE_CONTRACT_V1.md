@@ -17,7 +17,13 @@ Current safe values come only from source-controlled platform state:
 | Detection activity and validation counts | `contracts/reviewer-metrics-pipeline-v1-state.json` validation source routes | `hawkinsoperations-validation` |
 | Proof records, blocked claims, proof ceiling, public-safe boundary | proof source routes declared by reviewer metrics and lifetime state | `hawkinsoperations-proof` |
 | Detection source truth | `../hawkinsoperations-detections/detections/DETECTION_PROMOTION_MATRIX.yml` | `hawkinsoperations-detections` |
-| Hoxline product and Gauntlet status | `UNKNOWN_SOURCE_NOT_CAPTURED` | `hoxline/aevumguard` |
+| Hoxline product and Gauntlet status | pending direct v1 paths under `../aevumguard/examples/gauntlet/` and `../aevumguard/schemas/` | `hoxline/aevumguard` |
+| Hoxline validation bridge | pending PR #67 paths under `../hawkinsoperations-validation/validation/hoxline/` | `hawkinsoperations-validation` |
+| Hoxline proof bridge | pending PR #81 paths under `../hawkinsoperations-proof/proof/` | `hawkinsoperations-proof` |
+
+Hoxline PR #15, validation PR #67, and proof PR #81 are represented as pending PR sources when unmerged. Generated public status v1 must preserve `source_pr`, `source_branch`, and pending source status. Pending source routes are not main/default-branch truth.
+
+The preferred Hoxline v1 source manifest remains `UNKNOWN_SOURCE_NOT_CAPTURED` until that manifest exists on a safe source route.
 
 ## Freshness
 
@@ -26,6 +32,8 @@ The default freshness window is `14` days. Generated public status v1 should mar
 ## Proof Boundary
 
 This contract does not create proof authority. Website rendering is not proof. It does not create runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, AI-approved disposition, analyst-approved disposition, final authorization, or case closure.
+
+No runtime collector, workflow dispatch, server command, ledger append, private evidence import, or website edit is required to verify this contract.
 
 ## Reviewer Verification
 

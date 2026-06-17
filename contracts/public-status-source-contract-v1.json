@@ -31,9 +31,25 @@
       "authority_boundary": "controlled validation truth only; not runtime truth, signal truth, proof authority, or public-safe truth"
     },
     {
+      "repo": "hawkinsoperations-validation",
+      "role": "pending Hoxline Gauntlet validation bridge source route owner",
+      "source_pr": 67,
+      "source_branch": "feature/hoxline-gauntlet-validation-bridge-v1",
+      "source_status": "SOURCE_CAPTURED_PENDING_PR",
+      "authority_boundary": "pending validation bridge route only; not main/default-branch truth, runtime truth, signal truth, proof authority, or public-safe truth"
+    },
+    {
       "repo": "hawkinsoperations-proof",
       "role": "proof record, blocked claim, proof ceiling, and public-safe boundary owner",
       "authority_boundary": "proof source records and proof boundaries only; website rendering does not create proof"
+    },
+    {
+      "repo": "hawkinsoperations-proof",
+      "role": "pending Hoxline Gauntlet proof bridge source route owner",
+      "source_pr": 81,
+      "source_branch": "feature/hoxline-gauntlet-proof-bridge-v1",
+      "source_status": "SOURCE_CAPTURED_PENDING_PR",
+      "authority_boundary": "pending proof bridge route only; not main/default-branch truth, proof promotion, runtime truth, signal truth, or public-safe truth"
     },
     {
       "repo": "hawkinsoperations-website",
@@ -43,7 +59,10 @@
     {
       "repo": "hoxline/aevumguard",
       "role": "Hoxline product and Gauntlet field owner",
-      "authority_boundary": "product/Gauntlet source truth only when a safe source artifact is captured; no value is captured in this platform contract"
+      "source_pr": 15,
+      "source_branch": "feature/hoxline-gauntlet-v1-engine",
+      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR",
+      "authority_boundary": "pending direct Hoxline Gauntlet v1 source routes only; not main/default-branch truth, runtime truth, signal truth, public-safe truth, production readiness, customer deployment, SOCaaS deployment, approval, authorization, or closure"
     }
   ],
   "source_paths": {
@@ -55,8 +74,27 @@
     "proof_reviewer_map": "../hawkinsoperations-proof/proof/indexes/reviewer-proof-map.json",
     "detections_promotion_matrix": "../hawkinsoperations-detections/detections/DETECTION_PROMOTION_MATRIX.yml",
     "website_generated_status_consumer": "../hawkinsoperations-website/UNKNOWN_SOURCE_NOT_CAPTURED",
-    "hoxline_product_source": "UNKNOWN_SOURCE_NOT_CAPTURED",
-    "hoxline_gauntlet_source": "UNKNOWN_SOURCE_NOT_CAPTURED"
+    "hoxline_v1_source_manifest": "UNKNOWN_SOURCE_NOT_CAPTURED",
+    "hoxline_gauntlet_run_v1": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
+    "hoxline_gauntlet_run_v1_overclaim": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-run-v1-overclaim.json",
+    "hoxline_evidence_graph_v1": "../aevumguard/examples/gauntlet/ho-det-001-evidence-graph-v1.json",
+    "hoxline_proofcard_v1": "../aevumguard/examples/gauntlet/ho-det-001-proofcard-v1.json",
+    "hoxline_claim_decision_v1": "../aevumguard/examples/gauntlet/ho-det-001-claim-decision-v1.json",
+    "hoxline_gauntlet_run_v1_schema": "../aevumguard/schemas/gauntlet-run-v1.schema.json",
+    "hoxline_evidence_graph_v1_schema": "../aevumguard/schemas/evidence-graph-v1.schema.json",
+    "hoxline_proofcard_v1_schema": "../aevumguard/schemas/proofcard-v1.schema.json",
+    "hoxline_claim_authority_decision_v1_schema": "../aevumguard/schemas/claim-authority-decision-v1.schema.json",
+    "hoxline_gauntlet_v1_doc": "../aevumguard/docs/gauntlet/HOXLINE_GAUNTLET_V1.md",
+    "hoxline_proofcard_v1_doc": "../aevumguard/docs/proofcards/PROOFCARD_V1.md",
+    "hoxline_claim_authority_v1_doc": "../aevumguard/docs/claim-authority/CLAIM_AUTHORITY_V1.md",
+    "validation_hoxline_gauntlet_bridge_v1_json": "../hawkinsoperations-validation/validation/hoxline/ho-det-001-hoxline-gauntlet-validation-bridge-v1.json",
+    "validation_hoxline_gauntlet_bridge_v1_md": "../hawkinsoperations-validation/validation/hoxline/HO-DET-001_HOXLINE_GAUNTLET_VALIDATION_BRIDGE_V1.md",
+    "validation_hoxline_gauntlet_bridge_v1_verifier": "../hawkinsoperations-validation/scripts/verify_hoxline_gauntlet_validation_bridge.py",
+    "proof_hoxline_gauntlet_bridge_v1_json": "../hawkinsoperations-proof/proof/records/ho-det-001-hoxline-gauntlet-bridge-v1.json",
+    "proof_hoxline_gauntlet_bridge_v1_md": "../hawkinsoperations-proof/proof/records/HO-DET-001_HOXLINE_GAUNTLET_BRIDGE_V1.md",
+    "proof_hoxline_gauntlet_proof_map_v1_json": "../hawkinsoperations-proof/proof/indexes/hoxline-gauntlet-proof-map-v1.json",
+    "proof_hoxline_gauntlet_proof_map_v1_md": "../hawkinsoperations-proof/proof/indexes/hoxline-gauntlet-proof-map-v1.md",
+    "proof_hoxline_gauntlet_bridge_v1_verifier": "../hawkinsoperations-proof/scripts/verify-hoxline-gauntlet-proof-bridge.py"
   },
   "public_rendering_contract": {
     "website_may_render": [
@@ -76,7 +114,11 @@
       "source_paths",
       "generated_at",
       "freshness_window_days",
-      "reviewer_actions_source_routes"
+      "reviewer_actions_source_routes",
+      "hoxline_product_status",
+      "hoxline_gauntlet_status",
+      "validation_bridge_status",
+      "proof_bridge_status"
     ],
     "website_must_not_source_from_website_only_data": [
       "lifetime_governed_cases",
@@ -274,21 +316,63 @@
     },
     "hoxline_product_status": {
       "owner_repo": "hoxline/aevumguard",
-      "source_path": "UNKNOWN_SOURCE_NOT_CAPTURED",
-      "source_json_pointer": "UNKNOWN_SOURCE_NOT_CAPTURED",
-      "current_value": "UNKNOWN_SOURCE_NOT_CAPTURED",
-      "render_allowed": false,
-      "source_status": "UNKNOWN_SOURCE_NOT_CAPTURED",
-      "freshness_policy": "Do not render from platform or website-only data; capture only from a safe Hoxline-owned source route."
+      "source_path": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
+      "source_json_pointer": "/product",
+      "current_value": "Hoxline by HawkinsOperations",
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR",
+      "source_pr": 15,
+      "source_branch": "feature/hoxline-gauntlet-v1-engine",
+      "freshness_policy": "Render only as pending Hoxline product source metadata until PR #15 is merged; never treat product rendering as proof, runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, approval, authorization, or closure."
     },
     "hoxline_gauntlet_status": {
+      "owner_repo": "hoxline/aevumguard",
+      "source_path": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
+      "source_json_pointer": "/proof_ceiling",
+      "current_value": {
+        "hoxline_gauntlet_v1_source_available": true,
+        "hoxline_gauntlet_v1_verify_command": "python -B -m hoxline gauntlet verify --input examples/gauntlet/ho-det-001-gauntlet-run-v1.json --schema schemas/gauntlet-run-v1.schema.json",
+        "hoxline_gauntlet_v1_proof_ceiling": "CONTROLLED_TEST_VALIDATED",
+        "hoxline_gauntlet_v1_public_safe_state": "blocked",
+        "hoxline_gauntlet_v1_public_safe": false,
+        "hoxline_gauntlet_v1_human_review_required": true
+      },
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR",
+      "source_pr": 15,
+      "source_branch": "feature/hoxline-gauntlet-v1-engine",
+      "freshness_policy": "Render only bounded pending Hoxline Gauntlet v1 metadata until PR #15 is merged; do not render runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, AI approval, analyst approval, final authorization, or case closure."
+    },
+    "hoxline_v1_source_manifest": {
       "owner_repo": "hoxline/aevumguard",
       "source_path": "UNKNOWN_SOURCE_NOT_CAPTURED",
       "source_json_pointer": "UNKNOWN_SOURCE_NOT_CAPTURED",
       "current_value": "UNKNOWN_SOURCE_NOT_CAPTURED",
       "render_allowed": false,
       "source_status": "UNKNOWN_SOURCE_NOT_CAPTURED",
-      "freshness_policy": "Do not render from platform or website-only data; capture only from a safe Hoxline-owned Gauntlet source route."
+      "freshness_policy": "Preferred Hoxline v1 source manifest was not present in PR #15 inspection; keep unknown until captured."
+    },
+    "validation_bridge_status": {
+      "owner_repo": "hawkinsoperations-validation",
+      "source_path": "../hawkinsoperations-validation/validation/hoxline/ho-det-001-hoxline-gauntlet-validation-bridge-v1.json",
+      "source_json_pointer": "/controlled_validation_status",
+      "current_value": "VALIDATION_BRIDGE_REVIEWER_PATH_RECORDED",
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED_PENDING_PR",
+      "source_pr": 67,
+      "source_branch": "feature/hoxline-gauntlet-validation-bridge-v1",
+      "freshness_policy": "Render only as pending validation bridge source metadata until PR #67 is merged; bridge route is not main/default-branch truth and does not create runtime, signal, proof, public-safe, production, customer, SOCaaS, approval, authorization, or closure truth."
+    },
+    "proof_bridge_status": {
+      "owner_repo": "hawkinsoperations-proof",
+      "source_path": "../hawkinsoperations-proof/proof/records/ho-det-001-hoxline-gauntlet-bridge-v1.json",
+      "source_json_pointer": "/proof_bridge_kind",
+      "current_value": "hoxline_gauntlet_proof_bridge",
+      "render_allowed": true,
+      "source_status": "SOURCE_CAPTURED_PENDING_PR",
+      "source_pr": 81,
+      "source_branch": "feature/hoxline-gauntlet-proof-bridge-v1",
+      "freshness_policy": "Render only as pending proof bridge source metadata until PR #81 is merged; bridge route is not main/default-branch truth and does not promote proof, runtime, signal, public-safe, production, customer, SOCaaS, approval, authorization, or closure truth."
     }
   },
   "freshness_policy": {
@@ -331,6 +415,63 @@
       "route": "public-status-source-contract-verify",
       "command": "python -B scripts/verify-public-status-source-contract.py --format json",
       "owner_repo": "hawkinsoperations-platform"
+    },
+    {
+      "route": "hoxline-gauntlet-v1-verify",
+      "command": "python -B -m hoxline gauntlet verify --input examples/gauntlet/ho-det-001-gauntlet-run-v1.json --schema schemas/gauntlet-run-v1.schema.json",
+      "owner_repo": "hoxline/aevumguard",
+      "source_pr": 15,
+      "source_branch": "feature/hoxline-gauntlet-v1-engine",
+      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR"
+    },
+    {
+      "route": "hoxline-gauntlet-v1-summarize",
+      "command": "python -B -m hoxline gauntlet summarize --input examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
+      "owner_repo": "hoxline/aevumguard",
+      "source_pr": 15,
+      "source_branch": "feature/hoxline-gauntlet-v1-engine",
+      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR"
+    },
+    {
+      "route": "hoxline-claim-authority-v1-decide",
+      "command": "python -B -m hoxline claim-authority decide --input examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
+      "owner_repo": "hoxline/aevumguard",
+      "source_pr": 15,
+      "source_branch": "feature/hoxline-gauntlet-v1-engine",
+      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR"
+    },
+    {
+      "route": "hoxline-proofcard-v1-render",
+      "command": "python -B -m hoxline proofcard render --input examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
+      "owner_repo": "hoxline/aevumguard",
+      "source_pr": 15,
+      "source_branch": "feature/hoxline-gauntlet-v1-engine",
+      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR"
+    },
+    {
+      "route": "hoxline-gauntlet-v1-overclaim-verify",
+      "command": "python -B -m hoxline gauntlet verify --input examples/gauntlet/ho-det-001-gauntlet-run-v1-overclaim.json --schema schemas/gauntlet-run-v1.schema.json",
+      "owner_repo": "hoxline/aevumguard",
+      "source_pr": 15,
+      "source_branch": "feature/hoxline-gauntlet-v1-engine",
+      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR",
+      "expected_result": "PASS_FAIL_CLOSED"
+    },
+    {
+      "route": "hoxline-gauntlet-validation-bridge-v1-verify",
+      "command": "python -B scripts/verify_hoxline_gauntlet_validation_bridge.py --format json",
+      "owner_repo": "hawkinsoperations-validation",
+      "source_pr": 67,
+      "source_branch": "feature/hoxline-gauntlet-validation-bridge-v1",
+      "source_status": "SOURCE_CAPTURED_PENDING_PR"
+    },
+    {
+      "route": "hoxline-gauntlet-proof-bridge-v1-verify",
+      "command": "python -B scripts/verify-hoxline-gauntlet-proof-bridge.py --format json",
+      "owner_repo": "hawkinsoperations-proof",
+      "source_pr": 81,
+      "source_branch": "feature/hoxline-gauntlet-proof-bridge-v1",
+      "source_status": "SOURCE_CAPTURED_PENDING_PR"
     }
   ],
   "future_generated_status_v1_extraction": {
@@ -338,7 +479,9 @@
       "Read this contract first.",
       "Read only the declared source_paths for renderable fields.",
       "Preserve owner_repo per field in generated output.",
+      "Preserve source_pr, source_branch, and pending/unmerged source_status for pending PR fields.",
       "Emit UNKNOWN_SOURCE_NOT_CAPTURED when a source route is absent, unsafe, or not represented in this contract.",
+      "Treat SOURCE_CAPTURED_PENDING_PR and SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR as pending source routes, not main/default-branch truth.",
       "Render stale values only with explicit stale status.",
       "Keep website as consumer only.",
       "Fail closed if a website-only file attempts to source status, proof, runtime, signal, public-safe, production, customer, SOCaaS, disposition, authorization, or closure fields."

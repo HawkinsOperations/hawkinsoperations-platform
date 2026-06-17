@@ -67,8 +67,10 @@ The deterministic verifier is:
 
 The contract makes `hawkinsoperations-website` a consumer, not authority. It
 defines source owners, source paths, renderable fields, freshness rules, unknown
-source behavior, and proof/public-safe boundaries for future generated public
-status. It does not promote proof, runtime truth, signal truth, public-safe
+source behavior, pending Hoxline/validation/proof bridge source routes, and
+proof/public-safe boundaries for future generated public status. Unmerged source
+PR routes stay pending and are not main/default-branch truth. It does not
+promote proof, runtime truth, signal truth, public-safe
 status, production readiness, customer deployment, SOCaaS deployment,
 disposition approval, authorization, or case closure.
 

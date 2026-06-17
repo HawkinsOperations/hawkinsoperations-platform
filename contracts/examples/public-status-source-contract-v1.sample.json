@@ -16,8 +16,37 @@
     },
     "hoxline_gauntlet_status": {
       "owner_repo": "hoxline/aevumguard",
+      "source_path": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
+      "source_status": "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR",
+      "source_pr": 15,
+      "source_branch": "feature/hoxline-gauntlet-v1-engine",
+      "current_value": {
+        "hoxline_gauntlet_v1_source_available": true,
+        "hoxline_gauntlet_v1_proof_ceiling": "CONTROLLED_TEST_VALIDATED",
+        "hoxline_gauntlet_v1_public_safe_state": "blocked",
+        "hoxline_gauntlet_v1_public_safe": false
+      }
+    },
+    "hoxline_v1_source_manifest": {
+      "owner_repo": "hoxline/aevumguard",
       "source_path": "UNKNOWN_SOURCE_NOT_CAPTURED",
       "current_value": "UNKNOWN_SOURCE_NOT_CAPTURED"
+    },
+    "validation_bridge_status": {
+      "owner_repo": "hawkinsoperations-validation",
+      "source_path": "../hawkinsoperations-validation/validation/hoxline/ho-det-001-hoxline-gauntlet-validation-bridge-v1.json",
+      "source_status": "SOURCE_CAPTURED_PENDING_PR",
+      "source_pr": 67,
+      "source_branch": "feature/hoxline-gauntlet-validation-bridge-v1",
+      "current_value": "VALIDATION_BRIDGE_REVIEWER_PATH_RECORDED"
+    },
+    "proof_bridge_status": {
+      "owner_repo": "hawkinsoperations-proof",
+      "source_path": "../hawkinsoperations-proof/proof/records/ho-det-001-hoxline-gauntlet-bridge-v1.json",
+      "source_status": "SOURCE_CAPTURED_PENDING_PR",
+      "source_pr": 81,
+      "source_branch": "feature/hoxline-gauntlet-proof-bridge-v1",
+      "current_value": "hoxline_gauntlet_proof_bridge"
     }
   },
   "verifier_command": "python -B scripts/verify-public-status-source-contract.py --format json"

@@ -14,6 +14,19 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "contracts" / "public-status-source-contract-v1.json"
 UNKNOWN = "UNKNOWN_SOURCE_NOT_CAPTURED"
+ALLOWED_SOURCE_STATUSES = {
+    "SOURCE_CAPTURED",
+    "SOURCE_CAPTURED_PENDING_PR",
+    "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR",
+    "SOURCE_PENDING_UNMERGED_PR",
+    "UNKNOWN_SOURCE_NOT_CAPTURED",
+    "BOUNDARY_DEFAULT_NOT_PROMOTED",
+}
+PENDING_SOURCE_STATUSES = {
+    "SOURCE_CAPTURED_PENDING_PR",
+    "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR",
+    "SOURCE_PENDING_UNMERGED_PR",
+}
 
 REQUIRED_TOP_LEVEL_FIELDS = {
     "manifest_id",
@@ -59,8 +72,42 @@ PROOF_FIELDS = {
     "public_safe_state",
 }
 DETECTIONS_FIELDS = {"detection_source_truth"}
-HOXLINE_FIELDS = {"hoxline_product_status", "hoxline_gauntlet_status"}
-REQUIRED_PUBLIC_FIELDS = PLATFORM_FIELDS | VALIDATION_FIELDS | PROOF_FIELDS | DETECTIONS_FIELDS | HOXLINE_FIELDS
+HOXLINE_FIELDS = {"hoxline_product_status", "hoxline_gauntlet_status", "hoxline_v1_source_manifest"}
+VALIDATION_BRIDGE_FIELDS = {"validation_bridge_status"}
+PROOF_BRIDGE_FIELDS = {"proof_bridge_status"}
+REQUIRED_PUBLIC_FIELDS = (
+    PLATFORM_FIELDS
+    | VALIDATION_FIELDS
+    | PROOF_FIELDS
+    | DETECTIONS_FIELDS
+    | HOXLINE_FIELDS
+    | VALIDATION_BRIDGE_FIELDS
+    | PROOF_BRIDGE_FIELDS
+)
+
+REQUIRED_SOURCE_PATH_KEYS = {
+    "hoxline_v1_source_manifest",
+    "hoxline_gauntlet_run_v1",
+    "hoxline_gauntlet_run_v1_overclaim",
+    "hoxline_evidence_graph_v1",
+    "hoxline_proofcard_v1",
+    "hoxline_claim_decision_v1",
+    "hoxline_gauntlet_run_v1_schema",
+    "hoxline_evidence_graph_v1_schema",
+    "hoxline_proofcard_v1_schema",
+    "hoxline_claim_authority_decision_v1_schema",
+    "hoxline_gauntlet_v1_doc",
+    "hoxline_proofcard_v1_doc",
+    "hoxline_claim_authority_v1_doc",
+    "validation_hoxline_gauntlet_bridge_v1_json",
+    "validation_hoxline_gauntlet_bridge_v1_md",
+    "validation_hoxline_gauntlet_bridge_v1_verifier",
+    "proof_hoxline_gauntlet_bridge_v1_json",
+    "proof_hoxline_gauntlet_bridge_v1_md",
+    "proof_hoxline_gauntlet_proof_map_v1_json",
+    "proof_hoxline_gauntlet_proof_map_v1_md",
+    "proof_hoxline_gauntlet_bridge_v1_verifier",
+}
 
 DENIED_TEXT = [
     ("C:\\Raylee\\Work", re.compile(r"C:\\Raylee\\Work", re.IGNORECASE)),
@@ -176,6 +223,27 @@ def verify_unknown_field(public_fields: dict[str, Any], field: str) -> None:
         fail(f"public field {field} must not be renderable until sourced")
 
 
+def verify_pending_source(entry: dict[str, Any], field: str, status: str) -> None:
+    if status not in PENDING_SOURCE_STATUSES:
+        return
+    if not isinstance(entry.get("source_pr"), int) or entry["source_pr"] <= 0:
+        fail(f"pending public field {field} must include source_pr")
+    if not isinstance(entry.get("source_branch"), str) or not entry["source_branch"]:
+        fail(f"pending public field {field} must include source_branch")
+    if entry.get("source_path") == UNKNOWN:
+        fail(f"pending public field {field} must include a concrete source_path")
+
+
+def verify_pending_route(route: dict[str, Any]) -> None:
+    status = route.get("source_status")
+    if status not in PENDING_SOURCE_STATUSES:
+        return
+    if not isinstance(route.get("source_pr"), int) or route["source_pr"] <= 0:
+        fail(f"pending route {route.get('route')} must include source_pr")
+    if not isinstance(route.get("source_branch"), str) or not route["source_branch"]:
+        fail(f"pending route {route.get('route')} must include source_branch")
+
+
 def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
     contract = load_json(path)
     scan_denied_text(contract)
@@ -224,8 +292,12 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
             fail(f"public field {field} must be an object")
         if not entry.get("owner_repo"):
             fail(f"public field {field} missing owner_repo")
-        if not entry.get("source_status"):
+        status = entry.get("source_status")
+        if not status:
             fail(f"public field {field} missing source_status")
+        if status not in ALLOWED_SOURCE_STATUSES:
+            fail(f"public field {field} has unsupported source_status: {status}")
+        verify_pending_source(entry, field, status)
 
     for field in PLATFORM_FIELDS:
         require_owner(public_fields, field, "hawkinsoperations-platform")
@@ -237,7 +309,29 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
         require_owner(public_fields, field, "hawkinsoperations-detections")
     for field in HOXLINE_FIELDS:
         require_owner(public_fields, field, "hoxline/aevumguard")
-        verify_unknown_field(public_fields, field)
+    for field in VALIDATION_BRIDGE_FIELDS:
+        require_owner(public_fields, field, "hawkinsoperations-validation")
+    for field in PROOF_BRIDGE_FIELDS:
+        require_owner(public_fields, field, "hawkinsoperations-proof")
+    verify_unknown_field(public_fields, "hoxline_v1_source_manifest")
+
+    if public_fields["hoxline_product_status"].get("source_status") != "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR":
+        fail("hoxline_product_status must be captured as direct v1 paths pending PR")
+    if public_fields["hoxline_gauntlet_status"].get("source_status") != "SOURCE_CAPTURED_DIRECT_V1_PATHS_PENDING_PR":
+        fail("hoxline_gauntlet_status must be captured as direct v1 paths pending PR")
+    gauntlet_value = public_fields["hoxline_gauntlet_status"].get("current_value")
+    if not isinstance(gauntlet_value, dict):
+        fail("hoxline_gauntlet_status current_value must be bounded metadata")
+    if gauntlet_value.get("hoxline_gauntlet_v1_public_safe") is not False:
+        fail("Hoxline Gauntlet v1 metadata must keep public_safe false")
+    if gauntlet_value.get("hoxline_gauntlet_v1_public_safe_state") != "blocked":
+        fail("Hoxline Gauntlet v1 metadata must keep public-safe state blocked")
+    if gauntlet_value.get("hoxline_gauntlet_v1_proof_ceiling") != "CONTROLLED_TEST_VALIDATED":
+        fail("Hoxline Gauntlet v1 metadata must keep controlled-test proof ceiling")
+    if public_fields["validation_bridge_status"].get("source_status") != "SOURCE_CAPTURED_PENDING_PR":
+        fail("validation_bridge_status must be pending PR source")
+    if public_fields["proof_bridge_status"].get("source_status") != "SOURCE_CAPTURED_PENDING_PR":
+        fail("proof_bridge_status must be pending PR source")
 
     public_safe_policy = contract.get("public_safe_policy")
     proof_ceiling_policy = contract.get("proof_ceiling_policy")
@@ -268,9 +362,11 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
     source_paths = contract.get("source_paths")
     if not isinstance(source_paths, dict):
         fail("source_paths must be an object")
-    for key in ("hoxline_product_source", "hoxline_gauntlet_source"):
-        if source_paths.get(key) != UNKNOWN:
-            fail(f"{key} must remain {UNKNOWN}")
+    missing_source_path_keys = REQUIRED_SOURCE_PATH_KEYS - set(source_paths)
+    if missing_source_path_keys:
+        fail(f"source_paths missing Hoxline/bridge routes: {sorted(missing_source_path_keys)}")
+    if source_paths.get("hoxline_v1_source_manifest") != UNKNOWN:
+        fail(f"hoxline_v1_source_manifest must remain {UNKNOWN} until captured")
     for key, value in source_paths.items():
         if not isinstance(value, str) or not value:
             fail(f"source path {key} must be a string")
@@ -288,6 +384,33 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
         fail("future extraction plan must require UNKNOWN_SOURCE_NOT_CAPTURED for missing sources")
     if not any("website-only" in str(item) for item in extractor_must_not):
         fail("future extraction plan must forbid website-only authority")
+    if not any("SOURCE_CAPTURED_PENDING_PR" in str(item) for item in extractor_should):
+        fail("future extraction plan must preserve pending PR status")
+
+    routes = contract.get("reviewer_actions_source_routes")
+    if not isinstance(routes, list):
+        fail("reviewer_actions_source_routes must be a list")
+    required_routes = {
+        "hoxline-gauntlet-v1-verify",
+        "hoxline-gauntlet-v1-summarize",
+        "hoxline-claim-authority-v1-decide",
+        "hoxline-proofcard-v1-render",
+        "hoxline-gauntlet-v1-overclaim-verify",
+        "hoxline-gauntlet-validation-bridge-v1-verify",
+        "hoxline-gauntlet-proof-bridge-v1-verify",
+    }
+    seen_routes = set()
+    for route in routes:
+        if not isinstance(route, dict):
+            fail("reviewer action route entries must be objects")
+        if route.get("source_status") and route["source_status"] not in ALLOWED_SOURCE_STATUSES:
+            fail(f"reviewer route {route.get('route')} has unsupported source_status")
+        verify_pending_route(route)
+        if isinstance(route.get("route"), str):
+            seen_routes.add(route["route"])
+    missing_routes = required_routes - seen_routes
+    if missing_routes:
+        fail(f"reviewer_actions_source_routes missing routes: {sorted(missing_routes)}")
 
     return {
         "status": "pass",
@@ -297,6 +420,10 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
         "unknown_fields": sorted(
             field for field, entry in public_fields.items()
             if isinstance(entry, dict) and entry.get("source_status") == UNKNOWN
+        ),
+        "pending_fields": sorted(
+            field for field, entry in public_fields.items()
+            if isinstance(entry, dict) and entry.get("source_status") in PENDING_SOURCE_STATUSES
         ),
         "proof_ceiling": public_fields["proof_ceiling"]["current_value"],
         "public_safe_state": public_fields["public_safe_state"]["current_value"],
