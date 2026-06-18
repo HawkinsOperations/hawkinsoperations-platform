@@ -13,7 +13,7 @@ Route chain:
 
 ```text
 Public status JSON
-→ Hoxline source route
+→ Hoxline candidate-review model
 → platform public-safe candidate-review lane
 → proof public-safe candidate-review packet
 → validation/proof records
@@ -35,15 +35,47 @@ The public surface metric is rendered from the current public-status JSON. New p
 Reviewer links:
 
 * [public status JSON](https://hawkinsoperations.com/data/public-status.json)
+* [Hoxline candidate-review model PR #16](https://github.com/HawkinsOperations/hoxline/pull/16)
 * [Hoxline Gauntlet v1 run](https://github.com/HawkinsOperations/hoxline/blob/main/examples/gauntlet/ho-det-001-gauntlet-run-v1.json)
 * [Hoxline Claim Authority v1](https://github.com/HawkinsOperations/hoxline/blob/main/docs/claim-authority/CLAIM_AUTHORITY_V1.md)
+* [Hoxline Gauntlet schema](https://github.com/HawkinsOperations/hoxline/blob/main/schemas/gauntlet-run-v1.schema.json)
+* [Hoxline ProofCard schema](https://github.com/HawkinsOperations/hoxline/blob/main/schemas/proofcard-v1.schema.json)
+* [Hoxline Claim Authority decision schema](https://github.com/HawkinsOperations/hoxline/blob/main/schemas/claim-authority-decision-v1.schema.json)
 * [platform public-safe candidate-review lane](https://github.com/HawkinsOperations/hawkinsoperations-platform/blob/main/contracts/public-status-source-contract-v1.json)
 * [proof public-safe candidate-review packet](https://github.com/HawkinsOperations/hawkinsoperations-proof/blob/main/proof/records/HO-DET-001-PUBLIC-SAFE-CANDIDATE-REVIEW-V1.md)
 * [validation bridge](https://github.com/HawkinsOperations/hawkinsoperations-validation/blob/main/validation/hoxline/HO-DET-001_HOXLINE_GAUNTLET_VALIDATION_BRIDGE_V1.md)
 * [proof bridge](https://github.com/HawkinsOperations/hawkinsoperations-proof/blob/main/proof/records/HO-DET-001_HOXLINE_GAUNTLET_BRIDGE_V1.md)
 * [platform source contract doc](https://github.com/HawkinsOperations/hawkinsoperations-platform/blob/main/contracts/PUBLIC_STATUS_SOURCE_CONTRACT_V1.md)
 
-The public page shows a bounded generated status snapshot. The code/source route behind it is the Hoxline source route, platform public-safe candidate-review lane, proof public-safe candidate-review packet, validation bridge, proof bridge, and platform public-status source contract. Website rendering and GitHub rendering are review surfaces only.
+The public page shows a bounded generated status snapshot. The code/source route behind it is the Hoxline candidate-review model, platform public-safe candidate-review lane, proof public-safe candidate-review packet, validation bridge, proof bridge, and platform public-status source contract. Website rendering and GitHub rendering are review surfaces only.
+
+## Hoxline Candidate-Review Model Reference
+
+* Hoxline PR #16: https://github.com/HawkinsOperations/hoxline/pull/16
+
+Purpose:
+Hoxline now models HO-DET-001 Public-Safe Candidate Review v1 across Gauntlet v1, ProofCard v1, Claim Authority v1, schemas, examples, docs, and tests.
+
+Safe state:
+
+* review_lane: PUBLIC_SAFE_CANDIDATE_REVIEW_V1
+* public_safe_status: NOT_PUBLIC_SAFE
+* runtime_active: false
+* signal_observed: false
+* human_review_required: true
+* proof_ceiling: CONTROLLED_TEST_VALIDATED
+* proof_ceiling_meaning: CONTROLLED_VALIDATION_ONLY
+
+Boundary:
+Hoxline models the candidate-review state. It does not create platform ledger authority, proof authority, runtime truth, signal truth, public-safe approval, website proof authority, GitHub proof authority, green-CI approval, final authorization, or case closure.
+
+Hoxline main links:
+
+* [Hoxline Gauntlet v1 JSON](https://github.com/HawkinsOperations/hoxline/blob/main/examples/gauntlet/ho-det-001-gauntlet-run-v1.json)
+* [Claim Authority v1](https://github.com/HawkinsOperations/hoxline/blob/main/docs/claim-authority/CLAIM_AUTHORITY_V1.md)
+* [Gauntlet schema](https://github.com/HawkinsOperations/hoxline/blob/main/schemas/gauntlet-run-v1.schema.json)
+* [ProofCard schema](https://github.com/HawkinsOperations/hoxline/blob/main/schemas/proofcard-v1.schema.json)
+* [Claim Authority decision schema](https://github.com/HawkinsOperations/hoxline/blob/main/schemas/claim-authority-decision-v1.schema.json)
 
 ## Reviewer Clone / Run Path
 
