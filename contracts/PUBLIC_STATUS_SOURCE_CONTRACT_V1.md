@@ -17,13 +17,13 @@ Current safe values come only from source-controlled platform state:
 | Detection activity and validation counts | `contracts/reviewer-metrics-pipeline-v1-state.json` validation source routes | `hawkinsoperations-validation` |
 | Proof records, blocked claims, proof ceiling, public-safe boundary | proof source routes declared by reviewer metrics and lifetime state | `hawkinsoperations-proof` |
 | Detection source truth | `../hawkinsoperations-detections/detections/DETECTION_PROMOTION_MATRIX.yml` | `hawkinsoperations-detections` |
-| Hoxline v1 source manifest, product, and Gauntlet status | landed PR #15 source manifest and v1 paths under `../aevumguard/examples/gauntlet/` and `../aevumguard/schemas/` | `hoxline/aevumguard` |
+| Hoxline v1 source manifest, product, and Gauntlet status | landed PR #15 source manifest and v1 paths under `../hoxline/examples/gauntlet/` and `../hoxline/schemas/` | `hoxline` |
 | Hoxline validation bridge | landed PR #67 paths under `../hawkinsoperations-validation/validation/hoxline/` | `hawkinsoperations-validation` |
 | Hoxline proof bridge | landed PR #81 paths under `../hawkinsoperations-proof/proof/` | `hawkinsoperations-proof` |
 
 Hoxline PR #15, validation PR #67, and proof PR #81 are represented as landed source routes. Generated public status v1 must preserve `source_pr` and `source_branch` provenance. Landed source routes still do not create runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, disposition, authorization, or case closure.
 
-The preferred Hoxline v1 source manifest is captured as landed PR #15 source-route metadata at `../aevumguard/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json`. The website may render only the bounded source-route metadata and must not treat it as proof, runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, disposition, authorization, or case closure.
+The preferred Hoxline v1 source manifest is captured as landed PR #15 source-route metadata at `../hoxline/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json`. The website may render only the bounded source-route metadata and must not treat it as proof, runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, disposition, authorization, or case closure.
 
 ## Freshness
 
