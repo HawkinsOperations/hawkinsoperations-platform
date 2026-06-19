@@ -15,8 +15,8 @@
       "current_value": 8
     },
     "hoxline_gauntlet_status": {
-      "owner_repo": "hoxline/aevumguard",
-      "source_path": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
+      "owner_repo": "hoxline",
+      "source_path": "../hoxline/examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
       "source_status": "SOURCE_CAPTURED",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
@@ -28,8 +28,8 @@
       }
     },
     "hoxline_v1_source_manifest": {
-      "owner_repo": "hoxline/aevumguard",
-      "source_path": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json",
+      "owner_repo": "hoxline",
+      "source_path": "../hoxline/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json",
       "source_status": "SOURCE_CAPTURED",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",

@@ -14,7 +14,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "contracts" / "public-status-source-contract-v1.json"
 UNKNOWN = "UNKNOWN_SOURCE_NOT_CAPTURED"
-HOXLINE_SOURCE_MANIFEST_PATH = "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json"
+HOXLINE_SOURCE_MANIFEST_PATH = "../hoxline/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json"
 ALLOWED_SOURCE_STATUSES = {
     "SOURCE_CAPTURED",
     "SOURCE_CAPTURED_PENDING_PR",
@@ -462,7 +462,7 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
     for field in DETECTIONS_FIELDS:
         require_owner(public_fields, field, "hawkinsoperations-detections")
     for field in HOXLINE_FIELDS:
-        require_owner(public_fields, field, "hoxline/aevumguard")
+        require_owner(public_fields, field, "hoxline")
     for field in VALIDATION_BRIDGE_FIELDS:
         require_owner(public_fields, field, "hawkinsoperations-validation")
     for field in PROOF_BRIDGE_FIELDS:

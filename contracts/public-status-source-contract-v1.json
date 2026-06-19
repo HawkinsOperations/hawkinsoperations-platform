@@ -57,7 +57,7 @@
       "authority_boundary": "presentation only; never source authority for status, proof, runtime, signal, public-safe, or closure fields"
     },
     {
-      "repo": "hoxline/aevumguard",
+      "repo": "hoxline",
       "role": "Hoxline product and Gauntlet field owner",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
@@ -74,19 +74,19 @@
     "proof_reviewer_map": "../hawkinsoperations-proof/proof/indexes/reviewer-proof-map.json",
     "detections_promotion_matrix": "../hawkinsoperations-detections/detections/DETECTION_PROMOTION_MATRIX.yml",
     "website_generated_status_consumer": "../hawkinsoperations-website/UNKNOWN_SOURCE_NOT_CAPTURED",
-    "hoxline_v1_source_manifest": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json",
-    "hoxline_gauntlet_run_v1": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
-    "hoxline_gauntlet_run_v1_overclaim": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-run-v1-overclaim.json",
-    "hoxline_evidence_graph_v1": "../aevumguard/examples/gauntlet/ho-det-001-evidence-graph-v1.json",
-    "hoxline_proofcard_v1": "../aevumguard/examples/gauntlet/ho-det-001-proofcard-v1.json",
-    "hoxline_claim_decision_v1": "../aevumguard/examples/gauntlet/ho-det-001-claim-decision-v1.json",
-    "hoxline_gauntlet_run_v1_schema": "../aevumguard/schemas/gauntlet-run-v1.schema.json",
-    "hoxline_evidence_graph_v1_schema": "../aevumguard/schemas/evidence-graph-v1.schema.json",
-    "hoxline_proofcard_v1_schema": "../aevumguard/schemas/proofcard-v1.schema.json",
-    "hoxline_claim_authority_decision_v1_schema": "../aevumguard/schemas/claim-authority-decision-v1.schema.json",
-    "hoxline_gauntlet_v1_doc": "../aevumguard/docs/gauntlet/HOXLINE_GAUNTLET_V1.md",
-    "hoxline_proofcard_v1_doc": "../aevumguard/docs/proofcards/PROOFCARD_V1.md",
-    "hoxline_claim_authority_v1_doc": "../aevumguard/docs/claim-authority/CLAIM_AUTHORITY_V1.md",
+    "hoxline_v1_source_manifest": "../hoxline/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json",
+    "hoxline_gauntlet_run_v1": "../hoxline/examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
+    "hoxline_gauntlet_run_v1_overclaim": "../hoxline/examples/gauntlet/ho-det-001-gauntlet-run-v1-overclaim.json",
+    "hoxline_evidence_graph_v1": "../hoxline/examples/gauntlet/ho-det-001-evidence-graph-v1.json",
+    "hoxline_proofcard_v1": "../hoxline/examples/gauntlet/ho-det-001-proofcard-v1.json",
+    "hoxline_claim_decision_v1": "../hoxline/examples/gauntlet/ho-det-001-claim-decision-v1.json",
+    "hoxline_gauntlet_run_v1_schema": "../hoxline/schemas/gauntlet-run-v1.schema.json",
+    "hoxline_evidence_graph_v1_schema": "../hoxline/schemas/evidence-graph-v1.schema.json",
+    "hoxline_proofcard_v1_schema": "../hoxline/schemas/proofcard-v1.schema.json",
+    "hoxline_claim_authority_decision_v1_schema": "../hoxline/schemas/claim-authority-decision-v1.schema.json",
+    "hoxline_gauntlet_v1_doc": "../hoxline/docs/gauntlet/HOXLINE_GAUNTLET_V1.md",
+    "hoxline_proofcard_v1_doc": "../hoxline/docs/proofcards/PROOFCARD_V1.md",
+    "hoxline_claim_authority_v1_doc": "../hoxline/docs/claim-authority/CLAIM_AUTHORITY_V1.md",
     "validation_hoxline_gauntlet_bridge_v1_json": "../hawkinsoperations-validation/validation/hoxline/ho-det-001-hoxline-gauntlet-validation-bridge-v1.json",
     "validation_hoxline_gauntlet_bridge_v1_md": "../hawkinsoperations-validation/validation/hoxline/HO-DET-001_HOXLINE_GAUNTLET_VALIDATION_BRIDGE_V1.md",
     "validation_hoxline_gauntlet_bridge_v1_verifier": "../hawkinsoperations-validation/scripts/verify_hoxline_gauntlet_validation_bridge.py",
@@ -319,8 +319,8 @@
       "freshness_policy": "Do not render until generated-status v1 captures a bounded detections-owned value."
     },
     "hoxline_product_status": {
-      "owner_repo": "hoxline/aevumguard",
-      "source_path": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
+      "owner_repo": "hoxline",
+      "source_path": "../hoxline/examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
       "source_json_pointer": "/product",
       "current_value": "Hoxline by HawkinsOperations",
       "render_allowed": true,
@@ -330,8 +330,8 @@
       "freshness_policy": "Render only as landed Hoxline product source metadata from PR #15; never treat product rendering as proof, runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, approval, authorization, or closure."
     },
     "hoxline_gauntlet_status": {
-      "owner_repo": "hoxline/aevumguard",
-      "source_path": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
+      "owner_repo": "hoxline",
+      "source_path": "../hoxline/examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
       "source_json_pointer": "/proof_ceiling",
       "current_value": {
         "hoxline_gauntlet_v1_source_available": true,
@@ -348,8 +348,8 @@
       "freshness_policy": "Render only bounded landed Hoxline Gauntlet v1 metadata from PR #15; do not render runtime truth, signal truth, public-safe status, production readiness, customer deployment, SOCaaS deployment, AI approval, analyst approval, final authorization, or case closure."
     },
     "hoxline_v1_source_manifest": {
-      "owner_repo": "hoxline/aevumguard",
-      "source_path": "../aevumguard/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json",
+      "owner_repo": "hoxline",
+      "source_path": "../hoxline/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json",
       "source_json_pointer": "/manifest_id",
       "current_value": "SEE_HOXLINE_V1_SOURCE_MANIFEST",
       "render_allowed": true,
@@ -475,7 +475,7 @@
     {
       "route": "hoxline-gauntlet-v1-verify",
       "command": "python -B -m hoxline gauntlet verify --input examples/gauntlet/ho-det-001-gauntlet-run-v1.json --schema schemas/gauntlet-run-v1.schema.json",
-      "owner_repo": "hoxline/aevumguard",
+      "owner_repo": "hoxline",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
       "source_status": "SOURCE_CAPTURED"
@@ -483,7 +483,7 @@
     {
       "route": "hoxline-gauntlet-v1-summarize",
       "command": "python -B -m hoxline gauntlet summarize --input examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
-      "owner_repo": "hoxline/aevumguard",
+      "owner_repo": "hoxline",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
       "source_status": "SOURCE_CAPTURED"
@@ -491,7 +491,7 @@
     {
       "route": "hoxline-claim-authority-v1-decide",
       "command": "python -B -m hoxline claim-authority decide --input examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
-      "owner_repo": "hoxline/aevumguard",
+      "owner_repo": "hoxline",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
       "source_status": "SOURCE_CAPTURED"
@@ -499,7 +499,7 @@
     {
       "route": "hoxline-proofcard-v1-render",
       "command": "python -B -m hoxline proofcard render --input examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
-      "owner_repo": "hoxline/aevumguard",
+      "owner_repo": "hoxline",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
       "source_status": "SOURCE_CAPTURED"
@@ -507,7 +507,7 @@
     {
       "route": "hoxline-gauntlet-v1-overclaim-verify",
       "command": "python -B -m hoxline gauntlet verify --input examples/gauntlet/ho-det-001-gauntlet-run-v1-overclaim.json --schema schemas/gauntlet-run-v1.schema.json",
-      "owner_repo": "hoxline/aevumguard",
+      "owner_repo": "hoxline",
       "source_pr": 15,
       "source_branch": "feature/hoxline-gauntlet-v1-engine",
       "source_status": "SOURCE_CAPTURED",

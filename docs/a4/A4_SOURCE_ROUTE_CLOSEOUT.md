@@ -220,7 +220,7 @@ Hoxline v1 source manifest
 
 Primary source anchors:
 
-- `../aevumguard/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json`
+- `../hoxline/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json`
 - `../hawkinsoperations-validation/validation/hoxline/ho-det-001-hoxline-gauntlet-validation-bridge-v1.json`
 - `../hawkinsoperations-proof/proof/records/ho-det-001-hoxline-gauntlet-bridge-v1.json`
 - `contracts/public-status-source-contract-v1.json`
