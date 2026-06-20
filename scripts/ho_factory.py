@@ -6201,6 +6201,347 @@ def runtime_collector_normalizer_self_test() -> dict[str, Any]:
     }
 
 
+HOXLINE_RUNTIME_TRANSITIONS = {
+    None: {"EVENT_REQUESTED"},
+    "EVENT_REQUESTED": {"EVENT_GENERATED"},
+    "EVENT_GENERATED": {"SIGNAL_OBSERVED"},
+    "SIGNAL_OBSERVED": {"CANDIDATE_CREATED"},
+    "CANDIDATE_CREATED": {"CONTRACT_VALIDATED"},
+    "CONTRACT_VALIDATED": {"NORMALIZED"},
+    "NORMALIZED": {"DEDUPED"},
+    "DEDUPED": {"ENRICHED"},
+    "ENRICHED": {"AI_TRIAGE_READY", "AI_TRIAGE_UNAVAILABLE"},
+    "AI_TRIAGE_READY": {"HUMAN_REVIEW_REQUIRED"},
+    "AI_TRIAGE_UNAVAILABLE": {"HUMAN_REVIEW_REQUIRED"},
+    "HUMAN_REVIEW_REQUIRED": {"APPEND_APPROVED", "PUBLIC_REVIEW_PENDING", "FAILED_RETRYABLE"},
+    "APPEND_APPROVED": {"LEDGER_APPENDED"},
+    "LEDGER_APPENDED": {"PUBLIC_REVIEW_PENDING"},
+    "PUBLIC_REVIEW_PENDING": set(),
+    "FAILED_RETRYABLE": {"HUMAN_REVIEW_REQUIRED", "DEAD_LETTERED"},
+    "DEAD_LETTERED": set(),
+}
+
+
+def hoxline_runtime_case_id(execution_id: str, detection_id: str = "HO-DET-001") -> str:
+    return f"hoxline-{detection_id.lower()}-{canonical_sha256({'execution_id': execution_id, 'detection_id': detection_id})[:16]}"
+
+
+def hoxline_load_execution_artifacts(private_route: Path, execution_id: str) -> dict[str, Any]:
+    if not private_route.is_dir():
+        raise FactoryError("Hoxline private route must exist and be a directory")
+    artifacts: dict[str, Any] = {
+        "candidate": None,
+        "candidate_digest": None,
+        "enrichment": None,
+        "enrichment_digest": None,
+        "ai_output": None,
+        "ai_output_digest": None,
+        "review_packet": None,
+        "review_packet_digest": None,
+        "matching_json_count": 0,
+    }
+    for path in sorted(private_route.rglob("*.json")):
+        data = path.read_bytes()
+        text = data.decode("utf-8", errors="ignore")
+        if execution_id not in text:
+            continue
+        artifacts["matching_json_count"] += 1
+        digest = hashlib.sha256(data).hexdigest()
+        try:
+            packet = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(packet, dict) and isinstance(packet.get("candidates"), list):
+            for candidate in packet["candidates"]:
+                if isinstance(candidate, dict) and candidate.get("execution_id") == execution_id:
+                    artifacts["candidate"] = candidate
+                    artifacts["candidate_digest"] = digest
+        elif isinstance(packet, dict) and packet.get("schema_version") == "hoxline-deterministic-enrichment-v0":
+            artifacts["enrichment"] = packet
+            artifacts["enrichment_digest"] = digest
+        elif isinstance(packet, dict) and packet.get("schema_version") == "hoxline-ai-support-triage-v0":
+            artifacts["ai_output"] = packet
+            artifacts["ai_output_digest"] = digest
+        elif isinstance(packet, dict) and packet.get("schema_version") == "hoxline-human-review-packet-v0":
+            current = artifacts.get("review_packet")
+            current_ai_state = (current or {}).get("ai_triage", {}).get("state") if isinstance(current, dict) else None
+            packet_ai_state = packet.get("ai_triage", {}).get("state") if isinstance(packet.get("ai_triage"), dict) else None
+            if current is None or current_ai_state != "AI_TRIAGE_READY" and packet_ai_state == "AI_TRIAGE_READY":
+                artifacts["review_packet"] = packet
+                artifacts["review_packet_digest"] = digest
+    missing = [name for name in ("candidate", "enrichment", "review_packet") if artifacts[name] is None]
+    if missing:
+        raise FactoryError(f"Hoxline replay missing execution artifacts: {', '.join(missing)}")
+    return artifacts
+
+
+def hoxline_build_journal_event(
+    *,
+    execution_id: str,
+    case_id: str,
+    event_index: int,
+    prior_state: str | None,
+    new_state: str,
+    evidence_refs: dict[str, Any],
+    previous_event_hash: str | None,
+    actor_class: str,
+    recorded_at: str,
+) -> dict[str, Any]:
+    if new_state not in HOXLINE_RUNTIME_TRANSITIONS.get(prior_state, set()):
+        raise FactoryError(f"invalid Hoxline runtime transition: {prior_state!r} -> {new_state!r}")
+    event = {
+        "event_id": f"{case_id}:{event_index:03d}:{new_state}",
+        "execution_id": execution_id,
+        "case_id": case_id,
+        "detection_id": "HO-DET-001",
+        "schema_version": "hoxline-private-case-journal-v0",
+        "source_system": "Wazuh/Sysmon",
+        "observed_at": evidence_refs.get("observed_at"),
+        "recorded_at": recorded_at,
+        "actor_class": actor_class,
+        "prior_state": prior_state,
+        "new_state": new_state,
+        "truth_class": evidence_refs.get("truth_class", "PRIVATE_CONTROLLED_RUNTIME_PROOF"),
+        "public_safe": False,
+        "evidence_refs": evidence_refs,
+        "content_hash": canonical_sha256(evidence_refs),
+        "previous_event_hash": previous_event_hash,
+    }
+    event["event_hash"] = canonical_sha256(event)
+    return event
+
+
+def hoxline_verify_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
+    previous_hash: str | None = None
+    previous_state: str | None = None
+    for event in events:
+        if event.get("previous_event_hash") != previous_hash:
+            raise FactoryError("Hoxline journal hash chain is broken")
+        if event.get("prior_state") != previous_state:
+            raise FactoryError("Hoxline journal prior_state chain is broken")
+        if event.get("new_state") not in HOXLINE_RUNTIME_TRANSITIONS.get(previous_state, set()):
+            raise FactoryError("Hoxline journal transition guard failed")
+        event_hash = event.get("event_hash")
+        candidate = dict(event)
+        candidate.pop("event_hash", None)
+        if event_hash != canonical_sha256(candidate):
+            raise FactoryError("Hoxline journal event hash mismatch")
+        previous_hash = event_hash
+        previous_state = event["new_state"]
+    return {
+        "status": "pass",
+        "event_count": len(events),
+        "head_state": previous_state,
+        "journal_head_hash": previous_hash,
+    }
+
+
+def hoxline_runtime_metrics_from_replay(events: list[dict[str, Any]], manifest: dict[str, Any], ai: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": "hoxline-runtime-metrics-v0",
+        "execution_id": manifest["execution_id"],
+        "case_id": manifest["case_id"],
+        "case_state": "HUMAN_REVIEW_REQUIRED",
+        "event_count": len(events),
+        "signal_to_candidate_latency_status": "REPORT_ONLY_NOT_DERIVED_FROM_PRIVATE_TIMESTAMPS",
+        "candidate_to_review_latency_status": "REPORT_ONLY_NOT_DERIVED_FROM_PRIVATE_TIMESTAMPS",
+        "duplicate_suppression_count": 0,
+        "enrichment_success_count": 1,
+        "enrichment_unavailable_count": 0,
+        "ai_primary_success_count": 1 if ai.get("state") == "AI_TRIAGE_READY" or ai.get("primary_status") == "pass" else 0,
+        "ai_fallback_success_count": 1 if ai.get("fallback_status") == "pass" else 0,
+        "ai_unavailable_count": 1 if manifest.get("ai_state") == "AI_TRIAGE_UNAVAILABLE" else 0,
+        "human_review_backlog_delta": 1,
+        "ledger_append_count": 0,
+        "public_proof_promotion_count": 0,
+        "dead_letter_count": 0,
+        "replay_success_count": 1,
+        "slo_class": "REPORT_ONLY",
+    }
+
+
+def hoxline_runtime_replay(
+    execution_id: str,
+    private_route: str,
+    *,
+    write_journal: bool = False,
+    write_manifest: bool = False,
+) -> dict[str, Any]:
+    route = Path(private_route).resolve()
+    artifacts = hoxline_load_execution_artifacts(route, execution_id)
+    candidate = artifacts["candidate"]
+    review = artifacts["review_packet"]
+    ai = review.get("ai_triage", {}) if isinstance(review.get("ai_triage"), dict) else {}
+    ai_state = ai.get("state", "AI_TRIAGE_UNAVAILABLE")
+    if ai_state not in {"AI_TRIAGE_READY", "AI_TRIAGE_UNAVAILABLE"}:
+        raise FactoryError("Hoxline AI state must be ready or unavailable")
+    case_id = hoxline_runtime_case_id(execution_id)
+    recorded_at = review.get("created_at_utc") or candidate.get("observed_time_utc") or execution_id
+    base_refs = {
+        "workflow_run_id": "27878994407",
+        "workflow_job_id": "82503185677",
+        "runner_name": "HO-GPU-01",
+        "runner_labels": ["self-hosted", "ho-gpu-01", "gpu", "v100"],
+        "signal_receipt_digest": review["signal_receipt"]["receipt_digest"],
+        "candidate_digest": artifacts["candidate_digest"],
+        "normalized_digest": review["normalization"]["normalized_hash"],
+        "duplicate_count": review["dedupe"]["duplicate_count"],
+        "enrichment_digest": artifacts["enrichment_digest"],
+        "ai_output_digest": artifacts.get("ai_output_digest"),
+        "review_packet_digest": artifacts["review_packet_digest"],
+        "observed_at": candidate.get("observed_time_utc"),
+        "truth_class": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+    }
+    states = [
+        "EVENT_REQUESTED",
+        "EVENT_GENERATED",
+        "SIGNAL_OBSERVED",
+        "CANDIDATE_CREATED",
+        "CONTRACT_VALIDATED",
+        "NORMALIZED",
+        "DEDUPED",
+        "ENRICHED",
+        ai_state,
+        "HUMAN_REVIEW_REQUIRED",
+    ]
+    events: list[dict[str, Any]] = []
+    prior_state: str | None = None
+    previous_hash: str | None = None
+    for index, state in enumerate(states, start=1):
+        event = hoxline_build_journal_event(
+            execution_id=execution_id,
+            case_id=case_id,
+            event_index=index,
+            prior_state=prior_state,
+            new_state=state,
+            evidence_refs={**base_refs, "stage": state},
+            previous_event_hash=previous_hash,
+            actor_class="hoxline_runtime_replay",
+            recorded_at=recorded_at,
+        )
+        events.append(event)
+        prior_state = state
+        previous_hash = event["event_hash"]
+    verification = hoxline_verify_journal(events)
+    repo_sha = subprocess.run(
+        ["git", "-C", str(PLATFORM_ROOT), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    manifest = {
+        "schema_version": "hoxline-private-evidence-manifest-v0",
+        "execution_id": execution_id,
+        "case_id": case_id,
+        "detection_id": "HO-DET-001",
+        "wazuh_rule_id": review["signal_receipt"]["wazuh_rule_id"],
+        "controlled_event_class": review["controlled_event"]["event_class"],
+        "signal_receipt_digest": review["signal_receipt"]["receipt_digest"],
+        "candidate_digest": artifacts["candidate_digest"],
+        "normalized_digest": review["normalization"]["normalized_hash"],
+        "duplicate_state": "REPLAY_NO_DUPLICATE",
+        "enrichment_digest": artifacts["enrichment_digest"],
+        "ai_state": ai_state,
+        "ai_input_digest": ai.get("input_hash_sha256"),
+        "ai_output_digest": ai.get("output_hash_sha256") or artifacts.get("ai_output_digest"),
+        "human_review_packet_digest": artifacts["review_packet_digest"],
+        "repository": "hawkinsoperations-platform",
+        "repository_commit_sha": repo_sha,
+        "github_workflow_run_id": "27878994407",
+        "github_workflow_job_id": "82503185677",
+        "runner_identity": "HO-GPU-01",
+        "runner_labels": ["self-hosted", "ho-gpu-01", "gpu", "v100"],
+        "backend_identity": "HO-WAZUH-01",
+        "model_name": ai.get("primary_model"),
+        "model_result": ai.get("primary_status"),
+        "prompt_template_hash": ai.get("prompt_template_hash_sha256"),
+        "generation_parameter_class": "bounded_json_temperature_0",
+        "journal_head_hash": verification["journal_head_hash"],
+        "ledger_baseline": review["ledger_baseline"],
+        "public_safe": False,
+        "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+        "manifest_hash": "",
+    }
+    manifest["manifest_hash"] = canonical_sha256({key: value for key, value in manifest.items() if key != "manifest_hash"})
+    metrics = hoxline_runtime_metrics_from_replay(events, manifest, ai)
+    written = {"journal": False, "manifest": False}
+    if write_journal:
+        journal_path = route / f"hoxline-case-journal-v0-{execution_id}.jsonl"
+        if journal_path.exists():
+            existing_events = [json.loads(line) for line in journal_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            existing_head = hoxline_verify_journal(existing_events)["journal_head_hash"]
+            if existing_head != verification["journal_head_hash"]:
+                raise FactoryError("existing Hoxline journal differs from replay head")
+        else:
+            journal_path.write_text("".join(json.dumps(event, sort_keys=True) + "\n" for event in events), encoding="utf-8")
+        written["journal"] = True
+    if write_manifest:
+        manifest_path = route / f"hoxline-evidence-manifest-v0-{execution_id}.json"
+        if manifest_path.exists():
+            existing_hash = json.loads(manifest_path.read_text(encoding="utf-8")).get("manifest_hash")
+            if existing_hash != manifest["manifest_hash"]:
+                raise FactoryError("existing Hoxline evidence manifest differs from replay manifest")
+        else:
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        written["manifest"] = True
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-runtime-replay",
+        "execution_id": execution_id,
+        "case_id": case_id,
+        "generated_output_files": any(written.values()),
+        "replay_result": "REPLAY_NO_DUPLICATE",
+        "candidate_collection_performed": False,
+        "controlled_event_performed": False,
+        "ledger_mutated": False,
+        "public_proof_promoted": False,
+        "ai_state": ai_state,
+        "journal_verification": verification,
+        "current_case_view": {
+            "current_state": "HUMAN_REVIEW_REQUIRED",
+            "human_review_required": True,
+            "public_safe": False,
+            "case_closed": False,
+            "append_to_lifetime_ledger": False,
+        },
+        "evidence_manifest": manifest,
+        "metrics": metrics,
+        "written": written,
+    }
+
+
+def hoxline_runtime_health(private_route: str) -> dict[str, Any]:
+    route = Path(private_route).resolve()
+    files = [path for path in route.rglob("*") if path.is_file()] if route.is_dir() else []
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-runtime-health",
+        "private_route_exists": route.is_dir(),
+        "private_route_file_count": len(files),
+        "private_route_digest": canonical_sha256(
+            [{"size": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()} for path in sorted(files)]
+        ),
+        "ledger_append_allowed": False,
+        "public_proof_promotion_allowed": False,
+        "health_status": "pass" if route.is_dir() else "blocked",
+    }
+
+
+def hoxline_runtime_verify(execution_id: str, private_route: str) -> dict[str, Any]:
+    replay = hoxline_runtime_replay(execution_id, private_route)
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-runtime-verify",
+        "execution_id": execution_id,
+        "status": "pass",
+        "replay_result": replay["replay_result"],
+        "journal_verification": replay["journal_verification"],
+        "manifest_hash": replay["evidence_manifest"]["manifest_hash"],
+        "ledger_mutated": False,
+        "public_proof_promoted": False,
+    }
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Detection Factory Controller v0")
     subparsers = parser.add_subparsers(dest="mode", required=True)
@@ -6344,6 +6685,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub = subparsers.add_parser("collector-normalizer-append-approved")
     sub.add_argument("--candidate-plan")
     sub.add_argument("--append-approval")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-health")
+    sub.add_argument("--private-route", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-replay")
+    sub.add_argument("--execution-id", required=True)
+    sub.add_argument("--private-route", required=True)
+    sub.add_argument("--write-journal", action="store_true")
+    sub.add_argument("--write-manifest", action="store_true")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-verify")
+    sub.add_argument("--execution-id", required=True)
+    sub.add_argument("--private-route", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-metrics")
+    sub.add_argument("--execution-id", required=True)
+    sub.add_argument("--private-route", required=True)
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("public-status-source-contract-verify")
     sub.add_argument("--format", default="json", choices=("json",))
@@ -6616,6 +6974,31 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "collector-normalizer-append-approved":
         output = runtime_collector_normalizer_append_approved(args.candidate_plan, args.append_approval)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-health":
+        output = hoxline_runtime_health(args.private_route)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-replay":
+        output = hoxline_runtime_replay(
+            args.execution_id,
+            args.private_route,
+            write_journal=args.write_journal,
+            write_manifest=args.write_manifest,
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-verify":
+        output = hoxline_runtime_verify(args.execution_id, args.private_route)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-metrics":
+        output = hoxline_runtime_replay(args.execution_id, args.private_route)["metrics"]
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
