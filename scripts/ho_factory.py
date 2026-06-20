@@ -6238,6 +6238,8 @@ def hoxline_load_execution_artifacts(private_route: Path, execution_id: str) -> 
         "ai_output_digest": None,
         "review_packet": None,
         "review_packet_digest": None,
+        "evidence_manifest": None,
+        "evidence_manifest_digest": None,
         "matching_json_count": 0,
     }
     for path in sorted(private_route.rglob("*.json")):
@@ -6269,6 +6271,10 @@ def hoxline_load_execution_artifacts(private_route: Path, execution_id: str) -> 
             if current is None or current_ai_state != "AI_TRIAGE_READY" and packet_ai_state == "AI_TRIAGE_READY":
                 artifacts["review_packet"] = packet
                 artifacts["review_packet_digest"] = digest
+        elif isinstance(packet, dict) and packet.get("schema_version") == "hoxline-private-evidence-manifest-v0":
+            if packet.get("execution_id") == execution_id:
+                artifacts["evidence_manifest"] = packet
+                artifacts["evidence_manifest_digest"] = digest
     missing = [name for name in ("candidate", "enrichment", "review_packet") if artifacts[name] is None]
     if missing:
         raise FactoryError(f"Hoxline replay missing execution artifacts: {', '.join(missing)}")
@@ -6423,7 +6429,9 @@ def hoxline_runtime_replay(
         prior_state = state
         previous_hash = event["event_hash"]
     verification = hoxline_verify_journal(events)
-    repo_sha = subprocess.run(
+    existing_manifest = artifacts.get("evidence_manifest")
+    existing_repo_sha = existing_manifest.get("repository_commit_sha") if isinstance(existing_manifest, dict) else None
+    repo_sha = existing_repo_sha or subprocess.run(
         ["git", "-C", str(PLATFORM_ROOT), "rev-parse", "HEAD"],
         capture_output=True,
         text=True,
