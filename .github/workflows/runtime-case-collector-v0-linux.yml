@@ -12,6 +12,22 @@ on:
         description: Private Linux collector output route on the trusted runner host
         required: true
         type: string
+      execution_id:
+        description: Sanitized controlled execution ID for signal-correlated candidate collection
+        required: false
+        type: string
+      signal_receipt_digest:
+        description: SHA-256 digest of the sanitized backend signal receipt
+        required: false
+        type: string
+      signal_observed_time_utc:
+        description: Sanitized backend observed timestamp for the signal receipt
+        required: false
+        type: string
+      wazuh_rule_id:
+        description: Sanitized Wazuh rule identifier associated with the signal receipt
+        required: false
+        type: string
   # Scheduled runs paused while self-hosted runtime runners/main PC are offline. Manual workflow_dispatch remains available for approved runtime reentry.
   # schedule:
   #   - cron: "15 * * * *"
@@ -82,13 +98,31 @@ jobs:
         if: ${{ github.event_name == 'schedule' || inputs.collect_candidates }}
         env:
           COLLECTOR_OUTPUT_ROUTE: ${{ github.event_name == 'schedule' && vars.RCC_LINUX_OUTPUT_ROUTE || inputs.collector_output_route }}
+          EXECUTION_ID: ${{ inputs.execution_id }}
+          SIGNAL_RECEIPT_DIGEST: ${{ inputs.signal_receipt_digest }}
+          SIGNAL_OBSERVED_TIME_UTC: ${{ inputs.signal_observed_time_utc }}
+          WAZUH_RULE_ID: ${{ inputs.wazuh_rule_id }}
         run: |
           if [ -z "$COLLECTOR_OUTPUT_ROUTE" ]; then
             echo "RCC_LINUX_OUTPUT_ROUTE is required for scheduled collection, and collector_output_route is required for workflow_dispatch." >&2
             exit 1
           fi
+          signal_args=()
+          if [ -n "$EXECUTION_ID$SIGNAL_RECEIPT_DIGEST$SIGNAL_OBSERVED_TIME_UTC$WAZUH_RULE_ID" ]; then
+            if [ -z "$EXECUTION_ID" ] || [ -z "$SIGNAL_RECEIPT_DIGEST" ] || [ -z "$SIGNAL_OBSERVED_TIME_UTC" ] || [ -z "$WAZUH_RULE_ID" ]; then
+              echo "execution_id, signal_receipt_digest, signal_observed_time_utc, and wazuh_rule_id must be provided together." >&2
+              exit 1
+            fi
+            signal_args=(
+              --execution-id "$EXECUTION_ID"
+              --signal-receipt-digest "$SIGNAL_RECEIPT_DIGEST"
+              --signal-observed-time-utc "$SIGNAL_OBSERVED_TIME_UTC"
+              --backend-class Wazuh
+              --wazuh-rule-id "$WAZUH_RULE_ID"
+            )
+          fi
           collect_json="${RUNNER_TEMP}/rccv0-linux-collect.json"
-          python3 -B scripts/ho_factory.py collector-linux-run-once --output-route "$COLLECTOR_OUTPUT_ROUTE" --format json > "$collect_json"
+          python3 -B scripts/ho_factory.py collector-linux-run-once --output-route "$COLLECTOR_OUTPUT_ROUTE" "${signal_args[@]}" --format json > "$collect_json"
           python3 - "$collect_json" <<'PY'
           import json
           import os
