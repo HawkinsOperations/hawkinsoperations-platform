@@ -5212,6 +5212,8 @@ def build_runtime_collector_linux_candidate(
         "source_receipt_refs": payload["source_receipt_refs"],
         "observed_time_utc": payload.get("observed_time_utc"),
     }
+    if payload.get("execution_id"):
+        candidate_payload["execution_id"] = payload["execution_id"]
     candidate_payload_hash = canonical_sha256(candidate_payload)
     identity = {
         "collector_version": RUNTIME_COLLECTOR_LINUX_VERSION,
@@ -5223,8 +5225,10 @@ def build_runtime_collector_linux_candidate(
         "candidate_payload_hash": candidate_payload_hash,
         "observed_time_utc": payload.get("observed_time_utc"),
     }
+    if payload.get("execution_id"):
+        identity["execution_id"] = payload["execution_id"]
     candidate_hash = canonical_sha256(identity)
-    return {
+    candidate = {
         "collector_version": RUNTIME_COLLECTOR_LINUX_VERSION,
         "collector_lane": "linux",
         "collector_run_id": collector_run_id,
@@ -5256,6 +5260,9 @@ def build_runtime_collector_linux_candidate(
         "notes_boundary": RUNTIME_COLLECTOR_LINUX_BOUNDARY,
         "observed_time_utc": payload.get("observed_time_utc"),
     }
+    if payload.get("execution_id"):
+        candidate["execution_id"] = payload["execution_id"]
+    return candidate
 
 
 def load_runtime_collector_linux_packet(candidate_path: Path | None = None) -> dict[str, Any]:
@@ -5325,6 +5332,8 @@ def verify_runtime_collector_linux_candidate(candidate: dict[str, Any]) -> dict[
         "source_receipt_refs": source_receipt_refs,
         "observed_time_utc": candidate.get("observed_time_utc"),
     }
+    if candidate.get("execution_id"):
+        payload_hash_input["execution_id"] = candidate["execution_id"]
     candidate_payload_hash = canonical_sha256(payload_hash_input)
     candidate_hash_input = {
         "collector_version": candidate["collector_version"],
@@ -5336,6 +5345,8 @@ def verify_runtime_collector_linux_candidate(candidate: dict[str, Any]) -> dict[
         "candidate_payload_hash": candidate_payload_hash,
         "observed_time_utc": candidate.get("observed_time_utc"),
     }
+    if candidate.get("execution_id"):
+        candidate_hash_input["execution_id"] = candidate["execution_id"]
     candidate_hash = canonical_sha256(candidate_hash_input)
     checks = {
         "collector_version": candidate["collector_version"] == RUNTIME_COLLECTOR_LINUX_VERSION,
@@ -5453,8 +5464,87 @@ def runtime_collector_linux_preflight(output_route: str | None = None) -> dict[s
     }
 
 
-def runtime_collector_linux_run_once(dry_run: bool, output_route: str | None = None) -> dict[str, Any]:
-    candidate = build_runtime_collector_linux_candidate()
+def runtime_collector_linux_payload_from_signal(
+    *,
+    execution_id: str | None,
+    signal_receipt_digest: str | None,
+    signal_observed_time_utc: str | None,
+    backend_class: str | None,
+    wazuh_rule_id: str | None,
+) -> dict[str, Any] | None:
+    provided = {
+        "execution_id": execution_id,
+        "signal_receipt_digest": signal_receipt_digest,
+        "signal_observed_time_utc": signal_observed_time_utc,
+        "backend_class": backend_class,
+        "wazuh_rule_id": wazuh_rule_id,
+    }
+    if not any(provided.values()):
+        return None
+    missing = sorted(name for name, value in provided.items() if not value)
+    if missing:
+        raise FactoryError(f"Linux signal-correlated collection missing fields: {', '.join(missing)}")
+    assert execution_id is not None
+    assert signal_receipt_digest is not None
+    assert signal_observed_time_utc is not None
+    assert backend_class is not None
+    assert wazuh_rule_id is not None
+    if not re.fullmatch(r"HO-DET-001-[0-9]{8}T[0-9]{6}Z-[A-Z0-9]{6}", execution_id):
+        raise FactoryError("Linux signal-correlated collection execution_id is malformed")
+    if not re.fullmatch(r"[0-9a-f]{64}", signal_receipt_digest):
+        raise FactoryError("Linux signal-correlated collection signal_receipt_digest must be sha256 hex")
+    if backend_class != "Wazuh":
+        raise FactoryError("Linux signal-correlated collection backend_class must be Wazuh")
+    sanitized_fingerprint = canonical_sha256(
+        {
+            "execution_id": execution_id,
+            "signal_receipt_digest": signal_receipt_digest,
+            "backend_class": backend_class,
+            "wazuh_rule_id": wazuh_rule_id,
+        }
+    )
+    return {
+        "detection_id": "HO-DET-001",
+        "detection_family": "process_behavior",
+        "source_system": "Wazuh/Sysmon",
+        "source_truth_status": "PRIVATE_WAZUH_SIGNAL_RECEIPT_VERIFIED",
+        "runtime_truth_status": "RUNTIME_CANDIDATE_ONLY",
+        "signal_truth_status": "SIGNAL_OBSERVED_PRIVATE",
+        "observed_time_utc": signal_observed_time_utc,
+        "sanitized_event_fingerprint": f"sha256:{sanitized_fingerprint}",
+        "execution_id": execution_id,
+        "source_receipt_refs": [
+            {
+                "ref_type": "wazuh_signal_receipt_digest",
+                "ref": signal_receipt_digest,
+                "status": "pass",
+                "backend_class": backend_class,
+                "detection_id": "HO-DET-001",
+                "execution_id": execution_id,
+                "wazuh_rule_id": wazuh_rule_id,
+            }
+        ],
+    }
+
+
+def runtime_collector_linux_run_once(
+    dry_run: bool,
+    output_route: str | None = None,
+    *,
+    execution_id: str | None = None,
+    signal_receipt_digest: str | None = None,
+    signal_observed_time_utc: str | None = None,
+    backend_class: str | None = None,
+    wazuh_rule_id: str | None = None,
+) -> dict[str, Any]:
+    payload = runtime_collector_linux_payload_from_signal(
+        execution_id=execution_id,
+        signal_receipt_digest=signal_receipt_digest,
+        signal_observed_time_utc=signal_observed_time_utc,
+        backend_class=backend_class,
+        wazuh_rule_id=wazuh_rule_id,
+    )
+    candidate = build_runtime_collector_linux_candidate(payload)
     packet = runtime_collector_linux_packet(candidate)
     verification = verify_runtime_collector_linux_packet(packet)
     output: dict[str, Any] = {
@@ -5596,6 +5686,8 @@ def normalize_runtime_collector_candidate(candidate: dict[str, Any], expected_la
         "source_receipt_refs_hash": refs_hash,
         "observed_time_utc": candidate.get("observed_time_utc"),
     }
+    if candidate.get("execution_id"):
+        payload["execution_id"] = candidate["execution_id"]
     normalized_payload_hash = canonical_sha256(payload)
     identity = {
         "normalized_candidate_version": RUNTIME_COLLECTOR_NORMALIZER_VERSION,
@@ -5606,8 +5698,10 @@ def normalize_runtime_collector_candidate(candidate: dict[str, Any], expected_la
         "source_receipt_refs_hash": refs_hash,
         "observed_time_utc": candidate.get("observed_time_utc"),
     }
+    if candidate.get("execution_id"):
+        identity["execution_id"] = candidate["execution_id"]
     normalized_hash = canonical_sha256(identity)
-    return {
+    normalized_candidate = {
         "normalized_candidate_version": RUNTIME_COLLECTOR_NORMALIZER_VERSION,
         "normalized_candidate_id": f"rccv0-normalized-{normalized_hash[:16]}",
         "normalized_candidate_hash": normalized_hash,
@@ -5644,6 +5738,9 @@ def normalize_runtime_collector_candidate(candidate: dict[str, Any], expected_la
         "blocked_claims": list(RUNTIME_COLLECTOR_NORMALIZER_BLOCKED_CLAIMS),
         "notes_boundary": RUNTIME_COLLECTOR_NORMALIZER_BOUNDARY,
     }
+    if candidate.get("execution_id"):
+        normalized_candidate["execution_id"] = candidate["execution_id"]
+    return normalized_candidate
 
 
 def runtime_collector_normalizer_dedupe_key(candidate: dict[str, Any]) -> tuple[Any, ...]:
@@ -5673,6 +5770,8 @@ def verify_runtime_collector_normalized_candidate(candidate: dict[str, Any]) -> 
         "source_receipt_refs_hash": refs_hash,
         "observed_time_utc": candidate.get("observed_time_utc"),
     }
+    if candidate.get("execution_id"):
+        payload["execution_id"] = candidate["execution_id"]
     normalized_payload_hash = canonical_sha256(payload)
     identity = {
         "normalized_candidate_version": RUNTIME_COLLECTOR_NORMALIZER_VERSION,
@@ -5683,6 +5782,8 @@ def verify_runtime_collector_normalized_candidate(candidate: dict[str, Any]) -> 
         "source_receipt_refs_hash": refs_hash,
         "observed_time_utc": candidate.get("observed_time_utc"),
     }
+    if candidate.get("execution_id"):
+        identity["execution_id"] = candidate["execution_id"]
     normalized_hash = canonical_sha256(identity)
     blocked_claims = candidate.get("blocked_claims")
     if not isinstance(blocked_claims, list) or not set(RUNTIME_COLLECTOR_NORMALIZER_BLOCKED_CLAIMS).issubset(blocked_claims):
@@ -6216,6 +6317,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub = subparsers.add_parser("collector-linux-run-once")
     sub.add_argument("--dry-run", action="store_true")
     sub.add_argument("--output-route")
+    sub.add_argument("--execution-id")
+    sub.add_argument("--signal-receipt-digest")
+    sub.add_argument("--signal-observed-time-utc")
+    sub.add_argument("--backend-class")
+    sub.add_argument("--wazuh-rule-id")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-linux-verify")
     sub.add_argument("--candidate")
@@ -6466,7 +6572,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.mode == "collector-linux-run-once":
-        output = runtime_collector_linux_run_once(args.dry_run, args.output_route)
+        output = runtime_collector_linux_run_once(
+            args.dry_run,
+            args.output_route,
+            execution_id=args.execution_id,
+            signal_receipt_digest=args.signal_receipt_digest,
+            signal_observed_time_utc=args.signal_observed_time_utc,
+            backend_class=args.backend_class,
+            wazuh_rule_id=args.wazuh_rule_id,
+        )
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
