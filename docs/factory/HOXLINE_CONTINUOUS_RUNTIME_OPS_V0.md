@@ -30,6 +30,8 @@ Hoxline continuous runtime operations v0 is a private, controlled runtime operat
 - `hoxline-workflow-safety-verify`
 - `hoxline-runtime-ops-self-test`
 
+The next private control-plane layer is documented in `docs/factory/HOXLINE_EVIDENCE_GRAPH_CLAIM_AUTHORITY_V0.md`. It adds hash-only evidence graph, promotion state, Claim Authority, private ProofCard draft, and control-plane self-test commands while preserving the same proof ceiling and public-safe boundary.
+
 The metrics command intentionally separates runtime candidate counts from Lifetime Ledger case/event counts. Review queue counts are runtime queue counters only; they are not public proof and do not imply ledger append readiness.
 
 ## Canary Receipts

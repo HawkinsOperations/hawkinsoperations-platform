@@ -28,12 +28,17 @@ jobs:
           python -B scripts/ho_factory.py hoxline-runtime-canary --controlled-count 3 --format json >/dev/null
           python -B scripts/ho_factory.py hoxline-runtime-schedule-gate --event-name schedule --format json >/dev/null
           python -B scripts/ho_factory.py hoxline-runtime-ops-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-control-plane-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
 
       - name: Schema parse checks
         run: |
           python -m json.tool contracts/schemas/runtime-case-collector-v0-linux.schema.json >/dev/null
           python -m json.tool contracts/schemas/runtime-case-collector-v0-normalizer.schema.json >/dev/null
           python -m json.tool contracts/schemas/runtime-route-proof-v1-private-candidate.schema.json >/dev/null
+          python -m json.tool contracts/schemas/hoxline-evidence-graph-v0.schema.json >/dev/null
+          python -m json.tool contracts/schemas/hoxline-promotion-state-v0.schema.json >/dev/null
+          python -m json.tool contracts/schemas/hoxline-claim-decision-v0.schema.json >/dev/null
+          python -m json.tool contracts/schemas/hoxline-proofcard-draft-v0.schema.json >/dev/null
 
       - name: Claim-boundary checks
         run: |
@@ -46,6 +51,7 @@ jobs:
       - name: Python unit tests
         run: |
           python -B -m unittest tests/test_hoxline_runtime_ops.py
+          python -B -m unittest tests/test_hoxline_control_plane.py
           python -B -m unittest tests/test_verify_public_status_source_contract.py
 
       - name: Git whitespace check

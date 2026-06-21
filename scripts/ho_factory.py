@@ -6638,6 +6638,102 @@ HOXLINE_FORBIDDEN_LOG_PATTERNS = (
     "raw_alert",
     "raw_candidate",
 )
+HOXLINE_EVIDENCE_GRAPH_SCHEMA_VERSION = "hoxline-evidence-graph-v0"
+HOXLINE_PROMOTION_STATE_SCHEMA_VERSION = "hoxline-promotion-state-v0"
+HOXLINE_CLAIM_DECISION_SCHEMA_VERSION = "hoxline-claim-decision-v0"
+HOXLINE_PROOFCARD_DRAFT_SCHEMA_VERSION = "hoxline-proofcard-draft-v0"
+HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING = "PRIVATE_CONTROLLED_RUNTIME_PROOF"
+HOXLINE_PUBLIC_SAFE_STATUS = "NOT_PUBLIC_SAFE"
+HOXLINE_BOUNDED_ALLOWED_CLAIM = (
+    "Hoxline has private controlled runtime operations evidence for HO-DET-001 with "
+    "replay/no-duplicate verification and human review required."
+)
+HOXLINE_EVIDENCE_NODE_TYPES = (
+    "detection_source",
+    "validation_result",
+    "runtime_signal_receipt",
+    "runtime_candidate",
+    "normalized_candidate",
+    "dedupe_result",
+    "enrichment_result",
+    "ai_support_result",
+    "human_review_packet",
+    "runtime_log_chain",
+    "runtime_metrics",
+    "checkpoint",
+    "dead_letter",
+    "proofcard_draft",
+    "claim_decision",
+)
+HOXLINE_EVIDENCE_EDGE_TYPES = (
+    "derived_from",
+    "validated_by",
+    "observed_by",
+    "normalized_into",
+    "deduped_by",
+    "enriched_by",
+    "summarized_by_ai_support",
+    "requires_human_review",
+    "represented_in_metrics",
+    "referenced_by_proofcard",
+    "constrained_by_claim_authority",
+)
+HOXLINE_PROMOTION_STAGES = (
+    "ARTIFACT_INTAKE",
+    "EVIDENCE_GRAPH_BUILT",
+    "TELEMETRY_CONTRACT_CHECKED",
+    "CONTROLLED_VALIDATION_CONFIRMED",
+    "RUNTIME_CANDIDATE_PRESENT",
+    "PRIVATE_SIGNAL_OBSERVED",
+    "HUMAN_REVIEW_REQUIRED",
+    "PROOFCARD_DRAFTED",
+    "CLAIM_AUTHORITY_EVALUATED",
+    "SAFE_CLAIM_ALLOWED_OR_BLOCKED",
+)
+HOXLINE_PROMOTION_STATUSES = {
+    "NOT_STARTED",
+    "PASS",
+    "PENDING_HUMAN_REVIEW",
+    "BLOCKED",
+    "NOT_PUBLIC_SAFE",
+    "FAILED_RETRYABLE",
+    "DEAD_LETTERED",
+}
+HOXLINE_CLAIM_BLOCK_RULES = {
+    "production-ready": "PRODUCTION_CLAIM_BLOCKED",
+    "production ready": "PRODUCTION_CLAIM_BLOCKED",
+    "production soc": "PRODUCTION_CLAIM_BLOCKED",
+    "production": "PRODUCTION_CLAIM_BLOCKED",
+    "socaas deployed": "SOCAAS_CLAIM_BLOCKED",
+    "socaas": "SOCAAS_CLAIM_BLOCKED",
+    "customer deployed": "CUSTOMER_DEPLOYMENT_CLAIM_BLOCKED",
+    "customer": "CUSTOMER_DEPLOYMENT_CLAIM_BLOCKED",
+    "autonomous soc": "AUTONOMOUS_SOC_CLAIM_BLOCKED",
+    "public-safe runtime proof": "PUBLIC_SAFE_CLAIM_BLOCKED",
+    "public safe runtime proof": "PUBLIC_SAFE_CLAIM_BLOCKED",
+    "public-safe": "PUBLIC_SAFE_CLAIM_BLOCKED",
+    "public proof approved": "PUBLIC_PROOF_CLAIM_BLOCKED",
+    "public proof": "PUBLIC_PROOF_CLAIM_BLOCKED",
+    "analyst approved": "ANALYST_APPROVAL_MISSING",
+    "ai approved": "AI_APPROVAL_BLOCKED",
+    "ai decided disposition": "AI_DISPOSITION_AUTHORITY_BLOCKED",
+    "case closed": "CASE_CLOSURE_CLAIM_BLOCKED",
+    "fleet-wide coverage": "FLEET_WIDE_CLAIM_BLOCKED",
+    "fleet wide coverage": "FLEET_WIDE_CLAIM_BLOCKED",
+    "schedule enabled": "SCHEDULE_ENABLEMENT_CLAIM_BLOCKED",
+    "ledger appended": "LEDGER_APPEND_EVIDENCE_MISSING",
+}
+HOXLINE_REQUIRED_MISSING_EVIDENCE = (
+    "human_analyst_approval_artifact",
+    "public_safe_review_artifact",
+    "public_proof_promotion_artifact",
+    "production_deployment_artifact",
+    "socaas_deployment_artifact",
+    "customer_deployment_artifact",
+    "schedule_enablement_artifact",
+    "ledger_append_evidence",
+    "case_closure_artifact",
+)
 
 
 def hoxline_validate_execution_id(execution_id: str) -> None:
@@ -6947,6 +7043,433 @@ def hoxline_runtime_ops_snapshot(execution_id: str, private_route: str) -> dict[
         "public_proof_promoted": False,
         "schedule_enabled": False,
         "continuous_gate_enabled": False,
+    }
+
+
+def hoxline_node(node_type: str, status: str, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+    if node_type not in HOXLINE_EVIDENCE_NODE_TYPES:
+        raise FactoryError(f"unsupported Hoxline evidence node type: {node_type}")
+    packet = {
+        "node_id": f"{node_type}:HO-DET-001",
+        "node_type": node_type,
+        "status": status,
+        "evidence": evidence or {},
+    }
+    hoxline_assert_no_raw_private_fields(packet)
+    packet["node_hash"] = canonical_sha256(packet)
+    return packet
+
+
+def hoxline_edge(edge_type: str, source: str, target: str, evidence_hash: str | None = None) -> dict[str, Any]:
+    if edge_type not in HOXLINE_EVIDENCE_EDGE_TYPES:
+        raise FactoryError(f"unsupported Hoxline evidence edge type: {edge_type}")
+    packet = {
+        "edge_id": f"{edge_type}:{source}->{target}",
+        "edge_type": edge_type,
+        "from": source,
+        "to": target,
+        "evidence_hash": evidence_hash,
+    }
+    hoxline_assert_no_raw_private_fields(packet)
+    packet["edge_hash"] = canonical_sha256(packet)
+    return packet
+
+
+def hoxline_runtime_replay_fixture(
+    *,
+    execution_id: str = "HO-DET-001-20260620T173615Z-6ELQ03",
+    include_signal_receipt: bool = True,
+    include_human_review_packet: bool = True,
+    include_proofcard_draft: bool = False,
+    include_claim_decision: bool = False,
+) -> dict[str, Any]:
+    hoxline_validate_execution_id(execution_id)
+    signal_digest = "9b44ac77420ec3f87d30c228bdb246875e2d7a263dad083cd3c7acab9e4d88b4" if include_signal_receipt else None
+    candidate_digest = "bf0ef4fc62e11d612b08083d0326eeb3ae65ae996fbc34422ba3edefcd89dd30"
+    normalized_digest = hashlib.sha256(f"{execution_id}:normalized".encode("utf-8")).hexdigest()
+    enrichment_digest = hashlib.sha256(f"{execution_id}:enrichment".encode("utf-8")).hexdigest()
+    ai_output_digest = hashlib.sha256(f"{execution_id}:ai-support".encode("utf-8")).hexdigest()
+    review_digest = hashlib.sha256(f"{execution_id}:human-review-packet".encode("utf-8")).hexdigest() if include_human_review_packet else None
+    case_id = hoxline_runtime_case_id(execution_id)
+    manifest = {
+        "schema_version": "hoxline-private-evidence-manifest-v0",
+        "execution_id": execution_id,
+        "case_id": case_id,
+        "detection_id": "HO-DET-001",
+        "wazuh_rule_id": "100204",
+        "controlled_event_class": "PowerShell_EncodedCommand",
+        "signal_receipt_digest": signal_digest,
+        "candidate_digest": candidate_digest,
+        "normalized_digest": normalized_digest,
+        "duplicate_state": "REPLAY_NO_DUPLICATE",
+        "enrichment_digest": enrichment_digest,
+        "ai_state": "AI_TRIAGE_UNAVAILABLE",
+        "ai_input_digest": hashlib.sha256(f"{execution_id}:ai-input".encode("utf-8")).hexdigest(),
+        "ai_output_digest": ai_output_digest,
+        "human_review_packet_digest": review_digest,
+        "github_workflow_run_id": "27878994407",
+        "github_workflow_job_id": "82503185677",
+        "runner_identity": "HO-GPU-01",
+        "runner_labels": ["self-hosted", "ho-gpu-01", "gpu", "v100"],
+        "backend_identity": "HO-WAZUH-01",
+        "journal_head_hash": hashlib.sha256(f"{execution_id}:journal".encode("utf-8")).hexdigest(),
+        "ledger_baseline": {"total_cases": 6, "total_ledger_events": 6, "public_safe_count": 0, "closed_case_count": 0},
+        "public_safe": False,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "manifest_hash": "",
+    }
+    manifest["manifest_hash"] = canonical_sha256({key: value for key, value in manifest.items() if key != "manifest_hash"})
+    metrics = hoxline_runtime_metrics_from_replay([], manifest, {"state": "AI_TRIAGE_UNAVAILABLE"})
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-runtime-replay-fixture",
+        "execution_id": execution_id,
+        "case_id": case_id,
+        "replay_result": "REPLAY_NO_DUPLICATE",
+        "ai_state": "AI_TRIAGE_UNAVAILABLE",
+        "journal_verification": {"status": "pass", "event_count": 10, "head_state": "HUMAN_REVIEW_REQUIRED", "journal_head_hash": manifest["journal_head_hash"]},
+        "evidence_manifest": manifest,
+        "metrics": metrics,
+        "proofcard_draft_hash": hashlib.sha256(f"{execution_id}:proofcard".encode("utf-8")).hexdigest() if include_proofcard_draft else None,
+        "claim_decision_hash": hashlib.sha256(f"{execution_id}:claim-decision".encode("utf-8")).hexdigest() if include_claim_decision else None,
+    }
+
+
+def hoxline_build_evidence_graph(replay: dict[str, Any]) -> dict[str, Any]:
+    manifest = replay["evidence_manifest"]
+    metrics = replay["metrics"]
+    detection_id = manifest.get("detection_id")
+    execution_id = manifest.get("execution_id")
+    if detection_id != "HO-DET-001":
+        raise FactoryError("Hoxline evidence graph v0 supports HO-DET-001 only")
+    hoxline_validate_execution_id(str(execution_id))
+    missing_evidence = list(HOXLINE_REQUIRED_MISSING_EVIDENCE)
+    if not manifest.get("signal_receipt_digest"):
+        raise FactoryError("BLOCKED: MISSING_WAZUH_RECEIPT")
+    hoxline_validate_sha256(str(manifest["signal_receipt_digest"]), "signal receipt")
+    if not manifest.get("human_review_packet_digest"):
+        missing_evidence.append("human_review_packet")
+    else:
+        hoxline_validate_sha256(str(manifest["human_review_packet_digest"]), "human review packet")
+    for field in ("candidate_digest", "normalized_digest", "enrichment_digest", "journal_head_hash"):
+        hoxline_validate_sha256(str(manifest.get(field)), field)
+    node_specs = [
+        ("detection_source", "PASS", {"detection_id": detection_id, "wazuh_rule_id_hash": canonical_sha256(manifest["wazuh_rule_id"])}),
+        ("validation_result", "PASS", {"validation_result_ref_hash": canonical_sha256("hawkinsoperations-validation/reports/ho-det-001/validation-result.json")}),
+        ("runtime_signal_receipt", "PASS", {"signal_receipt_digest": manifest["signal_receipt_digest"], "backend_identity_hash": canonical_sha256(manifest["backend_identity"])}),
+        ("runtime_candidate", "PASS", {"candidate_digest": manifest["candidate_digest"]}),
+        ("normalized_candidate", "PASS", {"normalized_digest": manifest["normalized_digest"]}),
+        ("dedupe_result", "PASS", {"dedupe_state_hash": canonical_sha256(manifest["duplicate_state"]), "duplicate_count": metrics["duplicate_suppression_count"]}),
+        ("enrichment_result", "PASS", {"enrichment_digest": manifest["enrichment_digest"]}),
+        ("ai_support_result", "PASS", {"ai_state": manifest["ai_state"], "ai_output_digest": manifest.get("ai_output_digest"), "ai_decided_disposition": False}),
+        ("human_review_packet", "PASS" if manifest.get("human_review_packet_digest") else "PENDING_HUMAN_REVIEW", {"human_review_packet_digest": manifest.get("human_review_packet_digest")}),
+        ("runtime_log_chain", "PASS", {"journal_head_hash": manifest["journal_head_hash"]}),
+        ("runtime_metrics", "PASS", {"metrics_hash": canonical_sha256(metrics), "runtime_candidate_count": metrics["runtime_candidate_count"], "lifetime_ledger_case_count": metrics["lifetime_ledger_case_count"], "ledger_append_count": 0, "public_proof_promotion_count": 0, "schedule_enabled": 0}),
+        ("checkpoint", "PASS", {"checkpoint_ref_hash": canonical_sha256({"execution_id": execution_id, "candidate_digest": manifest["candidate_digest"]})}),
+        ("dead_letter", "NOT_STARTED", {"dead_letter_count": metrics["dead_letter_count"]}),
+        ("proofcard_draft", "PASS" if replay.get("proofcard_draft_hash") else "NOT_STARTED", {"proofcard_draft_hash": replay.get("proofcard_draft_hash")}),
+        ("claim_decision", "PASS" if replay.get("claim_decision_hash") else "NOT_STARTED", {"claim_decision_hash": replay.get("claim_decision_hash")}),
+    ]
+    nodes = [hoxline_node(*spec) for spec in node_specs]
+    node_ids = {node["node_type"]: node["node_id"] for node in nodes}
+    edges = [
+        hoxline_edge("derived_from", node_ids["detection_source"], node_ids["runtime_signal_receipt"], manifest["signal_receipt_digest"]),
+        hoxline_edge("validated_by", node_ids["detection_source"], node_ids["validation_result"], nodes[1]["node_hash"]),
+        hoxline_edge("observed_by", node_ids["runtime_signal_receipt"], node_ids["runtime_candidate"], manifest["candidate_digest"]),
+        hoxline_edge("normalized_into", node_ids["runtime_candidate"], node_ids["normalized_candidate"], manifest["normalized_digest"]),
+        hoxline_edge("deduped_by", node_ids["normalized_candidate"], node_ids["dedupe_result"], nodes[5]["node_hash"]),
+        hoxline_edge("enriched_by", node_ids["dedupe_result"], node_ids["enrichment_result"], manifest["enrichment_digest"]),
+        hoxline_edge("summarized_by_ai_support", node_ids["enrichment_result"], node_ids["ai_support_result"], manifest.get("ai_output_digest")),
+        hoxline_edge("requires_human_review", node_ids["ai_support_result"], node_ids["human_review_packet"], manifest.get("human_review_packet_digest")),
+        hoxline_edge("represented_in_metrics", node_ids["human_review_packet"], node_ids["runtime_metrics"], nodes[10]["node_hash"]),
+        hoxline_edge("referenced_by_proofcard", node_ids["runtime_metrics"], node_ids["proofcard_draft"], replay.get("proofcard_draft_hash")),
+        hoxline_edge("constrained_by_claim_authority", node_ids["proofcard_draft"], node_ids["claim_decision"], replay.get("claim_decision_hash")),
+    ]
+    graph = {
+        "schema_version": HOXLINE_EVIDENCE_GRAPH_SCHEMA_VERSION,
+        "graph_id": f"hoxline-evidence-graph-v0:{execution_id}",
+        "detection_id": detection_id,
+        "execution_id": execution_id,
+        "source_truth_class": "WAZUH_SIGNAL_RECEIPT_HASH_ONLY",
+        "runtime_truth_class": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe": False,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "nodes": nodes,
+        "edges": edges,
+        "missing_evidence": sorted(set(missing_evidence)),
+        "blocked_claims": sorted(set(HOXLINE_CLAIM_BLOCK_RULES.values())),
+        "graph_hash": "",
+    }
+    hoxline_validate_evidence_graph_shape(graph, verify_hash=False)
+    graph["graph_hash"] = canonical_sha256({key: value for key, value in graph.items() if key != "graph_hash"})
+    return graph
+
+
+def hoxline_validate_evidence_graph_shape(graph: dict[str, Any], *, verify_hash: bool = True) -> None:
+    required = (
+        "schema_version",
+        "graph_id",
+        "detection_id",
+        "execution_id",
+        "source_truth_class",
+        "runtime_truth_class",
+        "public_safe",
+        "proof_ceiling",
+        "nodes",
+        "edges",
+        "missing_evidence",
+        "blocked_claims",
+        "graph_hash",
+    )
+    missing = [field for field in required if field not in graph]
+    if missing:
+        raise FactoryError(f"Hoxline evidence graph missing fields: {', '.join(missing)}")
+    hoxline_assert_no_raw_private_fields(graph)
+    if graph.get("schema_version") != HOXLINE_EVIDENCE_GRAPH_SCHEMA_VERSION:
+        raise FactoryError("Hoxline evidence graph schema_version invalid")
+    if graph.get("detection_id") != "HO-DET-001":
+        raise FactoryError("Hoxline evidence graph detection_id invalid")
+    hoxline_validate_execution_id(str(graph.get("execution_id")))
+    if graph.get("public_safe") is not False or graph.get("proof_ceiling") != HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING:
+        raise FactoryError("Hoxline evidence graph public/proof ceiling boundary promoted")
+    node_types = {node.get("node_type") for node in graph.get("nodes", []) if isinstance(node, dict)}
+    edge_types = {edge.get("edge_type") for edge in graph.get("edges", []) if isinstance(edge, dict)}
+    if node_types != set(HOXLINE_EVIDENCE_NODE_TYPES):
+        raise FactoryError("Hoxline evidence graph node type set is incomplete")
+    if edge_types != set(HOXLINE_EVIDENCE_EDGE_TYPES):
+        raise FactoryError("Hoxline evidence graph edge type set is incomplete")
+    signal_nodes = [node for node in graph["nodes"] if node.get("node_type") == "runtime_signal_receipt"]
+    signal_digest = signal_nodes[0].get("evidence", {}).get("signal_receipt_digest") if signal_nodes else None
+    if not signal_digest:
+        raise FactoryError("BLOCKED: MISSING_WAZUH_RECEIPT")
+    hoxline_validate_sha256(str(signal_digest), "signal receipt")
+    if verify_hash:
+        expected = canonical_sha256({key: value for key, value in graph.items() if key != "graph_hash"})
+        if graph.get("graph_hash") != expected:
+            raise FactoryError("BLOCKED: STALE_OR_INVALID_EVIDENCE_GRAPH")
+
+
+def hoxline_evidence_graph_from_inputs(evidence_graph: str | None, execution_id: str | None, private_route: str | None) -> dict[str, Any]:
+    if evidence_graph:
+        graph = load_json(Path(evidence_graph).resolve())
+        hoxline_validate_evidence_graph_shape(graph)
+        return graph
+    if not execution_id or not private_route:
+        raise FactoryError("evidence graph path or both --execution-id and --private-route are required")
+    return hoxline_build_evidence_graph(hoxline_runtime_replay(execution_id, private_route))
+
+
+def hoxline_promotion_state_from_graph(graph: dict[str, Any]) -> dict[str, Any]:
+    hoxline_validate_evidence_graph_shape(graph)
+    node_status = {node["node_type"]: node["status"] for node in graph["nodes"]}
+    has_review = node_status.get("human_review_packet") == "PASS"
+    proofcard_done = node_status.get("proofcard_draft") == "PASS"
+    claim_done = node_status.get("claim_decision") == "PASS"
+    stage_statuses = {
+        "ARTIFACT_INTAKE": "PASS",
+        "EVIDENCE_GRAPH_BUILT": "PASS",
+        "TELEMETRY_CONTRACT_CHECKED": "PASS",
+        "CONTROLLED_VALIDATION_CONFIRMED": "PASS",
+        "RUNTIME_CANDIDATE_PRESENT": "PASS" if node_status.get("runtime_candidate") == "PASS" else "BLOCKED",
+        "PRIVATE_SIGNAL_OBSERVED": "PASS" if node_status.get("runtime_signal_receipt") == "PASS" else "BLOCKED",
+        "HUMAN_REVIEW_REQUIRED": "PENDING_HUMAN_REVIEW" if has_review else "BLOCKED",
+        "PROOFCARD_DRAFTED": "PASS" if proofcard_done else "NOT_STARTED",
+        "CLAIM_AUTHORITY_EVALUATED": "PASS" if claim_done else "NOT_STARTED",
+        "SAFE_CLAIM_ALLOWED_OR_BLOCKED": "NOT_PUBLIC_SAFE",
+    }
+    for status in stage_statuses.values():
+        if status not in HOXLINE_PROMOTION_STATUSES:
+            raise FactoryError(f"unsupported Hoxline promotion status: {status}")
+    state = {
+        "schema_version": HOXLINE_PROMOTION_STATE_SCHEMA_VERSION,
+        "detection_id": graph["detection_id"],
+        "execution_id": graph["execution_id"],
+        "graph_hash": graph["graph_hash"],
+        "stage_statuses": stage_statuses,
+        "current_state": "PENDING_HUMAN_REVIEW" if has_review else "BLOCKED_MISSING_HUMAN_REVIEW_PACKET",
+        "allowed_next_actions": [
+            "draft_private_proofcard",
+            "run_claim_authority_check",
+            "request_human_review",
+            "keep_private_runtime_evidence_controlled",
+        ],
+        "blocked_next_actions": [
+            "append_lifetime_ledger",
+            "promote_public_proof",
+            "mark_public_safe",
+            "enable_schedule",
+            "claim_production_or_socaas",
+            "claim_ai_or_analyst_approval",
+            "close_case",
+        ],
+        "human_review_required": True,
+        "ledger_append_allowed": False,
+        "public_proof_allowed": False,
+        "schedule_enabled": False,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "promotion_hash": "",
+    }
+    hoxline_assert_no_raw_private_fields(state)
+    state["promotion_hash"] = canonical_sha256({key: value for key, value in state.items() if key != "promotion_hash"})
+    return state
+
+
+def hoxline_validate_promotion_state(state: dict[str, Any], graph: dict[str, Any]) -> None:
+    hoxline_assert_no_raw_private_fields(state)
+    if state.get("schema_version") != HOXLINE_PROMOTION_STATE_SCHEMA_VERSION:
+        raise FactoryError("Hoxline promotion state schema_version invalid")
+    if state.get("graph_hash") != graph.get("graph_hash"):
+        raise FactoryError("Hoxline promotion state graph hash mismatch")
+    if state.get("ledger_append_allowed") is not False or state.get("public_proof_allowed") is not False or state.get("schedule_enabled") is not False:
+        raise FactoryError("Hoxline promotion state governance boundary promoted")
+    if state.get("human_review_required") is not True:
+        raise FactoryError("Hoxline promotion state must require human review")
+    expected = canonical_sha256({key: value for key, value in state.items() if key != "promotion_hash"})
+    if state.get("promotion_hash") != expected:
+        raise FactoryError("Hoxline promotion hash mismatch")
+
+
+def hoxline_claim_authority_check(graph: dict[str, Any], promotion: dict[str, Any], proposed_claim: str) -> dict[str, Any]:
+    hoxline_validate_evidence_graph_shape(graph)
+    hoxline_validate_promotion_state(promotion, graph)
+    normalized = proposed_claim.strip().lower()
+    blocked_reason_codes = sorted({code for phrase, code in HOXLINE_CLAIM_BLOCK_RULES.items() if phrase in normalized})
+    if "ledger appended" in normalized and promotion.get("ledger_append_allowed") is True:
+        blocked_reason_codes = [code for code in blocked_reason_codes if code != "LEDGER_APPEND_EVIDENCE_MISSING"]
+    if normalized == HOXLINE_BOUNDED_ALLOWED_CLAIM.lower():
+        decision = "ALLOWED_WITH_SCOPE"
+        allowed_claim_text = HOXLINE_BOUNDED_ALLOWED_CLAIM
+        required_missing_evidence: list[str] = []
+    elif blocked_reason_codes:
+        decision = "BLOCKED"
+        allowed_claim_text = None
+        required_missing_evidence = list(graph["missing_evidence"])
+    else:
+        decision = "CONSTRAINED_REWRITE_REQUIRED"
+        allowed_claim_text = HOXLINE_BOUNDED_ALLOWED_CLAIM
+        required_missing_evidence = list(graph["missing_evidence"])
+        blocked_reason_codes = ["CLAIM_OUTSIDE_EXACT_SUPPORTED_SCOPE"]
+    output = {
+        "schema_version": HOXLINE_CLAIM_DECISION_SCHEMA_VERSION,
+        "decision": decision,
+        "allowed_claim_text": allowed_claim_text,
+        "blocked_reason_codes": blocked_reason_codes,
+        "required_missing_evidence": required_missing_evidence,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "human_review_required": True,
+        "claim_decision_hash": "",
+    }
+    hoxline_assert_no_raw_private_fields(output)
+    output["claim_decision_hash"] = canonical_sha256({key: value for key, value in output.items() if key != "claim_decision_hash"})
+    return output
+
+
+def hoxline_proofcard_draft(graph: dict[str, Any], promotion: dict[str, Any]) -> dict[str, Any]:
+    hoxline_validate_evidence_graph_shape(graph)
+    hoxline_validate_promotion_state(promotion, graph)
+    allowed = hoxline_claim_authority_check(graph, promotion, HOXLINE_BOUNDED_ALLOWED_CLAIM)
+    draft = {
+        "schema_version": HOXLINE_PROOFCARD_DRAFT_SCHEMA_VERSION,
+        "detection_id": graph["detection_id"],
+        "execution_id": graph["execution_id"],
+        "evidence_graph_hash": graph["graph_hash"],
+        "promotion_hash": promotion["promotion_hash"],
+        "runtime_truth_class": graph["runtime_truth_class"],
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "allowed_claims": [allowed["allowed_claim_text"]],
+        "blocked_claims": graph["blocked_claims"],
+        "missing_evidence": graph["missing_evidence"],
+        "reviewer_next_actions": [
+            "review_private_evidence_graph_hashes",
+            "complete human review outside AI authority",
+            "keep public proof and ledger append blocked",
+        ],
+        "human_review_required": True,
+        "public_proof_promoted": False,
+        "ledger_mutated": False,
+        "schedule_enabled": False,
+        "proofcard_draft_hash": "",
+    }
+    hoxline_assert_no_raw_private_fields(draft)
+    draft["proofcard_draft_hash"] = canonical_sha256({key: value for key, value in draft.items() if key != "proofcard_draft_hash"})
+    return draft
+
+
+def hoxline_control_plane_self_test(repo_root: Path) -> dict[str, Any]:
+    graph = hoxline_build_evidence_graph(hoxline_runtime_replay_fixture())
+    graph_again = hoxline_build_evidence_graph(hoxline_runtime_replay_fixture())
+    promotion = hoxline_promotion_state_from_graph(graph)
+    promotion_again = hoxline_promotion_state_from_graph(graph_again)
+    proofcard = hoxline_proofcard_draft(graph, promotion)
+    proofcard_again = hoxline_proofcard_draft(graph_again, promotion_again)
+
+    def expect_error(label: str, fn: Callable[[], Any]) -> bool:
+        try:
+            fn()
+        except FactoryError:
+            return True
+        raise FactoryError(f"Hoxline control-plane negative test did not fail closed: {label}")
+
+    def claim(text: str) -> str:
+        return hoxline_claim_authority_check(graph, promotion, text)["decision"]
+
+    no_review_promotion = hoxline_promotion_state_from_graph(
+        hoxline_build_evidence_graph(hoxline_runtime_replay_fixture(include_human_review_packet=False))
+    )
+    tampered_graph = dict(graph)
+    tampered_graph["graph_hash"] = "0" * 64
+    raw_graph = dict(graph)
+    raw_graph["raw_alert"] = "blocked"
+    metrics = graph["nodes"][10]["evidence"]
+    checks = {
+        "evidence_graph_schema_validates": graph["schema_version"] == HOXLINE_EVIDENCE_GRAPH_SCHEMA_VERSION,
+        "graph_hash_deterministic": graph["graph_hash"] == graph_again["graph_hash"],
+        "promotion_hash_deterministic": promotion["promotion_hash"] == promotion_again["promotion_hash"],
+        "proofcard_draft_hash_deterministic": proofcard["proofcard_draft_hash"] == proofcard_again["proofcard_draft_hash"],
+        "unsafe_production_claim_blocked": claim("Hoxline is production SOC") == "BLOCKED",
+        "unsafe_socaas_claim_blocked": claim("Hoxline is SOCaaS deployed") == "BLOCKED",
+        "ai_approved_claim_blocked": claim("AI approved the case") == "BLOCKED",
+        "analyst_approved_without_evidence_blocked": claim("analyst approved the case") == "BLOCKED",
+        "public_safe_runtime_proof_claim_blocked": claim("public-safe runtime proof exists") == "BLOCKED",
+        "bounded_private_runtime_claim_allowed": claim(HOXLINE_BOUNDED_ALLOWED_CLAIM) == "ALLOWED_WITH_SCOPE",
+        "missing_wazuh_receipt_blocks_graph": expect_error(
+            "missing_wazuh_receipt",
+            lambda: hoxline_build_evidence_graph(hoxline_runtime_replay_fixture(include_signal_receipt=False)),
+        ),
+        "missing_human_review_packet_pending_or_blocked": no_review_promotion["stage_statuses"]["HUMAN_REVIEW_REQUIRED"] == "BLOCKED",
+        "missing_proofcard_no_public_claim_allowed": promotion["public_proof_allowed"] is False,
+        "raw_private_payload_fields_rejected": expect_error("raw_private_payload", lambda: hoxline_validate_evidence_graph_shape(raw_graph)),
+        "candidate_count_separate_from_ledger_case_count": metrics["runtime_candidate_count"] == 1 and metrics["lifetime_ledger_case_count"] == 6,
+        "ledger_append_attempt_blocked": promotion["ledger_append_allowed"] is False,
+        "public_proof_promotion_blocked": promotion["public_proof_allowed"] is False and proofcard["public_proof_promoted"] is False,
+        "schedule_enabled_false": promotion["schedule_enabled"] is False and proofcard["schedule_enabled"] is False,
+        "ai_output_support_only": graph["nodes"][7]["evidence"]["ai_decided_disposition"] is False,
+        "human_review_remains_required": promotion["human_review_required"] is True and proofcard["human_review_required"] is True,
+        "stale_or_missing_graph_blocks_claim_decisions": expect_error(
+            "stale_graph",
+            lambda: hoxline_claim_authority_check(tampered_graph, promotion, HOXLINE_BOUNDED_ALLOWED_CLAIM),
+        ),
+        "proofcard_draft_is_not_public_proof": proofcard["public_safe_status"] == HOXLINE_PUBLIC_SAFE_STATUS and proofcard["public_proof_promoted"] is False,
+        "workflow_safety_still_passes": hoxline_workflow_safety_verify(repo_root)["active_cron_trigger"] is False,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Hoxline control-plane self-test failed checks: {', '.join(failed)}")
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-control-plane-self-test",
+        "status": "pass",
+        "checks": checks,
+        "evidence_graph_hash": graph["graph_hash"],
+        "promotion_hash": promotion["promotion_hash"],
+        "proofcard_draft_hash": proofcard["proofcard_draft_hash"],
+        "ledger_append_count": 0,
+        "public_proof_promotion_count": 0,
+        "schedule_enabled": False,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
     }
 
 
@@ -7743,6 +8266,33 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub = subparsers.add_parser("hoxline-runtime-ops-self-test")
     sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-evidence-graph")
+    sub.add_argument("--execution-id")
+    sub.add_argument("--private-route")
+    sub.add_argument("--fixture", action="store_true")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-promotion-state")
+    sub.add_argument("--evidence-graph")
+    sub.add_argument("--execution-id")
+    sub.add_argument("--private-route")
+    sub.add_argument("--fixture", action="store_true")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-claim-authority-check")
+    sub.add_argument("--evidence-graph")
+    sub.add_argument("--execution-id")
+    sub.add_argument("--private-route")
+    sub.add_argument("--fixture", action="store_true")
+    sub.add_argument("--proposed-claim", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-proofcard-draft")
+    sub.add_argument("--evidence-graph")
+    sub.add_argument("--execution-id")
+    sub.add_argument("--private-route")
+    sub.add_argument("--fixture", action="store_true")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-control-plane-self-test")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("public-status-source-contract-verify")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("self-test-id-det-001-missing-surfaces")
@@ -8118,6 +8668,37 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "hoxline-runtime-ops-self-test":
         output = hoxline_runtime_ops_self_test(Path(args.repo_root).resolve())
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-evidence-graph":
+        replay = hoxline_runtime_replay_fixture(execution_id=args.execution_id or "HO-DET-001-20260620T173615Z-6ELQ03") if args.fixture else hoxline_runtime_replay(args.execution_id, args.private_route)
+        output = hoxline_build_evidence_graph(replay)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-promotion-state":
+        graph = hoxline_build_evidence_graph(hoxline_runtime_replay_fixture(execution_id=args.execution_id or "HO-DET-001-20260620T173615Z-6ELQ03")) if args.fixture else hoxline_evidence_graph_from_inputs(args.evidence_graph, args.execution_id, args.private_route)
+        output = hoxline_promotion_state_from_graph(graph)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-claim-authority-check":
+        graph = hoxline_build_evidence_graph(hoxline_runtime_replay_fixture(execution_id=args.execution_id or "HO-DET-001-20260620T173615Z-6ELQ03")) if args.fixture else hoxline_evidence_graph_from_inputs(args.evidence_graph, args.execution_id, args.private_route)
+        promotion = hoxline_promotion_state_from_graph(graph)
+        output = hoxline_claim_authority_check(graph, promotion, args.proposed_claim)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-proofcard-draft":
+        graph = hoxline_build_evidence_graph(hoxline_runtime_replay_fixture(execution_id=args.execution_id or "HO-DET-001-20260620T173615Z-6ELQ03")) if args.fixture else hoxline_evidence_graph_from_inputs(args.evidence_graph, args.execution_id, args.private_route)
+        promotion = hoxline_promotion_state_from_graph(graph)
+        output = hoxline_proofcard_draft(graph, promotion)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-control-plane-self-test":
+        output = hoxline_control_plane_self_test(Path(args.repo_root).resolve())
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
