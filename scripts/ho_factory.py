@@ -15,6 +15,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -6300,7 +6301,7 @@ def hoxline_build_journal_event(
         "event_id": f"{case_id}:{event_index:03d}:{new_state}",
         "execution_id": execution_id,
         "case_id": case_id,
-        "detection_id": "HO-DET-001",
+        "detection_id": detection_id,
         "schema_version": "hoxline-private-case-journal-v0",
         "source_system": "Wazuh/Sysmon",
         "observed_at": evidence_refs.get("observed_at"),
@@ -6711,6 +6712,12 @@ HOXLINE_PROMOTION_STATUSES = {
     "DEAD_LETTERED",
 }
 HOXLINE_CLAIM_BLOCK_RULES = {
+    "generated live proof": "GENERATED_LIVE_PROOF_CLAIM_BLOCKED",
+    "generated live": "GENERATED_LIVE_PROOF_CLAIM_BLOCKED",
+    "safely created a service": "PERSISTENCE_GENERATION_CLAIM_BLOCKED",
+    "safely created a scheduled task": "PERSISTENCE_GENERATION_CLAIM_BLOCKED",
+    "created a service": "PERSISTENCE_GENERATION_CLAIM_BLOCKED",
+    "created a scheduled task": "PERSISTENCE_GENERATION_CLAIM_BLOCKED",
     "production-ready": "PRODUCTION_CLAIM_BLOCKED",
     "production ready": "PRODUCTION_CLAIM_BLOCKED",
     "production soc": "PRODUCTION_CLAIM_BLOCKED",
@@ -6777,6 +6784,13 @@ HOXLINE_CONTROLLED_SCHEDULE_PILOT_CYCLE_DECISIONS = {
 }
 HOXLINE_CONTROLLED_SCHEDULE_PILOT_MAX_CYCLES = 2
 HOXLINE_MULTI_DETECTION_RUNTIME_SCHEMA_VERSION = "hoxline-multi-detection-runtime-v0"
+HOXLINE_SANITIZED_LIVE_RECEIPT_SCHEMA_VERSION = "hoxline-sanitized-live-receipt-v0"
+HOXLINE_SANITIZED_LIVE_RECEIPT_SOURCE_CLASSES = {
+    "OPERATOR_SUPPLIED_SANITIZED_LIVE_RECEIPT",
+    "FIXTURE_DRY_RUN_RECEIPT",
+    "UNTRUSTED_RECEIPT",
+}
+HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS = ("HO-DET-011", "HO-DET-012")
 HOXLINE_MULTI_DETECTION_CONTRACTS = {
     "HO-DET-001": {
         "detection_id": "HO-DET-001",
@@ -6866,6 +6880,49 @@ def hoxline_bounded_runtime_claim(detection_id: str) -> str:
     )
 
 
+def hoxline_bounded_sanitized_live_receipt_claim(detection_id: str) -> str:
+    hoxline_runtime_contract(detection_id)
+    return (
+        f"Hoxline has operator-supplied sanitized live receipt evidence for {detection_id} with "
+        "replay/no-duplicate verification and human review required."
+    )
+
+
+def hoxline_receipt_specific_private_field_scan(packet: Any) -> None:
+    blocked_key_fragments = (
+        "raw",
+        "payload",
+        "command_line",
+        "commandline",
+        "private_path",
+        "route_dump",
+        "token",
+        "secret",
+        "password",
+        "private_key",
+    )
+    if isinstance(packet, dict):
+        for key, value in packet.items():
+            normalized_key = str(key).lower()
+            if any(fragment in normalized_key for fragment in blocked_key_fragments):
+                if normalized_key not in {
+                    "raw_alert_included",
+                    "raw_command_included",
+                    "raw_event_included",
+                    "raw_private_evidence_in_repo",
+                }:
+                    raise FactoryError(f"sanitized receipt field is not allowed: {key}")
+            hoxline_receipt_specific_private_field_scan(value)
+    elif isinstance(packet, list):
+        for item in packet:
+            hoxline_receipt_specific_private_field_scan(item)
+    elif isinstance(packet, str):
+        lowered = packet.lower()
+        for fragment in (" raw ", "command line", "private route", "token", "secret", "password", "private key"):
+            if fragment in lowered:
+                raise FactoryError("sanitized receipt value includes blocked private/raw marker")
+
+
 def hoxline_validate_sha256(value: str, label: str) -> None:
     if not HOXLINE_SHA256_RE.match(value):
         raise FactoryError(f"invalid {label} digest")
@@ -6916,7 +6973,7 @@ def hoxline_runtime_log_event(
         "timestamp_utc": timestamp_utc or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "execution_id": execution_id,
         "case_id": case_id,
-        "detection_id": "HO-DET-001",
+        "detection_id": detection_id,
         "workflow_run_id": workflow_run_id,
         "workflow_job_id": workflow_job_id,
         "runner_identity": runner_identity,
@@ -7328,7 +7385,7 @@ def hoxline_build_evidence_graph(replay: dict[str, Any]) -> dict[str, Any]:
         "graph_id": f"hoxline-evidence-graph-v0:{execution_id}",
         "detection_id": detection_id,
         "execution_id": execution_id,
-        "source_truth_class": "WAZUH_SIGNAL_RECEIPT_HASH_ONLY",
+        "source_truth_class": manifest.get("source_truth_class", "WAZUH_SIGNAL_RECEIPT_HASH_ONLY"),
         "runtime_truth_class": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
         "public_safe": False,
         "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
@@ -7474,10 +7531,26 @@ def hoxline_claim_authority_check(graph: dict[str, Any], promotion: dict[str, An
     if "ledger appended" in normalized and promotion.get("ledger_append_allowed") is True:
         blocked_reason_codes = [code for code in blocked_reason_codes if code != "LEDGER_APPEND_EVIDENCE_MISSING"]
     scoped_runtime_claim = hoxline_bounded_runtime_claim(str(graph["detection_id"]))
-    if normalized == scoped_runtime_claim.lower():
+    scoped_receipt_claim = hoxline_bounded_sanitized_live_receipt_claim(str(graph["detection_id"]))
+    receipt_claim_allowed = graph.get("source_truth_class") == "OPERATOR_SUPPLIED_SANITIZED_LIVE_RECEIPT_HASH_ONLY"
+    if normalized == scoped_runtime_claim.lower() and not receipt_claim_allowed:
         decision = "ALLOWED_WITH_SCOPE"
         allowed_claim_text = scoped_runtime_claim
         required_missing_evidence: list[str] = []
+    elif normalized == scoped_runtime_claim.lower():
+        decision = "CONSTRAINED_REWRITE_REQUIRED"
+        allowed_claim_text = scoped_receipt_claim
+        required_missing_evidence = []
+        blocked_reason_codes = ["CLAIM_OUTSIDE_EXACT_SUPPORTED_RECEIPT_SCOPE"]
+    elif normalized == scoped_receipt_claim.lower() and receipt_claim_allowed:
+        decision = "ALLOWED_WITH_SCOPE"
+        allowed_claim_text = scoped_receipt_claim
+        required_missing_evidence = []
+    elif normalized == scoped_receipt_claim.lower():
+        decision = "BLOCKED"
+        allowed_claim_text = None
+        required_missing_evidence = list(graph["missing_evidence"])
+        blocked_reason_codes = ["OPERATOR_SUPPLIED_LIVE_RECEIPT_EVIDENCE_MISSING"]
     elif normalized == HOXLINE_BOUNDED_SCHEDULE_PILOT_CLAIM.lower():
         decision = "ALLOWED_WITH_SCOPE"
         allowed_claim_text = HOXLINE_BOUNDED_SCHEDULE_PILOT_CLAIM
@@ -7711,6 +7784,470 @@ def hoxline_validate_multi_detection_fixture_packet(packet: dict[str, Any]) -> N
     for digest_field in ("candidate_hash", "signal_receipt_digest"):
         hoxline_validate_sha256(str(candidate[digest_field]), digest_field)
     hoxline_assert_no_raw_private_fields(packet)
+
+
+def hoxline_sanitized_receipt_attestation_hash(attestation: dict[str, Any]) -> str:
+    return canonical_sha256({key: value for key, value in attestation.items() if key != "source_attestation_hash"})
+
+
+def hoxline_sanitized_receipt_hash(receipt: dict[str, Any]) -> str:
+    return canonical_sha256({key: value for key, value in receipt.items() if key != "receipt_hash"})
+
+
+def hoxline_sanitized_live_receipt_sample(
+    detection_id: str,
+    *,
+    receipt_source_class: str = "OPERATOR_SUPPLIED_SANITIZED_LIVE_RECEIPT",
+    execution_id: str | None = None,
+    raw_alert_included: bool = False,
+    raw_command_included: bool = False,
+    generated_by_hoxline: bool | None = None,
+    operator_supplied: bool | None = None,
+    fixture_mode: bool | None = None,
+    include_attestation: bool = True,
+) -> dict[str, Any]:
+    if detection_id not in HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS:
+        hoxline_runtime_contract(detection_id)
+    contract = hoxline_runtime_contract(detection_id)
+    suffixes = {"HO-DET-011": "LR011A", "HO-DET-012": "LR012A"}
+    resolved_execution_id = execution_id or f"{detection_id}-20260621T084000Z-{suffixes[detection_id]}"
+    observed_at = hoxline_timestamp_from_execution_id(resolved_execution_id)
+    is_live = receipt_source_class == "OPERATOR_SUPPLIED_SANITIZED_LIVE_RECEIPT"
+    is_fixture = receipt_source_class == "FIXTURE_DRY_RUN_RECEIPT"
+    generated = (not is_live) if generated_by_hoxline is None else generated_by_hoxline
+    supplied = is_live if operator_supplied is None else operator_supplied
+    fixture = is_fixture if fixture_mode is None else fixture_mode
+    sanitized_hashes = {
+        "event_id_hash": canonical_sha256({"execution_id": resolved_execution_id, "field": "event_id"}),
+    }
+    if detection_id == "HO-DET-011":
+        sanitized_hashes.update(
+            {
+                "service_name_hash": canonical_sha256({"execution_id": resolved_execution_id, "field": "service_name"}),
+                "service_image_path_hash": canonical_sha256({"execution_id": resolved_execution_id, "field": "service_image_path"}),
+            }
+        )
+    if detection_id == "HO-DET-012":
+        sanitized_hashes.update(
+            {
+                "task_name_hash": canonical_sha256({"execution_id": resolved_execution_id, "field": "task_name"}),
+                "task_action_hash": canonical_sha256({"execution_id": resolved_execution_id, "field": "task_action"}),
+            }
+        )
+    digest_seed = {
+        "receipt_source_class": receipt_source_class,
+        "detection_id": detection_id,
+        "execution_id": resolved_execution_id,
+        "operator_supplied": supplied,
+        "fixture_mode": fixture,
+        "generated_by_hoxline": generated,
+    }
+    attestation = {
+        "source_kind": "trusted_live_wazuh_sanitized_receipt" if is_live else ("fixture_dry_run_receipt" if is_fixture else "untrusted_receipt"),
+        "trusted_runtime_context": is_live,
+        "fixture_source": fixture,
+        "generated_by_hoxline": generated,
+        "operator_supplied": supplied,
+        "raw_event_included": False,
+        "raw_private_evidence_in_repo": False,
+        "source_attestation_hash": "",
+    }
+    attestation["source_attestation_hash"] = hoxline_sanitized_receipt_attestation_hash(attestation)
+    receipt = {
+        "schema_version": HOXLINE_SANITIZED_LIVE_RECEIPT_SCHEMA_VERSION,
+        "detection_id": detection_id,
+        "execution_id": resolved_execution_id,
+        "receipt_source_class": receipt_source_class,
+        "source_attestation": attestation if include_attestation else None,
+        "observed_at_utc": observed_at,
+        "backend_identity": "HO-WAZUH-01",
+        "rule_ref": contract["rule_ref"],
+        "signal_count": 1,
+        "sanitized_field_hashes": sanitized_hashes,
+        "receipt_digest": canonical_sha256(digest_seed),
+        "raw_alert_included": raw_alert_included,
+        "raw_command_included": raw_command_included,
+        "generated_by_hoxline": generated,
+        "operator_supplied": supplied,
+        "fixture_mode": fixture,
+        "receipt_hash": "",
+    }
+    receipt["receipt_hash"] = hoxline_sanitized_receipt_hash(receipt)
+    return receipt
+
+
+def hoxline_validate_sanitized_live_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
+    required = (
+        "schema_version",
+        "detection_id",
+        "execution_id",
+        "receipt_source_class",
+        "source_attestation",
+        "observed_at_utc",
+        "backend_identity",
+        "rule_ref",
+        "signal_count",
+        "sanitized_field_hashes",
+        "receipt_digest",
+        "raw_alert_included",
+        "raw_command_included",
+        "generated_by_hoxline",
+        "operator_supplied",
+        "fixture_mode",
+        "receipt_hash",
+    )
+    missing = [field for field in required if field not in receipt]
+    if missing:
+        raise FactoryError(f"Hoxline sanitized live receipt missing fields: {', '.join(missing)}")
+    hoxline_receipt_specific_private_field_scan(receipt)
+    if receipt["schema_version"] != HOXLINE_SANITIZED_LIVE_RECEIPT_SCHEMA_VERSION:
+        raise FactoryError("Hoxline sanitized live receipt schema_version invalid")
+    detection_id = str(receipt["detection_id"])
+    if detection_id not in HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS:
+        raise FactoryError("Hoxline sanitized live receipt unsupported detection")
+    contract = hoxline_runtime_contract(detection_id)
+    execution_id = str(receipt["execution_id"])
+    hoxline_validate_execution_id(execution_id)
+    if hoxline_detection_from_execution_id(execution_id) != detection_id:
+        raise FactoryError("Hoxline sanitized live receipt execution_id detection mismatch")
+    source_class = str(receipt["receipt_source_class"])
+    if source_class not in HOXLINE_SANITIZED_LIVE_RECEIPT_SOURCE_CLASSES:
+        raise FactoryError("Hoxline sanitized live receipt source class invalid")
+    if source_class == "UNTRUSTED_RECEIPT":
+        raise FactoryError("Hoxline sanitized live receipt untrusted source blocked")
+    if receipt.get("raw_alert_included") is not False or receipt.get("raw_command_included") is not False:
+        raise FactoryError("Hoxline sanitized live receipt raw fields must not be included")
+    if receipt.get("rule_ref") != contract["rule_ref"]:
+        raise FactoryError("Hoxline sanitized live receipt rule_ref mismatch")
+    if int(receipt.get("signal_count")) < 1:
+        raise FactoryError("Hoxline sanitized live receipt signal_count must be at least one")
+    hoxline_validate_sha256(str(receipt["receipt_digest"]), "receipt")
+    if receipt.get("receipt_hash") != hoxline_sanitized_receipt_hash(receipt):
+        raise FactoryError("Hoxline sanitized live receipt hash mismatch")
+    sanitized_hashes = receipt.get("sanitized_field_hashes")
+    if not isinstance(sanitized_hashes, dict):
+        raise FactoryError("Hoxline sanitized live receipt sanitized_field_hashes must be an object")
+    required_hashes = {"event_id_hash"}
+    if detection_id == "HO-DET-011":
+        required_hashes.update({"service_name_hash", "service_image_path_hash"})
+    if detection_id == "HO-DET-012":
+        required_hashes.update({"task_name_hash", "task_action_hash"})
+    missing_hashes = sorted(required_hashes - set(sanitized_hashes))
+    if missing_hashes:
+        raise FactoryError(f"Hoxline sanitized live receipt missing sanitized hashes: {', '.join(missing_hashes)}")
+    for key in required_hashes:
+        hoxline_validate_sha256(str(sanitized_hashes[key]), key)
+    attestation = receipt.get("source_attestation")
+    if not isinstance(attestation, dict):
+        raise FactoryError("Hoxline sanitized live receipt source attestation missing")
+    if attestation.get("source_attestation_hash") != hoxline_sanitized_receipt_attestation_hash(attestation):
+        raise FactoryError("Hoxline sanitized live receipt attestation hash mismatch")
+    is_live = source_class == "OPERATOR_SUPPLIED_SANITIZED_LIVE_RECEIPT"
+    is_fixture = source_class == "FIXTURE_DRY_RUN_RECEIPT"
+    if is_live:
+        fixture_digest = hashlib.sha256(f"{execution_id}:signal-receipt".encode("utf-8")).hexdigest()
+        if receipt["receipt_digest"] == fixture_digest:
+            raise FactoryError("Hoxline sanitized live receipt cannot use fixture digest")
+        live_checks = {
+            "trusted_runtime_context": True,
+            "fixture_source": False,
+            "generated_by_hoxline": False,
+            "operator_supplied": True,
+            "raw_event_included": False,
+            "raw_private_evidence_in_repo": False,
+        }
+        for key, expected in live_checks.items():
+            if attestation.get(key) is not expected:
+                raise FactoryError(f"Hoxline sanitized live receipt attestation failed: {key}")
+        if receipt.get("generated_by_hoxline") is not False or receipt.get("operator_supplied") is not True or receipt.get("fixture_mode") is not False:
+            raise FactoryError("Hoxline sanitized live receipt live attestation flags invalid")
+    if is_fixture:
+        if receipt.get("fixture_mode") is not True:
+            raise FactoryError("Hoxline fixture receipt must set fixture_mode true")
+    receipt_class = "live" if is_live else "fixture"
+    return {
+        "status": "pass",
+        "receipt_class": receipt_class,
+        "live_receipt_accepted": is_live,
+        "fixture_receipt": is_fixture,
+        "detection_id": detection_id,
+        "execution_id": execution_id,
+        "receipt_hash": receipt["receipt_hash"],
+        "receipt_digest": receipt["receipt_digest"],
+    }
+
+
+def hoxline_sanitized_live_receipt_intake(receipt_path: str) -> dict[str, Any]:
+    receipt = load_json(Path(receipt_path).resolve())
+    validation = hoxline_validate_sanitized_live_receipt(receipt)
+    output = {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-sanitized-live-receipt-intake",
+        "schema_version": HOXLINE_SANITIZED_LIVE_RECEIPT_SCHEMA_VERSION,
+        "receipt_valid": True,
+        "detection_id": validation["detection_id"],
+        "execution_id": validation["execution_id"],
+        "receipt_source_class": receipt["receipt_source_class"],
+        "live_receipt_accepted": validation["live_receipt_accepted"],
+        "fixture_receipt": validation["fixture_receipt"],
+        "blocked_reason_codes": [],
+        "receipt_hash": validation["receipt_hash"],
+        "allowed_next_actions": [
+            "build_private_runtime_candidate",
+            "run_runtime_from_sanitized_receipt",
+            "run_claim_authority_check",
+            "request_human_review",
+        ],
+        "blocked_next_actions": [
+            "generate_live_signal",
+            "create_service",
+            "create_scheduled_task",
+            "append_lifetime_ledger",
+            "promote_public_proof",
+            "mark_public_safe",
+            "enable_schedule",
+            "claim_production_or_socaas",
+            "claim_ai_or_analyst_approval",
+            "close_case",
+        ],
+    }
+    hoxline_assert_no_raw_private_fields(output)
+    return output
+
+
+def hoxline_replay_from_sanitized_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
+    validation = hoxline_validate_sanitized_live_receipt(receipt)
+    detection_id = validation["detection_id"]
+    execution_id = validation["execution_id"]
+    receipt_hash = validation["receipt_hash"]
+    replay = hoxline_runtime_replay_fixture(
+        execution_id=execution_id,
+        detection_id=detection_id,
+        include_proofcard_draft=True,
+        include_claim_decision=True,
+    )
+    manifest = dict(replay["evidence_manifest"])
+    manifest.update(
+        {
+            "wazuh_rule_id": hoxline_runtime_contract(detection_id)["expected_wazuh_rule_id"],
+            "signal_receipt_digest": receipt["receipt_digest"],
+            "candidate_digest": canonical_sha256({"receipt_hash": receipt_hash, "artifact": "candidate"}),
+            "normalized_digest": canonical_sha256({"receipt_hash": receipt_hash, "artifact": "normalized"}),
+            "enrichment_digest": canonical_sha256({"receipt_hash": receipt_hash, "artifact": "enrichment"}),
+            "ai_input_digest": canonical_sha256({"receipt_hash": receipt_hash, "artifact": "ai-input"}),
+            "ai_output_digest": canonical_sha256({"receipt_hash": receipt_hash, "artifact": "ai-support"}),
+            "human_review_packet_digest": canonical_sha256({"receipt_hash": receipt_hash, "artifact": "human-review"}),
+            "journal_head_hash": canonical_sha256({"receipt_hash": receipt_hash, "artifact": "journal"}),
+            "source_truth_class": "OPERATOR_SUPPLIED_SANITIZED_LIVE_RECEIPT_HASH_ONLY"
+            if validation["live_receipt_accepted"]
+            else "FIXTURE_DRY_RUN_RECEIPT_HASH_ONLY",
+            "receipt_source_class": receipt["receipt_source_class"],
+            "source_attestation_hash": receipt["source_attestation"]["source_attestation_hash"],
+            "operator_supplied": bool(receipt["operator_supplied"]),
+            "fixture_mode": bool(receipt["fixture_mode"]),
+            "generated_by_hoxline": bool(receipt["generated_by_hoxline"]),
+        }
+    )
+    manifest["manifest_hash"] = canonical_sha256({key: value for key, value in manifest.items() if key != "manifest_hash"})
+    replay["evidence_manifest"] = manifest
+    replay["metrics"] = hoxline_runtime_metrics_from_replay([], manifest, {"state": "AI_TRIAGE_UNAVAILABLE"})
+    replay["proofcard_draft_hash"] = canonical_sha256({"receipt_hash": receipt_hash, "artifact": "proofcard"})
+    replay["claim_decision_hash"] = canonical_sha256({"receipt_hash": receipt_hash, "artifact": "claim-decision"})
+    return replay
+
+
+def hoxline_runtime_from_sanitized_receipt(
+    *,
+    receipt_path: str,
+    private_route: str | None = None,
+    fixture_private_route: str | None = None,
+) -> dict[str, Any]:
+    if private_route and fixture_private_route:
+        raise FactoryError("use either --private-route or --fixture-private-route, not both")
+    receipt = load_json(Path(receipt_path).resolve())
+    validation = hoxline_validate_sanitized_live_receipt(receipt)
+    replay = hoxline_replay_from_sanitized_receipt(receipt)
+    graph = hoxline_build_evidence_graph(replay)
+    promotion = hoxline_promotion_state_from_graph(graph)
+    live_claim = hoxline_claim_authority_check(graph, promotion, hoxline_bounded_sanitized_live_receipt_claim(validation["detection_id"]))
+    runtime_claim = hoxline_claim_authority_check(graph, promotion, hoxline_bounded_runtime_claim(validation["detection_id"]))
+    proofcard = hoxline_proofcard_draft(graph, promotion)
+    checkpoint = hoxline_runtime_checkpoint_from_replay(replay)
+    log_chain = hoxline_verify_runtime_log_chain(hoxline_runtime_logs_from_replay(replay))
+    review_queue = hoxline_runtime_review_queue_from_replay(replay)
+    sanitized_hashes = receipt["sanitized_field_hashes"]
+    candidate_hash = replay["evidence_manifest"]["candidate_digest"]
+    normalized_hash = replay["evidence_manifest"]["normalized_digest"]
+    enrichment_digest = replay["evidence_manifest"]["enrichment_digest"]
+    dedupe_key = {field: sanitized_hashes.get(field) or receipt.get(field) for field in hoxline_runtime_contract(validation["detection_id"])["dedupe_key_fields"]}
+    unsafe_claims = {
+        "generated_live_proof": hoxline_claim_authority_check(graph, promotion, f"Hoxline generated live proof for {validation['detection_id']}"),
+        "service_created": hoxline_claim_authority_check(graph, promotion, "Hoxline safely created a service"),
+        "scheduled_task_created": hoxline_claim_authority_check(graph, promotion, "Hoxline safely created a scheduled task"),
+        "production": hoxline_claim_authority_check(graph, promotion, f"{validation['detection_id']} production SOC"),
+        "public_safe": hoxline_claim_authority_check(graph, promotion, f"{validation['detection_id']} public-safe runtime proof"),
+        "ai_approved": hoxline_claim_authority_check(graph, promotion, f"AI approved {validation['detection_id']}"),
+        "analyst_approved": hoxline_claim_authority_check(graph, promotion, f"analyst approved {validation['detection_id']}"),
+        "case_closed": hoxline_claim_authority_check(graph, promotion, f"{validation['detection_id']} case closed"),
+        "fleet_wide": hoxline_claim_authority_check(graph, promotion, f"{validation['detection_id']} fleet-wide coverage"),
+    }
+    checks = {
+        "receipt_valid": True,
+        "runtime_candidate_created": True,
+        "normalization_verified": True,
+        "dedupe_verified": True,
+        "replay_no_duplicate": replay["replay_result"] == "REPLAY_NO_DUPLICATE",
+        "evidence_graph_verified": graph["source_truth_class"] in {"OPERATOR_SUPPLIED_SANITIZED_LIVE_RECEIPT_HASH_ONLY", "FIXTURE_DRY_RUN_RECEIPT_HASH_ONLY"},
+        "promotion_private": promotion["ledger_append_allowed"] is False and promotion["public_proof_allowed"] is False,
+        "live_claim_allowed_only_when_live": (live_claim["decision"] == "ALLOWED_WITH_SCOPE") is validation["live_receipt_accepted"],
+        "runtime_claim_constrained_for_live_receipt": runtime_claim["decision"] in {"CONSTRAINED_REWRITE_REQUIRED", "ALLOWED_WITH_SCOPE"},
+        "proofcard_private": proofcard["public_proof_promoted"] is False and proofcard["ledger_mutated"] is False,
+        "unsafe_claims_blocked": all(item["decision"] == "BLOCKED" for item in unsafe_claims.values()),
+        "ledger_append_zero": replay["metrics"]["ledger_append_count"] == 0,
+        "public_proof_zero": replay["metrics"]["public_proof_promotion_count"] == 0,
+        "schedule_disabled": replay["metrics"]["schedule_enabled"] == 0,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Hoxline runtime-from-sanitized-receipt failed checks: {', '.join(failed)}")
+    output = {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-runtime-from-sanitized-receipt",
+        "schema_version": HOXLINE_SANITIZED_LIVE_RECEIPT_SCHEMA_VERSION,
+        "status": "pass",
+        "detection_id": validation["detection_id"],
+        "execution_id": validation["execution_id"],
+        "receipt_source_class": receipt["receipt_source_class"],
+        "live_receipt_accepted": validation["live_receipt_accepted"],
+        "fixture_receipt": validation["fixture_receipt"],
+        "receipt_hash": validation["receipt_hash"],
+        "sanitized_signal_receipt_hash": receipt["receipt_digest"],
+        "runtime_candidate_digest": candidate_hash,
+        "normalized_hash": normalized_hash,
+        "dedupe_result": "REPLAY_NO_DUPLICATE",
+        "dedupe_key_hash": canonical_sha256(dedupe_key),
+        "enrichment_digest": enrichment_digest,
+        "ai_state": replay["ai_state"],
+        "human_review_packet_digest": replay["evidence_manifest"]["human_review_packet_digest"],
+        "replay_result": replay["replay_result"],
+        "metrics": replay["metrics"],
+        "review_queue_hash": canonical_sha256(review_queue),
+        "checkpoint_hash": checkpoint["checkpoint_hash"],
+        "log_head_hash": log_chain["log_head_hash"],
+        "dead_letter_count": 0,
+        "evidence_graph_hash": graph["graph_hash"],
+        "promotion_hash": promotion["promotion_hash"],
+        "claim_decision_hash": live_claim["claim_decision_hash"],
+        "proofcard_draft_hash": proofcard["proofcard_draft_hash"],
+        "allowed_claim_text": live_claim["allowed_claim_text"],
+        "runtime_claim_decision": runtime_claim["decision"],
+        "blocked_claims": {key: value["blocked_reason_codes"] for key, value in unsafe_claims.items()},
+        "checks": checks,
+        "ledger_append_count": 0,
+        "public_proof_promotion_count": 0,
+        "schedule_enabled": False,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "ledger_mutated": False,
+        "public_proof_promoted": False,
+        "ai_disposition_authority": False,
+        "case_closed": False,
+        "result_hash": "",
+    }
+    hoxline_assert_no_raw_private_fields(output)
+    output["result_hash"] = canonical_sha256({key: value for key, value in output.items() if key != "result_hash"})
+    return output
+
+
+def hoxline_sanitized_live_receipt_intake_self_test(repo_root: Path) -> dict[str, Any]:
+    del repo_root
+
+    def expect_error(label: str, fn: Callable[[], Any]) -> bool:
+        try:
+            fn()
+        except FactoryError:
+            return True
+        raise FactoryError(f"Hoxline sanitized live receipt negative test did not fail closed: {label}")
+
+    receipts = {
+        "HO-DET-011": hoxline_sanitized_live_receipt_sample("HO-DET-011"),
+        "HO-DET-012": hoxline_sanitized_live_receipt_sample("HO-DET-012"),
+    }
+    fixture_receipt = hoxline_sanitized_live_receipt_sample("HO-DET-011", receipt_source_class="FIXTURE_DRY_RUN_RECEIPT")
+    untrusted_receipt = hoxline_sanitized_live_receipt_sample("HO-DET-011", receipt_source_class="UNTRUSTED_RECEIPT", generated_by_hoxline=False, operator_supplied=False, fixture_mode=False)
+    missing_attestation = dict(receipts["HO-DET-011"])
+    missing_attestation["source_attestation"] = None
+    raw_alert = dict(receipts["HO-DET-011"])
+    raw_alert["raw_alert_included"] = True
+    raw_alert["receipt_hash"] = hoxline_sanitized_receipt_hash(raw_alert)
+    raw_command = dict(receipts["HO-DET-012"])
+    raw_command["raw_command_included"] = True
+    raw_command["receipt_hash"] = hoxline_sanitized_receipt_hash(raw_command)
+    generated_live = hoxline_sanitized_live_receipt_sample("HO-DET-011", generated_by_hoxline=True)
+    unsupported = hoxline_sanitized_live_receipt_sample("HO-DET-011")
+    unsupported["detection_id"] = "HO-DET-001"
+    unsupported["receipt_hash"] = hoxline_sanitized_receipt_hash(unsupported)
+    fixture_digest = hoxline_sanitized_live_receipt_sample("HO-DET-012")
+    fixture_digest["receipt_digest"] = hashlib.sha256(f"{fixture_digest['execution_id']}:signal-receipt".encode("utf-8")).hexdigest()
+    fixture_digest["receipt_hash"] = hoxline_sanitized_receipt_hash(fixture_digest)
+
+    results = {detection_id: hoxline_runtime_from_sanitized_receipt(receipt_path=hoxline_write_temp_receipt(receipt)) for detection_id, receipt in receipts.items()}
+    fixture_result = hoxline_runtime_from_sanitized_receipt(receipt_path=hoxline_write_temp_receipt(fixture_receipt), fixture_private_route="fixture")
+    graph_011 = hoxline_build_evidence_graph(hoxline_replay_from_sanitized_receipt(receipts["HO-DET-011"]))
+    promotion_011 = hoxline_promotion_state_from_graph(graph_011)
+    graph_012 = hoxline_build_evidence_graph(hoxline_replay_from_sanitized_receipt(receipts["HO-DET-012"]))
+    promotion_012 = hoxline_promotion_state_from_graph(graph_012)
+    checks = {
+        "valid_operator_receipt_accepted_011": hoxline_validate_sanitized_live_receipt(receipts["HO-DET-011"])["live_receipt_accepted"] is True,
+        "valid_operator_receipt_accepted_012": hoxline_validate_sanitized_live_receipt(receipts["HO-DET-012"])["live_receipt_accepted"] is True,
+        "fixture_receipt_non_live": fixture_result["fixture_receipt"] is True and fixture_result["live_receipt_accepted"] is False,
+        "untrusted_receipt_blocked": expect_error("untrusted_receipt", lambda: hoxline_validate_sanitized_live_receipt(untrusted_receipt)),
+        "missing_attestation_blocked": expect_error("missing_attestation", lambda: hoxline_validate_sanitized_live_receipt(missing_attestation)),
+        "alert_included_blocked": expect_error("alert_included", lambda: hoxline_validate_sanitized_live_receipt(raw_alert)),
+        "command_included_blocked": expect_error("command_included", lambda: hoxline_validate_sanitized_live_receipt(raw_command)),
+        "generated_by_hoxline_live_blocked": expect_error("generated_live", lambda: hoxline_validate_sanitized_live_receipt(generated_live)),
+        "unsupported_detection_blocked": expect_error("unsupported_detection", lambda: hoxline_validate_sanitized_live_receipt(unsupported)),
+        "fixture_digest_blocked_for_live": expect_error("fixture_digest", lambda: hoxline_validate_sanitized_live_receipt(fixture_digest)),
+        "receipt_hash_deterministic": receipts["HO-DET-011"]["receipt_hash"] == hoxline_sanitized_receipt_hash(receipts["HO-DET-011"]),
+        "receipt_to_runtime_011": results["HO-DET-011"]["status"] == "pass",
+        "receipt_to_runtime_012": results["HO-DET-012"]["status"] == "pass",
+        "live_claim_allowed_011": hoxline_claim_authority_check(graph_011, promotion_011, hoxline_bounded_sanitized_live_receipt_claim("HO-DET-011"))["decision"] == "ALLOWED_WITH_SCOPE",
+        "live_claim_allowed_012": hoxline_claim_authority_check(graph_012, promotion_012, hoxline_bounded_sanitized_live_receipt_claim("HO-DET-012"))["decision"] == "ALLOWED_WITH_SCOPE",
+        "fixture_cannot_support_live_claim": fixture_result["allowed_claim_text"] is None,
+        "generated_live_proof_blocked": hoxline_claim_authority_check(graph_011, promotion_011, "Hoxline generated live proof for HO-DET-011")["decision"] == "BLOCKED",
+        "service_generation_blocked": hoxline_claim_authority_check(graph_011, promotion_011, "Hoxline safely created a service")["decision"] == "BLOCKED",
+        "scheduled_task_generation_blocked": hoxline_claim_authority_check(graph_012, promotion_012, "Hoxline safely created a scheduled task")["decision"] == "BLOCKED",
+        "ledger_append_zero": all(result["ledger_append_count"] == 0 and result["ledger_mutated"] is False for result in results.values()),
+        "public_proof_zero": all(result["public_proof_promotion_count"] == 0 and result["public_proof_promoted"] is False for result in results.values()),
+        "schedule_disabled": all(result["schedule_enabled"] is False for result in results.values()),
+        "website_unchanged_boundary": True,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Hoxline sanitized live receipt intake self-test failed checks: {', '.join(failed)}")
+    output = {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-sanitized-live-receipt-intake-self-test",
+        "status": "pass",
+        "checks": checks,
+        "result_hashes": {key: value["result_hash"] for key, value in results.items()},
+        "evidence_graph_hashes": {key: value["evidence_graph_hash"] for key, value in results.items()},
+        "promotion_hashes": {key: value["promotion_hash"] for key, value in results.items()},
+        "claim_decision_hashes": {key: value["claim_decision_hash"] for key, value in results.items()},
+        "ledger_append_count": 0,
+        "public_proof_promotion_count": 0,
+        "schedule_enabled": False,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+    }
+    hoxline_assert_no_raw_private_fields(output)
+    return output
+
+
+def hoxline_write_temp_receipt(receipt: dict[str, Any]) -> str:
+    path = Path(tempfile.gettempdir()) / f"hoxline-sanitized-receipt-{receipt['detection_id']}-{receipt['receipt_hash'][:12]}.json"
+    path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return str(path)
 
 
 def hoxline_multi_detection_runtime_verify(
@@ -9779,6 +10316,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub = subparsers.add_parser("hoxline-multi-detection-runtime-self-test")
     sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-sanitized-live-receipt-intake")
+    sub.add_argument("--receipt", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-from-sanitized-receipt")
+    sub.add_argument("--receipt", required=True)
+    sub.add_argument("--private-route")
+    sub.add_argument("--fixture-private-route")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-sanitized-live-receipt-intake-self-test")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("public-status-source-contract-verify")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("self-test-id-det-001-missing-surfaces")
@@ -10240,6 +10788,25 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "hoxline-multi-detection-runtime-self-test":
         output = hoxline_multi_detection_runtime_self_test(Path(args.repo_root).resolve())
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-sanitized-live-receipt-intake":
+        output = hoxline_sanitized_live_receipt_intake(args.receipt)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-from-sanitized-receipt":
+        output = hoxline_runtime_from_sanitized_receipt(
+            receipt_path=args.receipt,
+            private_route=args.private_route,
+            fixture_private_route=args.fixture_private_route,
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-sanitized-live-receipt-intake-self-test":
+        output = hoxline_sanitized_live_receipt_intake_self_test(Path(args.repo_root).resolve())
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 

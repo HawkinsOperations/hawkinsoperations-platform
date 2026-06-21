@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HawkinsOperations/hawkinsoperations-platform/contracts/schemas/hoxline-sanitized-live-receipt-v0.schema.json",
+  "title": "Hoxline Sanitized Live Receipt v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "detection_id",
+    "execution_id",
+    "receipt_source_class",
+    "source_attestation",
+    "observed_at_utc",
+    "backend_identity",
+    "rule_ref",
+    "signal_count",
+    "sanitized_field_hashes",
+    "receipt_digest",
+    "raw_alert_included",
+    "raw_command_included",
+    "generated_by_hoxline",
+    "operator_supplied",
+    "fixture_mode",
+    "receipt_hash"
+  ],
+  "properties": {
+    "schema_version": { "const": "hoxline-sanitized-live-receipt-v0" },
+    "detection_id": { "enum": ["HO-DET-011", "HO-DET-012"] },
+    "execution_id": { "type": "string", "pattern": "^HO-DET-0(11|12)-[0-9]{8}T[0-9]{6}Z-[A-Z0-9]{6}$" },
+    "receipt_source_class": {
+      "enum": [
+        "OPERATOR_SUPPLIED_SANITIZED_LIVE_RECEIPT",
+        "FIXTURE_DRY_RUN_RECEIPT",
+        "UNTRUSTED_RECEIPT"
+      ]
+    },
+    "source_attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_kind",
+        "trusted_runtime_context",
+        "fixture_source",
+        "generated_by_hoxline",
+        "operator_supplied",
+        "raw_event_included",
+        "raw_private_evidence_in_repo",
+        "source_attestation_hash"
+      ],
+      "properties": {
+        "source_kind": { "type": "string", "minLength": 1 },
+        "trusted_runtime_context": { "type": "boolean" },
+        "fixture_source": { "type": "boolean" },
+        "generated_by_hoxline": { "type": "boolean" },
+        "operator_supplied": { "type": "boolean" },
+        "raw_event_included": { "const": false },
+        "raw_private_evidence_in_repo": { "const": false },
+        "source_attestation_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "observed_at_utc": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" },
+    "backend_identity": { "type": "string", "minLength": 1 },
+    "rule_ref": {
+      "enum": [
+        "detections/successor/ho-det-011/wazuh.xml",
+        "detections/successor/ho-det-012/wazuh.xml"
+      ]
+    },
+    "signal_count": { "type": "integer", "minimum": 1 },
+    "sanitized_field_hashes": {
+      "type": "object",
+      "minProperties": 3,
+      "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+      "required": ["event_id_hash"]
+    },
+    "receipt_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "raw_alert_included": { "const": false },
+    "raw_command_included": { "const": false },
+    "generated_by_hoxline": { "type": "boolean" },
+    "operator_supplied": { "type": "boolean" },
+    "fixture_mode": { "type": "boolean" },
+    "receipt_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}
