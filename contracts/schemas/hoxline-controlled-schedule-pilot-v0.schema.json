@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hawkinsoperations.local/contracts/hoxline-controlled-schedule-pilot-v0.schema.json",
+  "title": "Hoxline Controlled Schedule Pilot v0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "pilot_id",
+    "detection_id",
+    "pilot_started_at_utc",
+    "pilot_completed_at_utc",
+    "schedule_enabled_before",
+    "schedule_enabled_during_pilot",
+    "schedule_enabled_after",
+    "active_cron_trigger",
+    "pilot_cycle_count",
+    "max_allowed_cycles",
+    "no_new_signal_count",
+    "duplicate_signal_suppression_count",
+    "new_candidate_count",
+    "human_review_packet_count",
+    "dead_letter_count",
+    "retry_count",
+    "ledger_append_count",
+    "public_proof_promotion_count",
+    "public_safe_case_count",
+    "closed_case_count",
+    "ai_disposition_authority",
+    "emergency_disable_verified",
+    "evidence_graph_hashes",
+    "promotion_hashes",
+    "claim_decision_hashes",
+    "readiness_hash",
+    "pilot_verdict",
+    "blocked_claims",
+    "pilot_hash"
+  ],
+  "properties": {
+    "schema_version": { "const": "hoxline-controlled-schedule-pilot-v0" },
+    "pilot_id": { "type": "string" },
+    "detection_id": { "const": "HO-DET-001" },
+    "pilot_started_at_utc": { "type": "string" },
+    "pilot_completed_at_utc": { "type": "string" },
+    "schedule_enabled_before": { "const": false },
+    "schedule_enabled_during_pilot": { "type": "boolean" },
+    "schedule_enabled_after": { "const": false },
+    "active_cron_trigger": { "const": false },
+    "pilot_cycle_count": { "type": "integer", "minimum": 0, "maximum": 2 },
+    "max_allowed_cycles": { "const": 2 },
+    "no_new_signal_count": { "type": "integer", "minimum": 0 },
+    "duplicate_signal_suppression_count": { "type": "integer", "minimum": 0 },
+    "new_candidate_count": { "type": "integer", "minimum": 0 },
+    "human_review_packet_count": { "type": "integer", "minimum": 0 },
+    "dead_letter_count": { "type": "integer", "minimum": 0 },
+    "retry_count": { "type": "integer", "minimum": 0 },
+    "ledger_append_count": { "const": 0 },
+    "public_proof_promotion_count": { "const": 0 },
+    "public_safe_case_count": { "const": 0 },
+    "closed_case_count": { "const": 0 },
+    "ai_disposition_authority": { "const": false },
+    "emergency_disable_verified": { "const": true },
+    "evidence_graph_hashes": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+    },
+    "promotion_hashes": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+    },
+    "claim_decision_hashes": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+    },
+    "readiness_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "pilot_verdict": {
+      "enum": [
+        "PILOT_PASS_DISABLED_AFTER",
+        "PILOT_PASS_NO_NEW_SIGNAL_DISABLED_AFTER",
+        "PILOT_PASS_DUPLICATES_SUPPRESSED_DISABLED_AFTER"
+      ]
+    },
+    "blocked_claims": { "type": "object" },
+    "public_safe_status": { "const": "NOT_PUBLIC_SAFE" },
+    "proof_ceiling": { "const": "PRIVATE_CONTROLLED_RUNTIME_PROOF" },
+    "pilot_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

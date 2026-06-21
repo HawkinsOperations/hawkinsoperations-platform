@@ -16,6 +16,8 @@ Hoxline schedule-enable readiness v0 proves readiness for a future scheduled run
 
 The only successful readiness verdict is `READY_FOR_SEPARATE_SCHEDULE_APPROVAL`. That verdict does not enable collection. It means the next legal gate is a separate explicit `SCHEDULE_ENABLE_APPROVED` prompt after human review of the readiness truth matrix.
 
+After that separate approval, the bounded controlled pilot runbook is `docs/factory/HOXLINE_CONTROLLED_SCHEDULE_ENABLE_PILOT_V0.md`. The pilot remains manual, private, capped at two cycles, and requires final disabled state.
+
 ## Commands
 
 ```powershell

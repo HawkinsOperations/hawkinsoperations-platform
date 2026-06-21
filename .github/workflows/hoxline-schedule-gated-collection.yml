@@ -13,8 +13,9 @@ on:
         required: false
         type: string
 
-# Schedule support is intentionally inactive in v0. A future approved enable
-# gate may add an active cron trigger after repo variable governance is set.
+# Schedule support is intentionally inactive for permanent collection. This
+# workflow can run only a bounded manual controlled pilot when both the manual
+# input and temporary repo variable gate are true.
 
 permissions:
   contents: read
@@ -64,7 +65,10 @@ jobs:
             --repo-var-enabled \
             --format json >/dev/null
 
-      - name: Stop before collection until future approved enable gate
+      - name: Run bounded controlled schedule pilot
         run: |
-          echo "Continuous collection remains disabled in this task." >&2
-          exit 1
+          python3 -B scripts/ho_factory.py hoxline-controlled-schedule-pilot \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --fixture \
+            --cycle-count 2 \
+            --format json >/dev/null

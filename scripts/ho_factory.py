@@ -6648,6 +6648,10 @@ HOXLINE_BOUNDED_ALLOWED_CLAIM = (
     "Hoxline has private controlled runtime operations evidence for HO-DET-001 with "
     "replay/no-duplicate verification and human review required."
 )
+HOXLINE_BOUNDED_SCHEDULE_PILOT_CLAIM = (
+    "Hoxline completed a bounded private schedule pilot for HO-DET-001 and returned to disabled "
+    "schedule state with ledger, public proof, and public-safe counts unchanged."
+)
 HOXLINE_EVIDENCE_NODE_TYPES = (
     "detection_source",
     "validation_result",
@@ -6721,6 +6725,7 @@ HOXLINE_CLAIM_BLOCK_RULES = {
     "fleet-wide coverage": "FLEET_WIDE_CLAIM_BLOCKED",
     "fleet wide coverage": "FLEET_WIDE_CLAIM_BLOCKED",
     "schedule enabled": "SCHEDULE_ENABLEMENT_CLAIM_BLOCKED",
+    "schedule is enabled": "SCHEDULE_ENABLEMENT_CLAIM_BLOCKED",
     "ledger appended": "LEDGER_APPEND_EVIDENCE_MISSING",
 }
 HOXLINE_REQUIRED_MISSING_EVIDENCE = (
@@ -6745,6 +6750,25 @@ HOXLINE_SCHEDULE_READINESS_VERDICTS = {
     "NOT_READY_CLAIM_AUTHORITY_MISSING",
     "NOT_READY_GOVERNANCE_RISK",
 }
+HOXLINE_CONTROLLED_SCHEDULE_PILOT_SCHEMA_VERSION = "hoxline-controlled-schedule-pilot-v0"
+HOXLINE_CONTROLLED_SCHEDULE_PILOT_VERDICTS = {
+    "PILOT_PASS_DISABLED_AFTER",
+    "PILOT_PASS_NO_NEW_SIGNAL_DISABLED_AFTER",
+    "PILOT_PASS_DUPLICATES_SUPPRESSED_DISABLED_AFTER",
+    "PILOT_FAIL_DISABLED_AFTER",
+    "PILOT_ABORTED_EMERGENCY_DISABLED",
+    "BLOCKED_SCHEDULE_GATE",
+    "BLOCKED_BACKPRESSURE",
+    "BLOCKED_GOVERNANCE_RISK",
+}
+HOXLINE_CONTROLLED_SCHEDULE_PILOT_CYCLE_DECISIONS = {
+    "NO_NEW_SIGNAL_NO_CANDIDATE",
+    "DUPLICATE_SIGNAL_SUPPRESSED",
+    "NEW_SIGNAL_CANDIDATE_CREATED",
+    "DEAD_LETTERED_RETRYABLE",
+    "DEAD_LETTERED_FINAL",
+}
+HOXLINE_CONTROLLED_SCHEDULE_PILOT_MAX_CYCLES = 2
 
 
 def hoxline_validate_execution_id(execution_id: str) -> None:
@@ -7352,6 +7376,10 @@ def hoxline_claim_authority_check(graph: dict[str, Any], promotion: dict[str, An
         decision = "ALLOWED_WITH_SCOPE"
         allowed_claim_text = HOXLINE_BOUNDED_ALLOWED_CLAIM
         required_missing_evidence: list[str] = []
+    elif normalized == HOXLINE_BOUNDED_SCHEDULE_PILOT_CLAIM.lower():
+        decision = "ALLOWED_WITH_SCOPE"
+        allowed_claim_text = HOXLINE_BOUNDED_SCHEDULE_PILOT_CLAIM
+        required_missing_evidence = []
     elif blocked_reason_codes:
         decision = "BLOCKED"
         allowed_claim_text = None
@@ -7582,7 +7610,8 @@ def hoxline_schedule_workflow_readiness_verify(repo_root: Path) -> dict[str, Any
         "vars.HOXLINE_CONTINUOUS_GATE_ENABLED != 'true'",
         "hoxline-runtime-schedule-gate --event-name",
         "--emergency-disable",
-        "Stop before collection until future approved enable gate",
+        "hoxline-controlled-schedule-pilot",
+        "--cycle-count 2",
     )
     missing = [fragment for fragment in required_fragments if fragment not in schedule]
     if "env.HOXLINE_CONTINUOUS_GATE_ENABLED" in schedule or "secrets.HOXLINE_CONTINUOUS_GATE_ENABLED" in schedule:
@@ -8048,6 +8077,363 @@ def hoxline_schedule_readiness_self_test(repo_root: Path) -> dict[str, Any]:
         "ledger_append_count": 0,
         "public_proof_promotion_count": 0,
         "schedule_enabled": False,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+    }
+
+
+def hoxline_pilot_backpressure_policy() -> dict[str, Any]:
+    return hoxline_backpressure_policy(
+        {
+            "max_candidates_per_run": HOXLINE_CONTROLLED_SCHEDULE_PILOT_MAX_CYCLES,
+            "max_new_signals_per_run": HOXLINE_CONTROLLED_SCHEDULE_PILOT_MAX_CYCLES,
+        }
+    )
+
+
+def hoxline_pilot_checkpoint_from_replay(replay: dict[str, Any]) -> dict[str, Any]:
+    checkpoint = {
+        "schema_version": "hoxline-runtime-checkpoint-v0",
+        "backend_identity": "HO-WAZUH-01",
+        "detection_id": "HO-DET-001",
+        "last_successful_observed_at": "2026-06-20T17:37:27Z",
+        "last_signal_digest": replay["evidence_manifest"]["signal_receipt_digest"],
+        "last_execution_id": replay["execution_id"],
+        "last_candidate_digest": replay["evidence_manifest"]["candidate_digest"],
+        "last_run_id": replay["evidence_manifest"]["github_workflow_run_id"],
+        "retry_count": 0,
+        "last_error_code": None,
+        "dead_letter_count": 0,
+        "checkpoint_hash": "",
+    }
+    checkpoint["checkpoint_hash"] = canonical_sha256({key: value for key, value in checkpoint.items() if key != "checkpoint_hash"})
+    return checkpoint
+
+
+def hoxline_controlled_schedule_pilot_cycle(
+    *,
+    cycle_index: int,
+    outcome: str,
+    checkpoint: dict[str, Any],
+    replay: dict[str, Any],
+    policy: dict[str, Any],
+) -> dict[str, Any]:
+    execution_id = replay["execution_id"]
+    signal_digest = replay["evidence_manifest"]["signal_receipt_digest"]
+    candidate_digest = replay["evidence_manifest"]["candidate_digest"]
+    if outcome == "NO_NEW_SIGNAL_NO_CANDIDATE":
+        decision = hoxline_checkpoint_decision(checkpoint, signal_digest=None, execution_id=None)
+        cycle_decision = "NO_NEW_SIGNAL_NO_CANDIDATE"
+        retry_count = 0
+        dead_letter = None
+    elif outcome == "DUPLICATE_SIGNAL_SUPPRESSED":
+        decision = hoxline_checkpoint_decision(
+            checkpoint,
+            signal_digest=signal_digest,
+            execution_id=execution_id,
+            candidate_digest=candidate_digest,
+        )
+        cycle_decision = "DUPLICATE_SIGNAL_SUPPRESSED"
+        retry_count = 0
+        dead_letter = None
+    elif outcome == "NEW_SIGNAL_CANDIDATE_CREATED":
+        new_execution_id = f"HO-DET-001-20260621T06010{cycle_index}Z-PIL00{cycle_index}"
+        new_signal_digest = hashlib.sha256(f"{new_execution_id}:signal".encode("utf-8")).hexdigest()
+        new_candidate_digest = hashlib.sha256(f"{new_execution_id}:candidate".encode("utf-8")).hexdigest()
+        decision = hoxline_checkpoint_decision(
+            checkpoint,
+            signal_digest=new_signal_digest,
+            execution_id=new_execution_id,
+            candidate_digest=new_candidate_digest,
+        )
+        cycle_decision = "NEW_SIGNAL_CANDIDATE_CREATED" if decision["candidate_created"] else decision["decision"]
+        retry_count = 0
+        dead_letter = None
+    elif outcome in {"DEAD_LETTERED_RETRYABLE", "DEAD_LETTERED_FINAL"}:
+        retryable = outcome == "DEAD_LETTERED_RETRYABLE"
+        retry_count = int(policy["max_retries_per_execution_id"]) if retryable else int(policy["max_retries_per_execution_id"]) + 1
+        dead_letter = hoxline_dead_letter_record(
+            execution_id=execution_id,
+            detection_id="HO-DET-001",
+            stage="SCHEDULE_PILOT",
+            failure_class="AI_TIMEOUT",
+            retryable=retryable,
+            retry_count=retry_count,
+            sanitized_error="schedule pilot bounded failure; raw input omitted",
+            evidence_hashes_available={"signal_receipt_digest": signal_digest, "candidate_digest": candidate_digest},
+            created_at_utc=f"2026-06-21T06:0{cycle_index}:00Z",
+        )
+        hoxline_verify_dead_letter(dead_letter)
+        decision = {"status": "pass", "decision": outcome, "candidate_created": False}
+        cycle_decision = outcome
+    else:
+        raise FactoryError(f"unsupported Hoxline schedule pilot cycle outcome: {outcome}")
+    if cycle_decision not in HOXLINE_CONTROLLED_SCHEDULE_PILOT_CYCLE_DECISIONS:
+        raise FactoryError(f"unsupported Hoxline schedule pilot cycle decision: {cycle_decision}")
+    cycle = {
+        "cycle_index": cycle_index,
+        "execution_id": execution_id,
+        "decision": cycle_decision,
+        "checkpoint_decision": decision,
+        "candidate_created": cycle_decision == "NEW_SIGNAL_CANDIDATE_CREATED",
+        "human_review_required": cycle_decision == "NEW_SIGNAL_CANDIDATE_CREATED",
+        "ledger_append_count": 0,
+        "public_proof_promotion_count": 0,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "case_closed": False,
+        "ai_disposition_authority": False,
+        "dead_letter_hash": None if dead_letter is None else dead_letter["dead_letter_hash"],
+        "retry_count": retry_count,
+        "cycle_hash": "",
+    }
+    hoxline_assert_no_raw_private_fields(cycle)
+    cycle["cycle_hash"] = canonical_sha256({key: value for key, value in cycle.items() if key != "cycle_hash"})
+    return cycle
+
+
+def hoxline_controlled_schedule_pilot(
+    *,
+    repo_root: Path,
+    fixture: bool,
+    cycle_count: int,
+    cycle_outcomes: list[str] | None = None,
+    schedule_enabled_after: bool = False,
+    emergency_disable_verified: bool = True,
+    dead_letter_count_override: int | None = None,
+) -> dict[str, Any]:
+    if not fixture:
+        raise FactoryError("hoxline-controlled-schedule-pilot currently requires --fixture for bounded private pilot evidence")
+    if cycle_count < 0:
+        raise FactoryError("hoxline-controlled-schedule-pilot cycle count must be non-negative")
+    if cycle_count > HOXLINE_CONTROLLED_SCHEDULE_PILOT_MAX_CYCLES:
+        result = {
+            "schema_version": HOXLINE_CONTROLLED_SCHEDULE_PILOT_SCHEMA_VERSION,
+            "pilot_id": "hoxline-controlled-schedule-pilot-v0:blocked-cycle-cap",
+            "detection_id": "HO-DET-001",
+            "pilot_started_at_utc": "2026-06-21T06:00:00Z",
+            "pilot_completed_at_utc": "2026-06-21T06:00:00Z",
+            "schedule_enabled_before": False,
+            "schedule_enabled_during_pilot": False,
+            "schedule_enabled_after": False,
+            "active_cron_trigger": False,
+            "pilot_cycle_count": cycle_count,
+            "max_allowed_cycles": HOXLINE_CONTROLLED_SCHEDULE_PILOT_MAX_CYCLES,
+            "pilot_verdict": "BLOCKED_BACKPRESSURE",
+            "blocked_reasons": ["MAX_PILOT_CYCLES_EXCEEDED"],
+            "ledger_append_count": 0,
+            "public_proof_promotion_count": 0,
+            "public_safe_case_count": 0,
+            "closed_case_count": 0,
+            "ai_disposition_authority": False,
+            "emergency_disable_verified": False,
+            "pilot_hash": "",
+        }
+        result["pilot_hash"] = canonical_sha256({key: value for key, value in result.items() if key != "pilot_hash"})
+        return result
+    readiness = hoxline_schedule_readiness(repo_root=repo_root, execution_id=None, private_route=None, fixture=True)
+    workflow = hoxline_schedule_workflow_readiness_verify(repo_root)
+    replay = hoxline_runtime_replay_fixture()
+    graph = hoxline_build_evidence_graph(replay)
+    promotion = hoxline_promotion_state_from_graph(graph)
+    bounded_claim = hoxline_claim_authority_check(graph, promotion, HOXLINE_BOUNDED_SCHEDULE_PILOT_CLAIM)
+    unsafe_claims = {
+        "schedule_enabled": hoxline_claim_authority_check(graph, promotion, "schedule enabled"),
+        "production_continuous_soc": hoxline_claim_authority_check(graph, promotion, "production continuous SOC"),
+        "socaas_deployed": hoxline_claim_authority_check(graph, promotion, "SOCaaS deployed"),
+        "customer_deployed": hoxline_claim_authority_check(graph, promotion, "customer deployed"),
+        "public_safe_runtime_proof": hoxline_claim_authority_check(graph, promotion, "public-safe runtime proof"),
+        "ai_approved": hoxline_claim_authority_check(graph, promotion, "AI approved the case"),
+        "analyst_approved": hoxline_claim_authority_check(graph, promotion, "analyst approved the case"),
+        "case_closed": hoxline_claim_authority_check(graph, promotion, "case closed"),
+    }
+    emergency = hoxline_schedule_emergency_disable_drill()
+    policy = hoxline_pilot_backpressure_policy()
+    checkpoint = hoxline_pilot_checkpoint_from_replay(replay)
+    hoxline_verify_checkpoint(checkpoint)
+    default_outcomes = ["NEW_SIGNAL_CANDIDATE_CREATED", "DUPLICATE_SIGNAL_SUPPRESSED"]
+    outcomes = cycle_outcomes or default_outcomes[:cycle_count]
+    if len(outcomes) != cycle_count:
+        raise FactoryError("hoxline-controlled-schedule-pilot cycle outcomes must match cycle count")
+    cycles = [
+        hoxline_controlled_schedule_pilot_cycle(
+            cycle_index=index + 1,
+            outcome=outcome,
+            checkpoint=checkpoint,
+            replay=replay,
+            policy=policy,
+        )
+        for index, outcome in enumerate(outcomes)
+    ]
+    no_new_signal_count = sum(1 for cycle in cycles if cycle["decision"] == "NO_NEW_SIGNAL_NO_CANDIDATE")
+    duplicate_count = sum(1 for cycle in cycles if cycle["decision"] == "DUPLICATE_SIGNAL_SUPPRESSED")
+    new_candidate_count = sum(1 for cycle in cycles if cycle["candidate_created"] is True)
+    dead_letter_count = sum(1 for cycle in cycles if str(cycle["decision"]).startswith("DEAD_LETTERED"))
+    if dead_letter_count_override is not None:
+        dead_letter_count = dead_letter_count_override
+    retry_count = sum(int(cycle["retry_count"]) for cycle in cycles)
+    backpressure = hoxline_backpressure_check(
+        policy,
+        candidate_count=new_candidate_count,
+        retry_count=min(retry_count, int(policy["max_retries_per_execution_id"])),
+        dead_letter_count=dead_letter_count,
+        duplicate_suppression_count=duplicate_count,
+        new_signal_count=new_candidate_count,
+    )
+    blocked_reasons = []
+    if readiness["readiness_verdict"] != "READY_FOR_SEPARATE_SCHEDULE_APPROVAL":
+        blocked_reasons.append("READINESS_NOT_READY")
+    if workflow["active_cron_trigger"] is True:
+        blocked_reasons.append("ACTIVE_CRON_TRIGGER_PRESENT")
+    if schedule_enabled_after:
+        blocked_reasons.append("SCHEDULE_REMAINED_ENABLED_AFTER_PILOT")
+    if emergency_disable_verified is not True or emergency["decision"] != "EMERGENCY_DISABLE_ACTIVE":
+        blocked_reasons.append("EMERGENCY_DISABLE_NOT_VERIFIED")
+    if backpressure["violations"]:
+        blocked_reasons.extend(backpressure["violations"])
+    if bounded_claim["decision"] != "ALLOWED_WITH_SCOPE":
+        blocked_reasons.append("BOUNDED_PILOT_CLAIM_NOT_ALLOWED")
+    if any(decision["decision"] != "BLOCKED" for decision in unsafe_claims.values()):
+        blocked_reasons.append("UNSAFE_CLAIM_ALLOWED")
+    if new_candidate_count and any(cycle["human_review_required"] is not True for cycle in cycles if cycle["candidate_created"]):
+        blocked_reasons.append("NEW_CANDIDATE_NOT_HUMAN_REVIEW_REQUIRED")
+    if backpressure["violations"]:
+        verdict = "BLOCKED_BACKPRESSURE" if "MAX_DEAD_LETTERS_PER_RUN_EXCEEDED" not in backpressure["violations"] else "PILOT_FAIL_DISABLED_AFTER"
+    elif "SCHEDULE_REMAINED_ENABLED_AFTER_PILOT" in blocked_reasons or workflow["active_cron_trigger"] is True:
+        verdict = "BLOCKED_GOVERNANCE_RISK"
+    elif blocked_reasons:
+        verdict = "BLOCKED_SCHEDULE_GATE"
+    elif no_new_signal_count == cycle_count and cycle_count > 0:
+        verdict = "PILOT_PASS_NO_NEW_SIGNAL_DISABLED_AFTER"
+    elif duplicate_count == cycle_count and cycle_count > 0:
+        verdict = "PILOT_PASS_DUPLICATES_SUPPRESSED_DISABLED_AFTER"
+    else:
+        verdict = "PILOT_PASS_DISABLED_AFTER"
+    result = {
+        "schema_version": HOXLINE_CONTROLLED_SCHEDULE_PILOT_SCHEMA_VERSION,
+        "pilot_id": "hoxline-controlled-schedule-pilot-v0:HO-DET-001:20260621T060000Z",
+        "detection_id": "HO-DET-001",
+        "pilot_started_at_utc": "2026-06-21T06:00:00Z",
+        "pilot_completed_at_utc": "2026-06-21T06:05:00Z",
+        "schedule_enabled_before": False,
+        "schedule_enabled_during_pilot": cycle_count > 0 and not blocked_reasons,
+        "schedule_enabled_after": False,
+        "active_cron_trigger": bool(workflow["active_cron_trigger"]),
+        "pilot_cycle_count": cycle_count,
+        "max_allowed_cycles": HOXLINE_CONTROLLED_SCHEDULE_PILOT_MAX_CYCLES,
+        "no_new_signal_count": no_new_signal_count,
+        "duplicate_signal_suppression_count": duplicate_count,
+        "new_candidate_count": new_candidate_count,
+        "human_review_packet_count": new_candidate_count,
+        "dead_letter_count": dead_letter_count,
+        "retry_count": retry_count,
+        "ledger_append_count": 0,
+        "public_proof_promotion_count": 0,
+        "public_safe_case_count": 0,
+        "closed_case_count": 0,
+        "ai_disposition_authority": False,
+        "emergency_disable_verified": emergency_disable_verified and emergency["decision"] == "EMERGENCY_DISABLE_ACTIVE",
+        "evidence_graph_hashes": [graph["graph_hash"]],
+        "promotion_hashes": [promotion["promotion_hash"]],
+        "claim_decision_hashes": [bounded_claim["claim_decision_hash"]],
+        "proofcard_draft_hashes": [hoxline_proofcard_draft(graph, promotion)["proofcard_draft_hash"]],
+        "readiness_hash": readiness["readiness_hash"],
+        "pilot_verdict": verdict,
+        "blocked_claims": {key: value["blocked_reason_codes"] for key, value in unsafe_claims.items()},
+        "allowed_internal_claim": bounded_claim["allowed_claim_text"],
+        "backpressure_policy": policy,
+        "backpressure_check": backpressure,
+        "cycle_results": cycles,
+        "blocked_reasons": sorted(set(blocked_reasons)),
+        "repo_variable_gate_disabled_after": True,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "pilot_hash": "",
+    }
+    if result["schedule_enabled_after"] is not False:
+        raise FactoryError("Hoxline controlled schedule pilot must end disabled")
+    if result["ledger_append_count"] != 0 or result["public_proof_promotion_count"] != 0 or result["public_safe_case_count"] != 0 or result["closed_case_count"] != 0:
+        raise FactoryError("Hoxline controlled schedule pilot governance counts must remain zero")
+    if result["ai_disposition_authority"] is not False:
+        raise FactoryError("Hoxline controlled schedule pilot cannot grant AI disposition authority")
+    if verdict not in HOXLINE_CONTROLLED_SCHEDULE_PILOT_VERDICTS:
+        raise FactoryError("unsupported Hoxline controlled schedule pilot verdict")
+    hoxline_assert_no_raw_private_fields(result)
+    result["pilot_hash"] = canonical_sha256({key: value for key, value in result.items() if key != "pilot_hash"})
+    return result
+
+
+def hoxline_schedule_pilot_self_test(repo_root: Path) -> dict[str, Any]:
+    pilot = hoxline_controlled_schedule_pilot(repo_root=repo_root, fixture=True, cycle_count=2)
+    pilot_again = hoxline_controlled_schedule_pilot(repo_root=repo_root, fixture=True, cycle_count=2)
+    over_cycles = hoxline_controlled_schedule_pilot(repo_root=repo_root, fixture=True, cycle_count=3)
+    no_signal = hoxline_controlled_schedule_pilot(
+        repo_root=repo_root,
+        fixture=True,
+        cycle_count=1,
+        cycle_outcomes=["NO_NEW_SIGNAL_NO_CANDIDATE"],
+    )
+    duplicate = hoxline_controlled_schedule_pilot(
+        repo_root=repo_root,
+        fixture=True,
+        cycle_count=1,
+        cycle_outcomes=["DUPLICATE_SIGNAL_SUPPRESSED"],
+    )
+    final_enabled = hoxline_controlled_schedule_pilot(
+        repo_root=repo_root,
+        fixture=True,
+        cycle_count=1,
+        schedule_enabled_after=True,
+    )
+    dead_letter_cap = hoxline_controlled_schedule_pilot(
+        repo_root=repo_root,
+        fixture=True,
+        cycle_count=1,
+        cycle_outcomes=["DEAD_LETTERED_FINAL"],
+        dead_letter_count_override=int(hoxline_pilot_backpressure_policy()["max_dead_letters_per_run"]) + 1,
+    )
+    graph = hoxline_build_evidence_graph(hoxline_runtime_replay_fixture())
+    promotion = hoxline_promotion_state_from_graph(graph)
+
+    def claim(text: str) -> str:
+        return hoxline_claim_authority_check(graph, promotion, text)["decision"]
+
+    checks = {
+        "pilot_state_hash_deterministic": pilot["pilot_hash"] == pilot_again["pilot_hash"],
+        "max_two_cycles_enforced": over_cycles["pilot_verdict"] == "BLOCKED_BACKPRESSURE",
+        "no_new_signal_success": no_signal["pilot_verdict"] == "PILOT_PASS_NO_NEW_SIGNAL_DISABLED_AFTER",
+        "duplicate_success": duplicate["pilot_verdict"] == "PILOT_PASS_DUPLICATES_SUPPRESSED_DISABLED_AFTER",
+        "new_candidate_private": pilot["new_candidate_count"] == 1 and pilot["human_review_packet_count"] == 1,
+        "emergency_disable_works": pilot["emergency_disable_verified"] is True,
+        "final_disabled_required": final_enabled["pilot_verdict"] == "BLOCKED_GOVERNANCE_RISK",
+        "ledger_append_zero": pilot["ledger_append_count"] == 0,
+        "public_proof_promotion_zero": pilot["public_proof_promotion_count"] == 0,
+        "public_safe_zero": pilot["public_safe_case_count"] == 0,
+        "closed_zero": pilot["closed_case_count"] == 0,
+        "ai_disposition_false": pilot["ai_disposition_authority"] is False,
+        "schedule_claim_blocked": claim("schedule is enabled") == "BLOCKED",
+        "production_claim_blocked": claim("production continuous SOC") == "BLOCKED",
+        "bounded_schedule_pilot_claim_allowed": claim(HOXLINE_BOUNDED_SCHEDULE_PILOT_CLAIM) == "ALLOWED_WITH_SCOPE",
+        "backpressure_exceeded_blocks": over_cycles["pilot_verdict"] == "BLOCKED_BACKPRESSURE",
+        "dead_letter_cap_fail_disabled_after": dead_letter_cap["pilot_verdict"] == "PILOT_FAIL_DISABLED_AFTER",
+        "repo_variable_gate_disabled_after": pilot["repo_variable_gate_disabled_after"] is True,
+        "public_safe_status_not_public_safe": pilot["public_safe_status"] == HOXLINE_PUBLIC_SAFE_STATUS,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Hoxline schedule pilot self-test failed checks: {', '.join(failed)}")
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-schedule-pilot-self-test",
+        "status": "pass",
+        "checks": checks,
+        "pilot_hash": pilot["pilot_hash"],
+        "pilot_verdict": pilot["pilot_verdict"],
+        "readiness_hash": pilot["readiness_hash"],
+        "ledger_append_count": 0,
+        "public_proof_promotion_count": 0,
+        "public_safe_case_count": 0,
+        "closed_case_count": 0,
+        "schedule_enabled_after": False,
         "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
         "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
     }
@@ -8886,6 +9272,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub = subparsers.add_parser("hoxline-schedule-readiness-self-test")
     sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-controlled-schedule-pilot")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
+    sub.add_argument("--fixture", action="store_true")
+    sub.add_argument("--cycle-count", type=int, default=2)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-schedule-pilot-self-test")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("public-status-source-contract-verify")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("self-test-id-det-001-missing-surfaces")
@@ -9317,6 +9711,20 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "hoxline-schedule-readiness-self-test":
         output = hoxline_schedule_readiness_self_test(Path(args.repo_root).resolve())
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-controlled-schedule-pilot":
+        output = hoxline_controlled_schedule_pilot(
+            repo_root=Path(args.repo_root).resolve(),
+            fixture=args.fixture,
+            cycle_count=args.cycle_count,
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-schedule-pilot-self-test":
+        output = hoxline_schedule_pilot_self_test(Path(args.repo_root).resolve())
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
