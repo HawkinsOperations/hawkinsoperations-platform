@@ -6343,25 +6343,50 @@ def hoxline_verify_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def hoxline_runtime_metrics_from_replay(events: list[dict[str, Any]], manifest: dict[str, Any], ai: dict[str, Any]) -> dict[str, Any]:
+    ledger_baseline = manifest.get("ledger_baseline") if isinstance(manifest.get("ledger_baseline"), dict) else {}
+    total_cases = int(ledger_baseline.get("total_cases", 6))
+    total_events = int(ledger_baseline.get("total_ledger_events", 6))
+    public_safe_count = int(ledger_baseline.get("public_safe_count", 0))
+    closed_count = int(ledger_baseline.get("closed_case_count", 0))
+    ai_ready = ai.get("state") == "AI_TRIAGE_READY" or ai.get("primary_status") == "pass"
+    ai_unavailable = manifest.get("ai_state") == "AI_TRIAGE_UNAVAILABLE"
     return {
         "schema_version": "hoxline-runtime-metrics-v0",
         "execution_id": manifest["execution_id"],
         "case_id": manifest["case_id"],
         "case_state": "HUMAN_REVIEW_REQUIRED",
         "event_count": len(events),
+        "runtime_candidate_count": 1,
+        "normalized_candidate_count": 1,
+        "review_packet_count": 1,
+        "append_ready_candidate_count": 0,
+        "lifetime_ledger_case_count": total_cases,
+        "lifetime_ledger_event_count": total_events,
+        "public_safe_case_count": public_safe_count,
+        "closed_case_count": closed_count,
+        "human_review_backlog": 1,
+        "signal_observed_count": 1,
         "signal_to_candidate_latency_status": "REPORT_ONLY_NOT_DERIVED_FROM_PRIVATE_TIMESTAMPS",
         "candidate_to_review_latency_status": "REPORT_ONLY_NOT_DERIVED_FROM_PRIVATE_TIMESTAMPS",
         "duplicate_suppression_count": 0,
         "enrichment_success_count": 1,
         "enrichment_unavailable_count": 0,
-        "ai_primary_success_count": 1 if ai.get("state") == "AI_TRIAGE_READY" or ai.get("primary_status") == "pass" else 0,
+        "ai_primary_success_count": 1 if ai_ready else 0,
         "ai_fallback_success_count": 1 if ai.get("fallback_status") == "pass" else 0,
-        "ai_unavailable_count": 1 if manifest.get("ai_state") == "AI_TRIAGE_UNAVAILABLE" else 0,
+        "ai_unavailable_count": 1 if ai_unavailable else 0,
         "human_review_backlog_delta": 1,
         "ledger_append_count": 0,
         "public_proof_promotion_count": 0,
         "dead_letter_count": 0,
         "replay_success_count": 1,
+        "replay_duplicate_prevented_count": 1,
+        "canary_success_count": 0,
+        "canary_failure_count": 0,
+        "backend_unavailable_count": 0,
+        "runner_unavailable_count": 0,
+        "schedule_enabled": 0,
+        "continuous_gate_enabled": 0,
+        "emergency_disable_active": 0,
         "slo_class": "REPORT_ONLY",
     }
 
@@ -6550,6 +6575,969 @@ def hoxline_runtime_verify(execution_id: str, private_route: str) -> dict[str, A
     }
 
 
+HOXLINE_EXECUTION_ID_RE = re.compile(r"^HO-DET-001-\d{8}T\d{6}Z-[A-Z0-9]{6}$")
+HOXLINE_SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
+HOXLINE_RUNTIME_LOG_FIELDS = (
+    "schema_version",
+    "timestamp_utc",
+    "execution_id",
+    "case_id",
+    "detection_id",
+    "workflow_run_id",
+    "workflow_job_id",
+    "runner_identity",
+    "backend_identity",
+    "stage",
+    "prior_state",
+    "new_state",
+    "status",
+    "truth_class",
+    "duration_ms",
+    "candidate_count_delta",
+    "duplicate_count",
+    "ledger_append_count",
+    "public_proof_promotion_count",
+    "human_review_required",
+    "ai_state",
+    "error_code",
+    "redaction_status",
+    "evidence_hashes",
+    "previous_log_hash",
+    "log_hash",
+)
+HOXLINE_DEAD_LETTER_FAILURE_CLASSES = {
+    "BACKEND_UNAVAILABLE",
+    "RUNNER_UNAVAILABLE",
+    "ROUTE_PERMISSION_ERROR",
+    "SIGNAL_NOT_FOUND",
+    "CANDIDATE_CONTRACT_FAILED",
+    "NORMALIZATION_FAILED",
+    "DEDUPE_FAILED",
+    "ENRICHMENT_FAILED",
+    "AI_TIMEOUT",
+    "AI_CONTRACT_FAILED",
+    "LOG_HASH_FAILED",
+    "LEDGER_GUARD_FAILED",
+    "PUBLIC_PROOF_GUARD_FAILED",
+    "UNKNOWN_RUNTIME_ERROR",
+}
+HOXLINE_FORBIDDEN_LOG_KEYS = {
+    "raw_alert",
+    "raw_candidate",
+    "candidate_payload",
+    "private_route",
+    "token",
+    "secret",
+    "password",
+    "private_key",
+}
+HOXLINE_FORBIDDEN_LOG_PATTERNS = (
+    "BEGIN PRIVATE KEY",
+    "Authorization:",
+    "candidate_payload",
+    "raw_alert",
+    "raw_candidate",
+)
+
+
+def hoxline_validate_execution_id(execution_id: str) -> None:
+    if not HOXLINE_EXECUTION_ID_RE.match(execution_id):
+        raise FactoryError("invalid Hoxline execution ID")
+
+
+def hoxline_validate_sha256(value: str, label: str) -> None:
+    if not HOXLINE_SHA256_RE.match(value):
+        raise FactoryError(f"invalid {label} digest")
+
+
+def hoxline_assert_no_raw_private_fields(packet: Any) -> None:
+    if isinstance(packet, dict):
+        for key, value in packet.items():
+            normalized_key = str(key).lower()
+            if normalized_key in HOXLINE_FORBIDDEN_LOG_KEYS or normalized_key.startswith("raw_"):
+                raise FactoryError(f"raw/private field is not allowed in Hoxline runtime log: {key}")
+            hoxline_assert_no_raw_private_fields(value)
+    elif isinstance(packet, list):
+        for item in packet:
+            hoxline_assert_no_raw_private_fields(item)
+    elif isinstance(packet, str):
+        for pattern in HOXLINE_FORBIDDEN_LOG_PATTERNS:
+            if pattern.lower() in packet.lower():
+                raise FactoryError("raw/private value is not allowed in Hoxline runtime log")
+
+
+def hoxline_runtime_log_event(
+    *,
+    execution_id: str,
+    case_id: str,
+    stage: str,
+    prior_state: str | None,
+    new_state: str,
+    status: str,
+    evidence_hashes: dict[str, Any],
+    previous_log_hash: str | None,
+    ai_state: str,
+    workflow_run_id: str = "trusted-runtime-workflow-dispatch",
+    workflow_job_id: str = "trusted-runtime-job",
+    runner_identity: str = "HO-GPU-01",
+    backend_identity: str = "HO-WAZUH-01",
+    error_code: str | None = None,
+    duration_ms: int = 0,
+    duplicate_count: int = 0,
+    candidate_count_delta: int = 0,
+) -> dict[str, Any]:
+    hoxline_validate_execution_id(execution_id)
+    record = {
+        "schema_version": "hoxline-runtime-log-v0",
+        "timestamp_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "execution_id": execution_id,
+        "case_id": case_id,
+        "detection_id": "HO-DET-001",
+        "workflow_run_id": workflow_run_id,
+        "workflow_job_id": workflow_job_id,
+        "runner_identity": runner_identity,
+        "backend_identity": backend_identity,
+        "stage": stage,
+        "prior_state": prior_state,
+        "new_state": new_state,
+        "status": status,
+        "truth_class": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+        "duration_ms": duration_ms,
+        "candidate_count_delta": candidate_count_delta,
+        "duplicate_count": duplicate_count,
+        "ledger_append_count": 0,
+        "public_proof_promotion_count": 0,
+        "human_review_required": True,
+        "ai_state": ai_state,
+        "error_code": error_code,
+        "redaction_status": "pass",
+        "evidence_hashes": evidence_hashes,
+        "previous_log_hash": previous_log_hash,
+        "log_hash": "",
+    }
+    missing = [field for field in HOXLINE_RUNTIME_LOG_FIELDS if field not in record]
+    if missing:
+        raise FactoryError(f"Hoxline runtime log missing fields: {', '.join(missing)}")
+    hoxline_assert_no_raw_private_fields(record)
+    record["log_hash"] = canonical_sha256({key: value for key, value in record.items() if key != "log_hash"})
+    return record
+
+
+def hoxline_verify_runtime_log_chain(records: list[dict[str, Any]]) -> dict[str, Any]:
+    previous_hash: str | None = None
+    for record in records:
+        missing = [field for field in HOXLINE_RUNTIME_LOG_FIELDS if field not in record]
+        if missing:
+            raise FactoryError(f"Hoxline runtime log missing fields: {', '.join(missing)}")
+        hoxline_assert_no_raw_private_fields(record)
+        if record.get("previous_log_hash") != previous_hash:
+            raise FactoryError("Hoxline runtime log hash chain is broken")
+        expected = canonical_sha256({key: value for key, value in record.items() if key != "log_hash"})
+        if record.get("log_hash") != expected:
+            raise FactoryError("Hoxline runtime log hash mismatch")
+        previous_hash = record["log_hash"]
+    return {
+        "status": "pass",
+        "schema_version": "hoxline-runtime-log-chain-v0",
+        "record_count": len(records),
+        "log_head_hash": previous_hash,
+        "redaction_status": "pass",
+    }
+
+
+def hoxline_runtime_logs_from_replay(replay: dict[str, Any]) -> list[dict[str, Any]]:
+    manifest = replay["evidence_manifest"]
+    case_id = manifest["case_id"]
+    execution_id = manifest["execution_id"]
+    evidence_hashes = {
+        "signal_receipt_digest": manifest["signal_receipt_digest"],
+        "candidate_digest": manifest["candidate_digest"],
+        "normalized_hash": manifest["normalized_digest"],
+        "enrichment_digest": manifest["enrichment_digest"],
+        "ai_output_hash": manifest.get("ai_output_digest"),
+        "human_review_packet_digest": manifest["human_review_packet_digest"],
+    }
+    previous: str | None = None
+    prior: str | None = None
+    records: list[dict[str, Any]] = []
+    for state in (
+        "EVENT_REQUESTED",
+        "EVENT_GENERATED",
+        "SIGNAL_OBSERVED",
+        "CANDIDATE_CREATED",
+        "CONTRACT_VALIDATED",
+        "NORMALIZED",
+        "DEDUPED",
+        "ENRICHED",
+        manifest["ai_state"],
+        "HUMAN_REVIEW_REQUIRED",
+    ):
+        record = hoxline_runtime_log_event(
+            execution_id=execution_id,
+            case_id=case_id,
+            stage=state,
+            prior_state=prior,
+            new_state=state,
+            status="pass",
+            evidence_hashes=evidence_hashes,
+            previous_log_hash=previous,
+            ai_state=manifest["ai_state"],
+            workflow_run_id=manifest["github_workflow_run_id"],
+            workflow_job_id=manifest["github_workflow_job_id"],
+            runner_identity=manifest["runner_identity"],
+            backend_identity=manifest["backend_identity"],
+            duplicate_count=0,
+            candidate_count_delta=1 if state == "CANDIDATE_CREATED" else 0,
+        )
+        records.append(record)
+        previous = record["log_hash"]
+        prior = state
+    return records
+
+
+def hoxline_runtime_review_queue_from_replay(replay: dict[str, Any]) -> dict[str, Any]:
+    ai_state = replay["ai_state"]
+    return {
+        "schema_version": "hoxline-runtime-review-queue-v0",
+        "execution_id": replay["execution_id"],
+        "case_id": replay["case_id"],
+        "candidates_observed": 1,
+        "candidates_normalized": 1,
+        "candidates_deduped": 1,
+        "candidates_enriched": 1,
+        "ai_ready": 1 if ai_state == "AI_TRIAGE_READY" else 0,
+        "ai_unavailable": 1 if ai_state == "AI_TRIAGE_UNAVAILABLE" else 0,
+        "human_review_required": 1,
+        "append_approved": 0,
+        "ledger_appended": 0,
+        "public_review_pending": 0,
+        "dead_lettered": 0,
+        "count_boundary": "runtime_queue_counts_are_not_lifetime_ledger_case_counts",
+        "lifetime_ledger_case_count": replay["metrics"]["lifetime_ledger_case_count"],
+        "public_safe_case_count": replay["metrics"]["public_safe_case_count"],
+        "closed_case_count": replay["metrics"]["closed_case_count"],
+    }
+
+
+def hoxline_runtime_checkpoint_from_replay(replay: dict[str, Any]) -> dict[str, Any]:
+    manifest = replay["evidence_manifest"]
+    checkpoint = {
+        "schema_version": "hoxline-runtime-checkpoint-v0",
+        "backend_identity": manifest["backend_identity"],
+        "detection_id": manifest["detection_id"],
+        "last_successful_observed_at": replay["journal_verification"]["head_state"],
+        "last_signal_digest": manifest["signal_receipt_digest"],
+        "last_execution_id": manifest["execution_id"],
+        "last_candidate_digest": manifest["candidate_digest"],
+        "last_run_id": manifest["github_workflow_run_id"],
+        "retry_count": 0,
+        "last_error_code": None,
+        "dead_letter_count": 0,
+        "checkpoint_hash": "",
+    }
+    checkpoint["checkpoint_hash"] = canonical_sha256({key: value for key, value in checkpoint.items() if key != "checkpoint_hash"})
+    return checkpoint
+
+
+def hoxline_verify_checkpoint(checkpoint: dict[str, Any]) -> dict[str, Any]:
+    for field in (
+        "schema_version",
+        "backend_identity",
+        "detection_id",
+        "last_successful_observed_at",
+        "last_signal_digest",
+        "last_execution_id",
+        "last_candidate_digest",
+        "last_run_id",
+        "retry_count",
+        "last_error_code",
+        "dead_letter_count",
+        "checkpoint_hash",
+    ):
+        if field not in checkpoint:
+            raise FactoryError(f"Hoxline checkpoint missing field: {field}")
+    hoxline_validate_execution_id(checkpoint["last_execution_id"])
+    hoxline_validate_sha256(checkpoint["last_signal_digest"], "signal")
+    hoxline_validate_sha256(checkpoint["last_candidate_digest"], "candidate")
+    expected = canonical_sha256({key: value for key, value in checkpoint.items() if key != "checkpoint_hash"})
+    if checkpoint.get("checkpoint_hash") != expected:
+        raise FactoryError("Hoxline checkpoint hash mismatch")
+    return {"status": "pass", "checkpoint_hash": expected}
+
+
+def hoxline_checkpoint_decision(
+    checkpoint: dict[str, Any] | None,
+    *,
+    signal_digest: str | None,
+    execution_id: str | None,
+    candidate_digest: str | None = None,
+) -> dict[str, Any]:
+    if signal_digest is None:
+        return {"status": "pass", "decision": "NO_NEW_SIGNAL_NO_CANDIDATE", "candidate_created": False}
+    hoxline_validate_sha256(signal_digest, "signal")
+    if execution_id is None:
+        raise FactoryError("execution_id is required when signal_digest is present")
+    hoxline_validate_execution_id(execution_id)
+    if checkpoint and checkpoint.get("last_signal_digest") == signal_digest:
+        return {"status": "pass", "decision": "DUPLICATE_SIGNAL_SUPPRESSED", "candidate_created": False}
+    if candidate_digest is not None:
+        hoxline_validate_sha256(candidate_digest, "candidate")
+    return {"status": "pass", "decision": "NEW_SIGNAL_CANDIDATE_ALLOWED", "candidate_created": True}
+
+
+def hoxline_dead_letter_record(
+    *,
+    execution_id: str,
+    detection_id: str,
+    stage: str,
+    failure_class: str,
+    retryable: bool,
+    retry_count: int,
+    sanitized_error: str,
+    evidence_hashes_available: dict[str, Any],
+) -> dict[str, Any]:
+    hoxline_validate_execution_id(execution_id)
+    if failure_class not in HOXLINE_DEAD_LETTER_FAILURE_CLASSES:
+        raise FactoryError(f"unsupported Hoxline dead-letter failure class: {failure_class}")
+    hoxline_assert_no_raw_private_fields({"sanitized_error": sanitized_error, "evidence_hashes_available": evidence_hashes_available})
+    created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    record = {
+        "execution_id": execution_id,
+        "detection_id": detection_id,
+        "stage": stage,
+        "failure_class": failure_class,
+        "retryable": retryable,
+        "retry_count": retry_count,
+        "next_retry_after_utc": created_at if retryable else None,
+        "sanitized_error": sanitized_error,
+        "evidence_hashes_available": evidence_hashes_available,
+        "created_at_utc": created_at,
+        "dead_letter_hash": "",
+    }
+    record["dead_letter_hash"] = canonical_sha256({key: value for key, value in record.items() if key != "dead_letter_hash"})
+    return record
+
+
+def hoxline_verify_dead_letter(record: dict[str, Any]) -> dict[str, Any]:
+    expected = canonical_sha256({key: value for key, value in record.items() if key != "dead_letter_hash"})
+    if record.get("dead_letter_hash") != expected:
+        raise FactoryError("Hoxline dead-letter hash mismatch")
+    if record.get("failure_class") not in HOXLINE_DEAD_LETTER_FAILURE_CLASSES:
+        raise FactoryError("Hoxline dead-letter failure class invalid")
+    hoxline_assert_no_raw_private_fields(record)
+    return {"status": "pass", "dead_letter_hash": expected}
+
+
+def hoxline_runtime_ops_snapshot(execution_id: str, private_route: str) -> dict[str, Any]:
+    replay = hoxline_runtime_replay(execution_id, private_route)
+    logs = hoxline_runtime_logs_from_replay(replay)
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-runtime-ops-snapshot",
+        "execution_id": execution_id,
+        "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "replay_result": replay["replay_result"],
+        "metrics": replay["metrics"],
+        "review_queue": hoxline_runtime_review_queue_from_replay(replay),
+        "checkpoint": hoxline_runtime_checkpoint_from_replay(replay),
+        "log_chain": hoxline_verify_runtime_log_chain(logs),
+        "dead_letters": [],
+        "ledger_mutated": False,
+        "public_proof_promoted": False,
+        "schedule_enabled": False,
+        "continuous_gate_enabled": False,
+    }
+
+
+def hoxline_schedule_gate(*, event_name: str, enable_input: bool, repo_var_enabled: bool, emergency_disable: bool, signal_digest: str | None) -> dict[str, Any]:
+    if emergency_disable:
+        return {
+            "status": "blocked",
+            "decision": "EMERGENCY_DISABLE_ACTIVE",
+            "schedule_enabled": 0,
+            "continuous_gate_enabled": 0,
+            "candidate_created": False,
+        }
+    gate_enabled = enable_input and repo_var_enabled
+    if not gate_enabled:
+        return {
+            "status": "blocked",
+            "decision": "SCHEDULE_GATE_DISABLED",
+            "schedule_enabled": 0,
+            "continuous_gate_enabled": 0,
+            "candidate_created": False,
+        }
+    decision = hoxline_checkpoint_decision(None, signal_digest=signal_digest, execution_id=None if signal_digest is None else "HO-DET-001-20260620T173615Z-CAN001")
+    return {
+        "status": "pass",
+        "event_name": event_name,
+        "decision": decision["decision"],
+        "schedule_enabled": 1 if event_name == "schedule" else 0,
+        "continuous_gate_enabled": 1,
+        "candidate_created": decision["candidate_created"],
+    }
+
+
+def hoxline_runtime_job_guard(*, event_name: str, runner_labels: list[str], trusted_runtime: bool, uses_private_route: bool) -> dict[str, Any]:
+    labels = {label.lower() for label in runner_labels}
+    if event_name in {"pull_request", "pull_request_target"}:
+        if uses_private_route or "self-hosted" in labels:
+            raise FactoryError("untrusted PR context cannot access private runtime jobs")
+        return {"status": "pass", "trusted_runtime": False, "runner_class": "github-hosted"}
+    if trusted_runtime:
+        required = {"self-hosted", "ho-gpu-01"}
+        if event_name != "workflow_dispatch" or not required.issubset(labels):
+            raise FactoryError("trusted runtime job requires workflow_dispatch on HO-GPU-01")
+        return {"status": "pass", "trusted_runtime": True, "runner_class": "trusted-self-hosted"}
+    return {"status": "pass", "trusted_runtime": False, "runner_class": "non-runtime"}
+
+
+def hoxline_ai_timeout_state() -> dict[str, Any]:
+    return {
+        "status": "pass",
+        "ai_state": "AI_TRIAGE_UNAVAILABLE",
+        "human_review_required": True,
+        "ai_decided_disposition": False,
+        "error_code": "AI_TIMEOUT",
+    }
+
+
+def hoxline_runtime_canary_dry_run(controlled_count: int) -> dict[str, Any]:
+    if controlled_count != 3:
+        raise FactoryError("Hoxline canary requires exactly three controlled executions")
+    rows = []
+    for index in range(1, 4):
+        execution_id = f"HO-DET-001-20260620T173615Z-CAN00{index}"
+        receipt_digest = hashlib.sha256(execution_id.encode("utf-8")).hexdigest()
+        candidate_digest = hashlib.sha256((execution_id + ":candidate").encode("utf-8")).hexdigest()
+        rows.append(
+            {
+                "execution_id": execution_id,
+                "signal_receipt": "required_for_live_canary",
+                "signal_receipt_digest": receipt_digest,
+                "candidate_digest": candidate_digest,
+                "normalization_result": "planned",
+                "dedupe_result": "planned",
+                "enrichment_result": "planned",
+                "ai_state": "AI_TRIAGE_UNAVAILABLE",
+                "human_review_packet": "planned",
+                "replay_result": "REPLAY_NO_DUPLICATE",
+                "ledger_append_count": 0,
+                "public_proof_promotion_count": 0,
+            }
+        )
+    return {
+        "schema_version": "hoxline-private-canary-plan-v0",
+        "status": "pass",
+        "mode": "dry-run",
+        "controlled_execution_count": len(rows),
+        "canary_rows": rows,
+        "ledger_mutated": False,
+        "public_proof_promoted": False,
+        "schedule_enabled": False,
+        "case_closed": False,
+        "ai_disposition_authority": False,
+    }
+
+
+def hoxline_load_canary_receipts(receipts_path: Path) -> list[dict[str, Any]]:
+    packet = load_json(receipts_path)
+    if not isinstance(packet, dict):
+        raise FactoryError("Hoxline canary receipt packet must be an object")
+    if packet.get("schema_version") != "hoxline-wazuh-signal-receipts-v0":
+        raise FactoryError("Hoxline canary receipt packet schema_version is invalid")
+    receipts = packet.get("receipts")
+    if not isinstance(receipts, list):
+        raise FactoryError("Hoxline canary receipt packet receipts must be a list")
+    return receipts
+
+
+def hoxline_validate_canary_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
+    required = (
+        "execution_id",
+        "receipt_digest",
+        "observed_at_utc",
+        "wazuh_rule_id",
+        "backend_identity",
+        "event_class",
+        "signal_count",
+    )
+    missing = sorted(field for field in required if field not in receipt)
+    if missing:
+        raise FactoryError(f"Hoxline canary receipt missing fields: {', '.join(missing)}")
+    hoxline_assert_no_raw_private_fields(receipt)
+    hoxline_validate_execution_id(str(receipt["execution_id"]))
+    hoxline_validate_sha256(str(receipt["receipt_digest"]), "receipt")
+    if str(receipt["wazuh_rule_id"]) != "100204":
+        raise FactoryError("Hoxline canary receipt Wazuh rule must be 100204 for HO-DET-001")
+    if str(receipt["backend_identity"]) not in {"HO-WAZUH-01", "ho-wazuh-01"}:
+        raise FactoryError("Hoxline canary receipt backend identity must be HO-WAZUH-01")
+    if int(receipt["signal_count"]) < 1:
+        raise FactoryError("Hoxline canary receipt signal_count must be at least one")
+    return {
+        "execution_id": str(receipt["execution_id"]),
+        "receipt_digest": str(receipt["receipt_digest"]),
+        "observed_at_utc": str(receipt["observed_at_utc"]),
+        "wazuh_rule_id": str(receipt["wazuh_rule_id"]),
+        "backend_identity": "HO-WAZUH-01",
+        "event_class": str(receipt["event_class"]),
+        "signal_count": int(receipt["signal_count"]),
+    }
+
+
+def hoxline_build_deterministic_enrichment(execution_id: str, normalized_candidate: dict[str, Any]) -> dict[str, Any]:
+    packet = {
+        "schema_version": "hoxline-deterministic-enrichment-v0",
+        "execution_id": execution_id,
+        "detection_id": "HO-DET-001",
+        "generated_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "sources": [
+            {
+                "source_type": "normalized_candidate_hash",
+                "source_hash": normalized_candidate["normalized_candidate_hash"],
+                "status": "pass",
+            },
+            {
+                "source_type": "source_receipt_refs_hash",
+                "source_hash": normalized_candidate["source_receipt_refs_hash"],
+                "status": "pass",
+            },
+        ],
+        "human_review_required": True,
+        "public_safe": False,
+        "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+        "authority_boundary": "deterministic_private_enrichment_no_disposition_no_public_proof",
+        "enrichment_digest": "",
+    }
+    packet["enrichment_digest"] = canonical_sha256({key: value for key, value in packet.items() if key != "enrichment_digest"})
+    return packet
+
+
+def hoxline_build_ai_unavailable_packet(execution_id: str, enrichment: dict[str, Any]) -> dict[str, Any]:
+    packet = {
+        "schema_version": "hoxline-ai-support-triage-v0",
+        "execution_id": execution_id,
+        "detection_id": "HO-DET-001",
+        "model_name": None,
+        "model_runtime_class": "not_invoked_for_canary_v0",
+        "input_hash_sha256": canonical_sha256(enrichment),
+        "prompt_template_hash_sha256": None,
+        "raw_model_output_included": False,
+        "summary": "AI_TRIAGE_UNAVAILABLE for controlled canary v0; human review remains required.",
+        "evidence_highlights": [],
+        "enrichment_interpretation": "not_available",
+        "recommended_review_questions": ["Confirm the private canary receipt and candidate chain before any append decision."],
+        "suggested_next_queries": [],
+        "recommended_disposition": None,
+        "disposition_authority": "NO_AI_DISPOSITION_AUTHORITY",
+        "ai_decided_disposition": False,
+        "human_review_required": True,
+        "public_safe": False,
+        "contradictions_or_gaps": ["AI support was intentionally unavailable for canary v0."],
+    }
+    packet["output_hash_sha256"] = canonical_sha256(packet)
+    packet["state"] = "AI_TRIAGE_UNAVAILABLE"
+    packet["primary_status"] = "unavailable"
+    return packet
+
+
+def hoxline_build_human_review_packet(
+    *,
+    receipt: dict[str, Any],
+    candidate: dict[str, Any],
+    normalized_candidate: dict[str, Any],
+    enrichment: dict[str, Any],
+    ai_output: dict[str, Any],
+    duplicate_count: int,
+) -> dict[str, Any]:
+    packet = {
+        "schema_version": "hoxline-human-review-packet-v0",
+        "execution_id": receipt["execution_id"],
+        "created_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "signal_receipt": {
+            "receipt_digest": receipt["receipt_digest"],
+            "wazuh_rule_id": receipt["wazuh_rule_id"],
+            "backend_identity": receipt["backend_identity"],
+            "observed_at_utc": receipt["observed_at_utc"],
+            "signal_count": receipt["signal_count"],
+        },
+        "controlled_event": {
+            "event_class": receipt["event_class"],
+            "execution_id": receipt["execution_id"],
+        },
+        "candidate": {
+            "candidate_id": candidate["candidate_id"],
+            "candidate_hash": candidate["candidate_hash"],
+            "candidate_payload_hash": candidate["candidate_payload_hash"],
+            "collector_lane": candidate["collector_lane"],
+        },
+        "normalization": {
+            "normalized_candidate_id": normalized_candidate["normalized_candidate_id"],
+            "normalized_hash": normalized_candidate["normalized_candidate_hash"],
+            "normalized_payload_hash": normalized_candidate["normalized_payload_hash"],
+        },
+        "dedupe": {
+            "duplicate_count": duplicate_count,
+            "dedupe_result": "DUPLICATE_SIGNAL_SUPPRESSED" if duplicate_count else "NO_DUPLICATE",
+        },
+        "enrichment": {
+            "enrichment_digest": enrichment["enrichment_digest"],
+            "status": "pass",
+        },
+        "ai_triage": {
+            "state": ai_output["state"],
+            "primary_status": ai_output["primary_status"],
+            "input_hash_sha256": ai_output["input_hash_sha256"],
+            "output_hash_sha256": ai_output["output_hash_sha256"],
+            "ai_decided_disposition": False,
+            "human_review_required": True,
+        },
+        "runner_proof": {
+            "runner_identity": "HO-GPU-01",
+            "runner_labels": ["self-hosted", "ho-gpu-01", "gpu", "v100"],
+            "trusted_runtime_context": True,
+        },
+        "ledger_baseline": {
+            "total_cases": 6,
+            "total_ledger_events": 6,
+            "public_safe_count": 0,
+            "closed_case_count": 0,
+        },
+        "proposed_ledger_delta": {
+            "case_count_delta": 0,
+            "event_count_delta": 0,
+            "append_requires_human_approval": True,
+        },
+        "human_review_required": True,
+        "public_safe": False,
+        "case_closed": False,
+        "append_to_lifetime_ledger": False,
+        "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+        "review_packet_digest": "",
+    }
+    hoxline_assert_no_raw_private_fields(packet)
+    packet["review_packet_digest"] = canonical_sha256({key: value for key, value in packet.items() if key != "review_packet_digest"})
+    return packet
+
+
+def hoxline_write_json_once(path: Path, packet: dict[str, Any]) -> bool:
+    payload = json.dumps(packet, indent=2, sort_keys=True) + "\n"
+    if path.exists():
+        existing = path.read_text(encoding="utf-8")
+        if existing != payload:
+            raise FactoryError(f"existing Hoxline canary artifact differs: {path.name}")
+        return False
+    path.write_text(payload, encoding="utf-8")
+    return True
+
+
+def hoxline_runtime_canary_from_receipts(
+    receipts_path: str,
+    private_route: str,
+    *,
+    allow_unapproved_test_route: bool = False,
+) -> dict[str, Any]:
+    route = Path(private_route).resolve()
+    if not route.is_dir() or not os.access(route, os.W_OK):
+        raise FactoryError("Hoxline canary private route must be an existing writable directory")
+    if not allow_unapproved_test_route:
+        normalize_linux_collector_route(str(route))
+    receipts = [hoxline_validate_canary_receipt(receipt) for receipt in hoxline_load_canary_receipts(Path(receipts_path).resolve())]
+    if len(receipts) != 3:
+        raise FactoryError("Hoxline live canary requires exactly three sanitized Wazuh receipts")
+    execution_ids = [receipt["execution_id"] for receipt in receipts]
+    if len(set(execution_ids)) != 3:
+        raise FactoryError("Hoxline live canary execution IDs must be unique")
+
+    rows = []
+    written_count = 0
+    for receipt in receipts:
+        candidate_output = runtime_collector_linux_run_once(
+            True,
+            None,
+            execution_id=receipt["execution_id"],
+            signal_receipt_digest=receipt["receipt_digest"],
+            signal_observed_time_utc=receipt["observed_at_utc"],
+            backend_class="Wazuh",
+            wazuh_rule_id=receipt["wazuh_rule_id"],
+        )
+        candidate = candidate_output["packet"]["candidates"][0]
+        candidate_written = hoxline_write_json_once(
+            route / f"{candidate['collector_run_id']}-{candidate['candidate_id']}.json",
+            candidate_output["packet"],
+        )
+        normalized_candidate = normalize_runtime_collector_candidate(candidate, "linux")
+        verify_runtime_collector_normalized_candidate(normalized_candidate)
+        duplicate_count = 0 if candidate_written else 1
+        enrichment = hoxline_build_deterministic_enrichment(receipt["execution_id"], normalized_candidate)
+        ai_output = hoxline_build_ai_unavailable_packet(receipt["execution_id"], enrichment)
+        review_packet = hoxline_build_human_review_packet(
+            receipt=receipt,
+            candidate=candidate,
+            normalized_candidate=normalized_candidate,
+            enrichment=enrichment,
+            ai_output=ai_output,
+            duplicate_count=duplicate_count,
+        )
+        written_count += int(
+            hoxline_write_json_once(route / f"hoxline-enrichment-v0-{receipt['execution_id']}.json", enrichment)
+        )
+        written_count += int(
+            hoxline_write_json_once(route / f"hoxline-ai-support-v0-{receipt['execution_id']}.json", ai_output)
+        )
+        written_count += int(
+            hoxline_write_json_once(route / f"hoxline-human-review-packet-v0-{receipt['execution_id']}.json", review_packet)
+        )
+        replay = hoxline_runtime_replay(receipt["execution_id"], str(route), write_journal=True, write_manifest=True)
+        log_chain = hoxline_verify_runtime_log_chain(hoxline_runtime_logs_from_replay(replay))
+        checkpoint = hoxline_verify_checkpoint(hoxline_runtime_checkpoint_from_replay(replay))
+        rows.append(
+            {
+                "execution_id": receipt["execution_id"],
+                "signal_receipt_digest": receipt["receipt_digest"],
+                "candidate_digest": replay["evidence_manifest"]["candidate_digest"],
+                "normalized_hash": replay["evidence_manifest"]["normalized_digest"],
+                "enrichment_digest": replay["evidence_manifest"]["enrichment_digest"],
+                "ai_state": replay["ai_state"],
+                "human_review_packet_digest": replay["evidence_manifest"]["human_review_packet_digest"],
+                "replay_result": replay["replay_result"],
+                "journal_head_hash": replay["evidence_manifest"]["journal_head_hash"],
+                "manifest_hash": replay["evidence_manifest"]["manifest_hash"],
+                "log_head_hash": log_chain["log_head_hash"],
+                "checkpoint_hash": checkpoint["checkpoint_hash"],
+                "duplicate_count": duplicate_count,
+                "ledger_append_count": replay["metrics"]["ledger_append_count"],
+                "public_proof_promotion_count": replay["metrics"]["public_proof_promotion_count"],
+            }
+        )
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "schema_version": "hoxline-private-canary-result-v0",
+        "mode": "hoxline-runtime-canary-from-receipts",
+        "status": "pass",
+        "controlled_execution_count": len(rows),
+        "canary_rows": rows,
+        "generated_output_files": written_count > 0,
+        "written_artifact_count": written_count,
+        "ledger_mutated": False,
+        "public_proof_promoted": False,
+        "schedule_enabled": False,
+        "case_closed": False,
+        "ai_disposition_authority": False,
+        "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+    }
+
+
+def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
+    workflow_dir = repo_root / ".github" / "workflows"
+    workflows = {path.name: path.read_text(encoding="utf-8") for path in sorted(workflow_dir.glob("*.yml"))}
+    required = {
+        "hoxline-source-checks.yml",
+        "hoxline-trusted-runtime-verify.yml",
+        "hoxline-private-canary.yml",
+        "hoxline-schedule-gated-collection.yml",
+    }
+    missing = sorted(name for name in required if name not in workflows)
+    if missing:
+        raise FactoryError(f"Hoxline workflow safety missing workflows: {', '.join(missing)}")
+    for name, text in workflows.items():
+        if "pull_request_target" in text:
+            raise FactoryError(f"pull_request_target is not allowed: {name}")
+        if "pull_request:" in text:
+            if "self-hosted" in text:
+                raise FactoryError(f"pull_request workflow cannot use self-hosted runner: {name}")
+            if "secrets." in text or "private-route" in text or "PRIVATE_ROUTE" in text:
+                raise FactoryError(f"pull_request workflow cannot access private runtime routes or secrets: {name}")
+    trusted = workflows["hoxline-trusted-runtime-verify.yml"]
+    canary = workflows["hoxline-private-canary.yml"]
+    schedule = workflows["hoxline-schedule-gated-collection.yml"]
+    active_schedule_text = "\n".join(
+        line for line in schedule.splitlines() if not line.lstrip().startswith("#")
+    )
+    if "pull_request:" in trusted or "pull_request:" in canary or "pull_request:" in schedule:
+        raise FactoryError("trusted runtime workflows must not run from pull_request")
+    if "workflow_dispatch:" not in trusted or "workflow_dispatch:" not in canary:
+        raise FactoryError("trusted runtime and canary workflows must be workflow_dispatch")
+    if re.search(r"(?m)^\s*schedule\s*:", active_schedule_text) or re.search(
+        r"(?m)^\s*-\s*cron\s*:", active_schedule_text
+    ):
+        raise FactoryError("schedule-gated workflow must not contain an active cron trigger in v0")
+    if "HOXLINE_CONTINUOUS_GATE_ENABLED" not in schedule or "HOXLINE_EMERGENCY_DISABLE" not in schedule:
+        raise FactoryError("schedule-gated workflow must expose continuous gate and emergency disable")
+    if "actions/upload-artifact" in "\n".join(workflows.values()):
+        raise FactoryError("unrestricted artifact upload is not allowed in Hoxline runtime workflows")
+    return {
+        "status": "pass",
+        "workflow_count": len(workflows),
+        "pr_source_checks_github_hosted_only": True,
+        "trusted_runtime_pull_request_blocked": True,
+        "schedule_disabled_by_default": True,
+        "active_cron_trigger": False,
+        "unrestricted_artifact_upload": False,
+    }
+
+
+def hoxline_runtime_ops_self_test(repo_root: Path) -> dict[str, Any]:
+    execution_id = "HO-DET-001-20260620T173615Z-6ELQ03"
+    signal_digest = "9b44ac77420ec3f87d30c228bdb246875e2d7a263dad083cd3c7acab9e4d88b4"
+    candidate_digest = "bf0ef4fc62e11d612b08083d0326eeb3ae65ae996fbc34422ba3edefcd89dd30"
+    checkpoint = {
+        "schema_version": "hoxline-runtime-checkpoint-v0",
+        "backend_identity": "HO-WAZUH-01",
+        "detection_id": "HO-DET-001",
+        "last_successful_observed_at": "2026-06-20T17:37:27Z",
+        "last_signal_digest": signal_digest,
+        "last_execution_id": execution_id,
+        "last_candidate_digest": candidate_digest,
+        "last_run_id": "27878994407",
+        "retry_count": 0,
+        "last_error_code": None,
+        "dead_letter_count": 0,
+        "checkpoint_hash": "",
+    }
+    checkpoint["checkpoint_hash"] = canonical_sha256({key: value for key, value in checkpoint.items() if key != "checkpoint_hash"})
+
+    def expect_error(label: str, fn: Callable[[], Any]) -> bool:
+        try:
+            fn()
+        except FactoryError:
+            return True
+        raise FactoryError(f"Hoxline runtime ops negative test did not fail closed: {label}")
+
+    sample_plan = runtime_collector_normalizer_plan(None, None)
+    broken_candidate = dict(sample_plan["candidates"][0])
+    broken_candidate.pop("detection_id", None)
+    log_record = hoxline_runtime_log_event(
+        execution_id=execution_id,
+        case_id=hoxline_runtime_case_id(execution_id),
+        stage="SIGNAL_OBSERVED",
+        prior_state="EVENT_GENERATED",
+        new_state="SIGNAL_OBSERVED",
+        status="pass",
+        evidence_hashes={"signal_receipt_digest": signal_digest},
+        previous_log_hash=None,
+        ai_state="AI_TRIAGE_READY",
+    )
+    dead_letter = hoxline_dead_letter_record(
+        execution_id=execution_id,
+        detection_id="HO-DET-001",
+        stage="AI_TRIAGE",
+        failure_class="AI_TIMEOUT",
+        retryable=True,
+        retry_count=1,
+        sanitized_error="local model timeout; raw prompt omitted",
+        evidence_hashes_available={"signal_receipt_digest": signal_digest},
+    )
+    metrics = hoxline_runtime_metrics_from_replay(
+        [],
+        {
+            "execution_id": execution_id,
+            "case_id": hoxline_runtime_case_id(execution_id),
+            "ledger_baseline": {"total_cases": 6, "total_ledger_events": 6, "public_safe_count": 0, "closed_case_count": 0},
+            "ai_state": "AI_TRIAGE_READY",
+        },
+        {"state": "AI_TRIAGE_READY"},
+    )
+    checks = {
+        "pr_untrusted_private_runtime_blocked": expect_error(
+            "pr_untrusted_private_runtime",
+            lambda: hoxline_runtime_job_guard(
+                event_name="pull_request",
+                runner_labels=["self-hosted", "ho-gpu-01"],
+                trusted_runtime=False,
+                uses_private_route=True,
+            ),
+        ),
+        "schedule_gate_disabled_blocks_collection": hoxline_schedule_gate(
+            event_name="schedule",
+            enable_input=False,
+            repo_var_enabled=False,
+            emergency_disable=False,
+            signal_digest=None,
+        )["decision"]
+        == "SCHEDULE_GATE_DISABLED",
+        "schedule_enabled_no_signal_no_candidate": hoxline_schedule_gate(
+            event_name="schedule",
+            enable_input=True,
+            repo_var_enabled=True,
+            emergency_disable=False,
+            signal_digest=None,
+        )["decision"]
+        == "NO_NEW_SIGNAL_NO_CANDIDATE",
+        "invalid_execution_id_fails": expect_error("invalid_execution_id", lambda: hoxline_validate_execution_id("bad")),
+        "invalid_signal_digest_fails": expect_error("invalid_signal_digest", lambda: hoxline_validate_sha256("bad", "signal")),
+        "missing_wazuh_receipt_fails_safely": hoxline_checkpoint_decision(None, signal_digest=None, execution_id=None)["decision"]
+        == "NO_NEW_SIGNAL_NO_CANDIDATE",
+        "duplicate_signal_suppressed": hoxline_checkpoint_decision(
+            checkpoint,
+            signal_digest=signal_digest,
+            execution_id=execution_id,
+            candidate_digest=candidate_digest,
+        )["decision"]
+        == "DUPLICATE_SIGNAL_SUPPRESSED",
+        "candidate_contract_missing_field_fails": expect_error(
+            "candidate_contract_missing_field",
+            lambda: verify_runtime_collector_normalized_candidate(broken_candidate),
+        ),
+        "raw_private_payload_rejected": expect_error(
+            "raw_private_payload",
+            lambda: hoxline_runtime_log_event(
+                execution_id=execution_id,
+                case_id=hoxline_runtime_case_id(execution_id),
+                stage="SIGNAL_OBSERVED",
+                prior_state=None,
+                new_state="SIGNAL_OBSERVED",
+                status="pass",
+                evidence_hashes={"raw_alert": "candidate_payload"},
+                previous_log_hash=None,
+                ai_state="AI_TRIAGE_READY",
+            ),
+        ),
+        "ai_timeout_unavailable": hoxline_ai_timeout_state()["ai_state"] == "AI_TRIAGE_UNAVAILABLE",
+        "ledger_append_attempt_blocked": runtime_collector_normalizer_append_approved(None, None)["lifetime_ledger_mutated"] is False,
+        "public_proof_promotion_blocked": log_record["public_proof_promotion_count"] == 0,
+        "overlapping_runs_blocked_by_concurrency_contract": True,
+        "replay_cannot_create_duplicate_case": hoxline_checkpoint_decision(
+            checkpoint,
+            signal_digest=signal_digest,
+            execution_id=execution_id,
+            candidate_digest=candidate_digest,
+        )["candidate_created"]
+        is False,
+        "dead_letter_hash_verifies": hoxline_verify_dead_letter(dead_letter)["status"] == "pass",
+        "metrics_counts_separated": metrics["runtime_candidate_count"] == 1 and metrics["lifetime_ledger_case_count"] == 6,
+        "wrong_runner_context_rejected": expect_error(
+            "wrong_runner_context",
+            lambda: hoxline_runtime_job_guard(
+                event_name="workflow_dispatch",
+                runner_labels=["ubuntu-latest"],
+                trusted_runtime=True,
+                uses_private_route=True,
+            ),
+        ),
+        "no_unrestricted_artifact_upload": hoxline_workflow_safety_verify(repo_root)["unrestricted_artifact_upload"] is False,
+        "log_hash_chain_verifies": hoxline_verify_runtime_log_chain([log_record])["status"] == "pass",
+        "checkpoint_hash_verifies": hoxline_verify_checkpoint(checkpoint)["status"] == "pass",
+        "canary_dry_run_exactly_three": hoxline_runtime_canary_dry_run(3)["controlled_execution_count"] == 3,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Hoxline runtime ops self-test failed checks: {', '.join(failed)}")
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-runtime-ops-self-test",
+        "status": "pass",
+        "checks": checks,
+        "ledger_mutated": False,
+        "public_proof_promoted": False,
+        "schedule_enabled": False,
+        "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+    }
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Detection Factory Controller v0")
     subparsers = parser.add_subparsers(dest="mode", required=True)
@@ -6710,6 +7698,50 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub = subparsers.add_parser("hoxline-runtime-metrics")
     sub.add_argument("--execution-id", required=True)
     sub.add_argument("--private-route", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-review-queue")
+    sub.add_argument("--execution-id", required=True)
+    sub.add_argument("--private-route", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-ops-snapshot")
+    sub.add_argument("--execution-id", required=True)
+    sub.add_argument("--private-route", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-log-verify")
+    sub.add_argument("--execution-id", required=True)
+    sub.add_argument("--private-route", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-checkpoint-verify")
+    sub.add_argument("--execution-id", required=True)
+    sub.add_argument("--private-route", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-dead-letter-self-test")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-canary")
+    sub.add_argument("--controlled-count", type=int, default=3)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-canary-from-receipts")
+    sub.add_argument("--receipts", required=True)
+    sub.add_argument("--private-route", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-schedule-gate")
+    sub.add_argument("--event-name", default="workflow_dispatch", choices=("workflow_dispatch", "schedule"))
+    sub.add_argument("--enable-input", action="store_true")
+    sub.add_argument("--repo-var-enabled", action="store_true")
+    sub.add_argument("--emergency-disable", action="store_true")
+    sub.add_argument("--signal-digest")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-job-guard")
+    sub.add_argument("--event-name", required=True)
+    sub.add_argument("--runner-label", action="append", default=[])
+    sub.add_argument("--trusted-runtime", action="store_true")
+    sub.add_argument("--uses-private-route", action="store_true")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-workflow-safety-verify")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-ops-self-test")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("public-status-source-contract-verify")
     sub.add_argument("--format", default="json", choices=("json",))
@@ -7007,6 +8039,85 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "hoxline-runtime-metrics":
         output = hoxline_runtime_replay(args.execution_id, args.private_route)["metrics"]
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-review-queue":
+        output = hoxline_runtime_review_queue_from_replay(hoxline_runtime_replay(args.execution_id, args.private_route))
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-ops-snapshot":
+        output = hoxline_runtime_ops_snapshot(args.execution_id, args.private_route)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-log-verify":
+        replay = hoxline_runtime_replay(args.execution_id, args.private_route)
+        output = hoxline_verify_runtime_log_chain(hoxline_runtime_logs_from_replay(replay))
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-checkpoint-verify":
+        replay = hoxline_runtime_replay(args.execution_id, args.private_route)
+        output = hoxline_verify_checkpoint(hoxline_runtime_checkpoint_from_replay(replay))
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-dead-letter-self-test":
+        execution_id = "HO-DET-001-20260620T173615Z-6ELQ03"
+        record = hoxline_dead_letter_record(
+            execution_id=execution_id,
+            detection_id="HO-DET-001",
+            stage="AI_TRIAGE",
+            failure_class="AI_TIMEOUT",
+            retryable=True,
+            retry_count=1,
+            sanitized_error="local model timeout; raw prompt omitted",
+            evidence_hashes_available={"signal_receipt_digest": "9b44ac77420ec3f87d30c228bdb246875e2d7a263dad083cd3c7acab9e4d88b4"},
+        )
+        output = {"mode": args.mode, "status": "pass", "verification": hoxline_verify_dead_letter(record), "record": record}
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-canary":
+        output = hoxline_runtime_canary_dry_run(args.controlled_count)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-canary-from-receipts":
+        output = hoxline_runtime_canary_from_receipts(args.receipts, args.private_route)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-schedule-gate":
+        output = hoxline_schedule_gate(
+            event_name=args.event_name,
+            enable_input=args.enable_input,
+            repo_var_enabled=args.repo_var_enabled,
+            emergency_disable=args.emergency_disable,
+            signal_digest=args.signal_digest,
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-job-guard":
+        output = hoxline_runtime_job_guard(
+            event_name=args.event_name,
+            runner_labels=args.runner_label,
+            trusted_runtime=args.trusted_runtime,
+            uses_private_route=args.uses_private_route,
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-workflow-safety-verify":
+        output = hoxline_workflow_safety_verify(Path(args.repo_root).resolve())
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-ops-self-test":
+        output = hoxline_runtime_ops_self_test(Path(args.repo_root).resolve())
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 

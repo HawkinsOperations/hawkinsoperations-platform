@@ -1,0 +1,70 @@
+name: Hoxline Schedule-Gated Collection
+
+on:
+  workflow_dispatch:
+    inputs:
+      enable_continuous_gate:
+        description: Must be true and repo variable HOXLINE_CONTINUOUS_GATE_ENABLED must also be true.
+        required: true
+        type: boolean
+        default: false
+      private_route:
+        description: Private runtime route on trusted runner
+        required: false
+        type: string
+
+# Schedule support is intentionally inactive in v0. A future approved enable
+# gate may add an active cron trigger after repo variable governance is set.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hoxline-schedule-gated-collection
+  cancel-in-progress: false
+
+jobs:
+  schedule-gate:
+    name: Schedule disabled-by-default gate
+    if: github.repository == 'HawkinsOperations/hawkinsoperations-platform' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, ho-gpu-01, gpu, v100]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Emergency disable check
+        if: vars.HOXLINE_EMERGENCY_DISABLE == 'true'
+        run: |
+          python3 -B scripts/ho_factory.py hoxline-runtime-schedule-gate --event-name "$GITHUB_EVENT_NAME" --emergency-disable --format json >/dev/null
+          exit 0
+
+      - name: Hard disabled unless both gates are true
+        if: vars.HOXLINE_CONTINUOUS_GATE_ENABLED != 'true' || inputs.enable_continuous_gate != true
+        run: |
+          python3 -B scripts/ho_factory.py hoxline-runtime-schedule-gate --event-name "$GITHUB_EVENT_NAME" --format json >/dev/null
+          exit 0
+
+      - name: Guard trusted runtime context
+        run: |
+          python3 -B scripts/ho_factory.py hoxline-runtime-job-guard \
+            --event-name workflow_dispatch \
+            --runner-label self-hosted \
+            --runner-label ho-gpu-01 \
+            --trusted-runtime \
+            --uses-private-route \
+            --format json >/dev/null
+
+      - name: Enabled gate no-signal checkpoint
+        run: |
+          python3 -B scripts/ho_factory.py hoxline-runtime-schedule-gate \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --enable-input \
+            --repo-var-enabled \
+            --format json >/dev/null
+
+      - name: Stop before collection until future approved enable gate
+        run: |
+          echo "Continuous collection remains disabled in this task." >&2
+          exit 1

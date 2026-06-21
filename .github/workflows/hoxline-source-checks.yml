@@ -1,0 +1,52 @@
+name: Hoxline Source Checks
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  source-checks:
+    name: PR/source checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Compile controller
+        run: python -B -m py_compile scripts/ho_factory.py
+
+      - name: Runtime collector self-tests
+        run: |
+          python -B scripts/ho_factory.py collector-linux-self-test --format json >/dev/null
+          python -B scripts/ho_factory.py collector-normalizer-self-test --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-runtime-canary --controlled-count 3 --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-runtime-schedule-gate --event-name schedule --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-runtime-ops-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+
+      - name: Schema parse checks
+        run: |
+          python -m json.tool contracts/schemas/runtime-case-collector-v0-linux.schema.json >/dev/null
+          python -m json.tool contracts/schemas/runtime-case-collector-v0-normalizer.schema.json >/dev/null
+          python -m json.tool contracts/schemas/runtime-route-proof-v1-private-candidate.schema.json >/dev/null
+
+      - name: Claim-boundary checks
+        run: |
+          python -B scripts/ho_factory.py public-status-source-contract-verify --format json
+
+      - name: Workflow safety checks
+        run: |
+          python -B scripts/ho_factory.py hoxline-workflow-safety-verify --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+
+      - name: Python unit tests
+        run: |
+          python -B -m unittest tests/test_hoxline_runtime_ops.py
+          python -B -m unittest tests/test_verify_public_status_source_contract.py
+
+      - name: Git whitespace check
+        run: git diff --check

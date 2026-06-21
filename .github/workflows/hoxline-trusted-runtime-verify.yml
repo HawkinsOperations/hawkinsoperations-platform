@@ -1,0 +1,68 @@
+name: Hoxline Trusted Runtime Verify
+
+on:
+  workflow_dispatch:
+    inputs:
+      private_route:
+        description: Private runtime route on trusted runner
+        required: true
+        type: string
+      execution_id:
+        description: Existing private execution ID to replay and verify
+        required: true
+        type: string
+        default: HO-DET-001-20260620T173615Z-6ELQ03
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hoxline-trusted-runtime-verify
+  cancel-in-progress: false
+
+jobs:
+  verify-private-runtime:
+    name: Trusted private runtime verify
+    if: github.repository == 'HawkinsOperations/hawkinsoperations-platform' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, ho-gpu-01, gpu, v100]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Guard trusted runtime context
+        run: |
+          python3 -B scripts/ho_factory.py hoxline-runtime-job-guard \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --runner-label self-hosted \
+            --runner-label ho-gpu-01 \
+            --trusted-runtime \
+            --uses-private-route \
+            --format json >/dev/null
+
+      - name: Capture ledger hash before
+        run: sha256sum evidence/autosoc-case-ledger-v0.sqlite > "$RUNNER_TEMP/ledger-before.sha256"
+
+      - name: Runtime health, replay, verify, metrics, queue, logs, checkpoint
+        env:
+          PRIVATE_ROUTE: ${{ inputs.private_route }}
+          EXECUTION_ID: ${{ inputs.execution_id }}
+        run: |
+          python3 -B scripts/ho_factory.py hoxline-runtime-health --private-route "$PRIVATE_ROUTE" --format json >/dev/null
+          python3 -B scripts/ho_factory.py hoxline-runtime-replay --execution-id "$EXECUTION_ID" --private-route "$PRIVATE_ROUTE" --format json >/dev/null
+          python3 -B scripts/ho_factory.py hoxline-runtime-verify --execution-id "$EXECUTION_ID" --private-route "$PRIVATE_ROUTE" --format json >/dev/null
+          python3 -B scripts/ho_factory.py hoxline-runtime-metrics --execution-id "$EXECUTION_ID" --private-route "$PRIVATE_ROUTE" --format json >/dev/null
+          python3 -B scripts/ho_factory.py hoxline-runtime-review-queue --execution-id "$EXECUTION_ID" --private-route "$PRIVATE_ROUTE" --format json >/dev/null
+          python3 -B scripts/ho_factory.py hoxline-runtime-log-verify --execution-id "$EXECUTION_ID" --private-route "$PRIVATE_ROUTE" --format json >/dev/null
+          python3 -B scripts/ho_factory.py hoxline-runtime-checkpoint-verify --execution-id "$EXECUTION_ID" --private-route "$PRIVATE_ROUTE" --format json >/dev/null
+
+      - name: Verify ledger unchanged
+        run: |
+          sha256sum evidence/autosoc-case-ledger-v0.sqlite > "$RUNNER_TEMP/ledger-after.sha256"
+          cmp "$RUNNER_TEMP/ledger-before.sha256" "$RUNNER_TEMP/ledger-after.sha256"
+
+      - name: Verify public proof unchanged
+        run: |
+          test ! -d proof
+          git diff --exit-code -- evidence contracts docs scripts tests .github/workflows

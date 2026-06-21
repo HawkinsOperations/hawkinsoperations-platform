@@ -17,6 +17,7 @@ permissions:
 jobs:
   collect-windows-candidates:
     name: Collect Windows runtime candidates
+    if: github.repository == 'HawkinsOperations/hawkinsoperations-platform' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Windows, X64]
     defaults:
       run:
@@ -24,6 +25,8 @@ jobs:
     steps:
       - name: Check out platform repo
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Verify Windows factory script path
         shell: pwsh
