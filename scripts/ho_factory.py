@@ -6286,6 +6286,7 @@ def hoxline_build_journal_event(
     execution_id: str,
     case_id: str,
     event_index: int,
+    detection_id: str = "HO-DET-001",
     prior_state: str | None,
     new_state: str,
     evidence_refs: dict[str, Any],
@@ -6406,7 +6407,9 @@ def hoxline_runtime_replay(
     ai_state = ai.get("state", "AI_TRIAGE_UNAVAILABLE")
     if ai_state not in {"AI_TRIAGE_READY", "AI_TRIAGE_UNAVAILABLE"}:
         raise FactoryError("Hoxline AI state must be ready or unavailable")
-    case_id = hoxline_runtime_case_id(execution_id)
+    detection_id = str(candidate.get("detection_id") or review.get("detection_id") or hoxline_detection_from_execution_id(execution_id))
+    contract = hoxline_runtime_contract(detection_id)
+    case_id = hoxline_runtime_case_id(execution_id, detection_id)
     recorded_at = review.get("created_at_utc") or candidate.get("observed_time_utc") or execution_id
     base_refs = {
         "workflow_run_id": "27878994407",
@@ -6442,6 +6445,7 @@ def hoxline_runtime_replay(
         event = hoxline_build_journal_event(
             execution_id=execution_id,
             case_id=case_id,
+            detection_id=detection_id,
             event_index=index,
             prior_state=prior_state,
             new_state=state,
@@ -6466,7 +6470,7 @@ def hoxline_runtime_replay(
         "schema_version": "hoxline-private-evidence-manifest-v0",
         "execution_id": execution_id,
         "case_id": case_id,
-        "detection_id": "HO-DET-001",
+        "detection_id": detection_id,
         "wazuh_rule_id": review["signal_receipt"]["wazuh_rule_id"],
         "controlled_event_class": review["controlled_event"]["event_class"],
         "signal_receipt_digest": review["signal_receipt"]["receipt_digest"],
@@ -6495,6 +6499,8 @@ def hoxline_runtime_replay(
         "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
         "manifest_hash": "",
     }
+    if manifest["wazuh_rule_id"] != contract["expected_wazuh_rule_id"]:
+        raise FactoryError(f"Hoxline replay wrong Wazuh rule for {detection_id}")
     manifest["manifest_hash"] = canonical_sha256({key: value for key, value in manifest.items() if key != "manifest_hash"})
     metrics = hoxline_runtime_metrics_from_replay(events, manifest, ai)
     written = {"journal": False, "manifest": False}
@@ -6575,7 +6581,8 @@ def hoxline_runtime_verify(execution_id: str, private_route: str) -> dict[str, A
     }
 
 
-HOXLINE_EXECUTION_ID_RE = re.compile(r"^HO-DET-001-\d{8}T\d{6}Z-[A-Z0-9]{6}$")
+HOXLINE_SUPPORTED_RUNTIME_DETECTIONS = ("HO-DET-001", "HO-DET-011", "HO-DET-012")
+HOXLINE_EXECUTION_ID_RE = re.compile(r"^(HO-DET-001|HO-DET-011|HO-DET-012)-\d{8}T\d{6}Z-[A-Z0-9]{6}$")
 HOXLINE_SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 HOXLINE_RUNTIME_LOG_FIELDS = (
     "schema_version",
@@ -6769,11 +6776,94 @@ HOXLINE_CONTROLLED_SCHEDULE_PILOT_CYCLE_DECISIONS = {
     "DEAD_LETTERED_FINAL",
 }
 HOXLINE_CONTROLLED_SCHEDULE_PILOT_MAX_CYCLES = 2
+HOXLINE_MULTI_DETECTION_RUNTIME_SCHEMA_VERSION = "hoxline-multi-detection-runtime-v0"
+HOXLINE_MULTI_DETECTION_CONTRACTS = {
+    "HO-DET-001": {
+        "detection_id": "HO-DET-001",
+        "attack_technique": "T1059.001",
+        "event_class": "PowerShell_EncodedCommand",
+        "backend_class": "Wazuh",
+        "expected_wazuh_rule_id": "100204",
+        "rule_ref": "detections/successor/ho-det-001",
+        "required_signal_fields": ["detection_id", "execution_id", "wazuh_rule_id", "receipt_digest", "observed_at_utc", "event_id_hash"],
+        "required_candidate_fields": ["detection_id", "execution_id", "candidate_id", "candidate_hash", "detection_family", "source_system", "source_truth_status", "runtime_truth_status", "signal_truth_status", "observed_time_utc", "candidate_content_hash", "sanitized_event_fingerprint", "source_receipt_refs_hash", "signal_receipt_digest"],
+        "normalization_key_fields": ["detection_id", "execution_id", "signal_receipt_digest"],
+        "dedupe_key_fields": ["detection_id", "signal_receipt_digest", "candidate_hash"],
+        "allowed_runtime_truth_class": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "human_review_required": True,
+        "ai_disposition_authority": False,
+        "validation_result_ref": "hawkinsoperations-validation/reports/ho-det-001/validation-result.json",
+    },
+    "HO-DET-011": {
+        "detection_id": "HO-DET-011",
+        "attack_technique": "T1543.003",
+        "event_class": "Windows_Service_Creation",
+        "backend_class": "Wazuh",
+        "expected_wazuh_rule_id": "910011",
+        "rule_ref": "detections/successor/ho-det-011/wazuh.xml",
+        "required_signal_fields": ["detection_id", "execution_id", "wazuh_rule_id", "receipt_digest", "observed_at_utc", "event_id_hash"],
+        "required_candidate_fields": ["detection_id", "execution_id", "candidate_id", "candidate_hash", "detection_family", "source_system", "source_truth_status", "runtime_truth_status", "signal_truth_status", "observed_time_utc", "candidate_content_hash", "sanitized_event_fingerprint", "source_receipt_refs_hash", "signal_receipt_digest", "service_name_hash", "service_image_path_hash"],
+        "normalization_key_fields": ["detection_id", "execution_id", "service_name_hash", "service_image_path_hash"],
+        "dedupe_key_fields": ["detection_id", "signal_receipt_digest", "service_name_hash", "service_image_path_hash"],
+        "allowed_runtime_truth_class": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "human_review_required": True,
+        "ai_disposition_authority": False,
+        "validation_result_ref": "hawkinsoperations-validation/reports/ho-det-011/validation-result.json",
+    },
+    "HO-DET-012": {
+        "detection_id": "HO-DET-012",
+        "attack_technique": "T1053.005",
+        "event_class": "Scheduled_Task_Creation",
+        "backend_class": "Wazuh",
+        "expected_wazuh_rule_id": "910021",
+        "rule_ref": "detections/successor/ho-det-012/wazuh.xml",
+        "required_signal_fields": ["detection_id", "execution_id", "wazuh_rule_id", "receipt_digest", "observed_at_utc", "event_id_hash"],
+        "required_candidate_fields": ["detection_id", "execution_id", "candidate_id", "candidate_hash", "detection_family", "source_system", "source_truth_status", "runtime_truth_status", "signal_truth_status", "observed_time_utc", "candidate_content_hash", "sanitized_event_fingerprint", "source_receipt_refs_hash", "signal_receipt_digest", "task_name_hash", "task_action_hash"],
+        "normalization_key_fields": ["detection_id", "execution_id", "task_name_hash", "task_action_hash"],
+        "dedupe_key_fields": ["detection_id", "signal_receipt_digest", "task_name_hash", "task_action_hash"],
+        "allowed_runtime_truth_class": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "human_review_required": True,
+        "ai_disposition_authority": False,
+        "validation_result_ref": "hawkinsoperations-validation/reports/ho-det-012/validation-result.json",
+    },
+}
 
 
 def hoxline_validate_execution_id(execution_id: str) -> None:
     if not HOXLINE_EXECUTION_ID_RE.match(execution_id):
         raise FactoryError("invalid Hoxline execution ID")
+
+
+def hoxline_detection_from_execution_id(execution_id: str) -> str:
+    hoxline_validate_execution_id(execution_id)
+    return "-".join(execution_id.split("-")[:3])
+
+
+def hoxline_timestamp_from_execution_id(execution_id: str) -> str:
+    hoxline_validate_execution_id(execution_id)
+    stamp = execution_id.split("-")[3]
+    return f"{stamp[0:4]}-{stamp[4:6]}-{stamp[6:8]}T{stamp[9:11]}:{stamp[11:13]}:{stamp[13:15]}Z"
+
+
+def hoxline_runtime_contract(detection_id: str) -> dict[str, Any]:
+    try:
+        return HOXLINE_MULTI_DETECTION_CONTRACTS[detection_id]
+    except KeyError as exc:
+        raise FactoryError(f"unsupported Hoxline runtime detection: {detection_id}") from exc
+
+
+def hoxline_bounded_runtime_claim(detection_id: str) -> str:
+    hoxline_runtime_contract(detection_id)
+    return (
+        f"Hoxline has private controlled runtime operations evidence for {detection_id} with "
+        "replay/no-duplicate verification and human review required."
+    )
 
 
 def hoxline_validate_sha256(value: str, label: str) -> None:
@@ -6816,11 +6906,14 @@ def hoxline_runtime_log_event(
     duration_ms: int = 0,
     duplicate_count: int = 0,
     candidate_count_delta: int = 0,
+    detection_id: str = "HO-DET-001",
+    timestamp_utc: str | None = None,
 ) -> dict[str, Any]:
     hoxline_validate_execution_id(execution_id)
+    hoxline_runtime_contract(detection_id)
     record = {
         "schema_version": "hoxline-runtime-log-v0",
-        "timestamp_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "timestamp_utc": timestamp_utc or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "execution_id": execution_id,
         "case_id": case_id,
         "detection_id": "HO-DET-001",
@@ -6880,6 +6973,7 @@ def hoxline_runtime_logs_from_replay(replay: dict[str, Any]) -> list[dict[str, A
     manifest = replay["evidence_manifest"]
     case_id = manifest["case_id"]
     execution_id = manifest["execution_id"]
+    timestamp_utc = hoxline_timestamp_from_execution_id(execution_id)
     evidence_hashes = {
         "signal_receipt_digest": manifest["signal_receipt_digest"],
         "candidate_digest": manifest["candidate_digest"],
@@ -6919,6 +7013,8 @@ def hoxline_runtime_logs_from_replay(replay: dict[str, Any]) -> list[dict[str, A
             backend_identity=manifest["backend_identity"],
             duplicate_count=0,
             candidate_count_delta=1 if state == "CANDIDATE_CREATED" else 0,
+            detection_id=manifest["detection_id"],
+            timestamp_utc=timestamp_utc,
         )
         records.append(record)
         previous = record["log_hash"]
@@ -7085,11 +7181,13 @@ def hoxline_runtime_ops_snapshot(execution_id: str, private_route: str) -> dict[
 def hoxline_node(node_type: str, status: str, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
     if node_type not in HOXLINE_EVIDENCE_NODE_TYPES:
         raise FactoryError(f"unsupported Hoxline evidence node type: {node_type}")
+    node_evidence = evidence or {}
+    detection_id = str(node_evidence.get("detection_id", "HO-DET-001"))
     packet = {
-        "node_id": f"{node_type}:HO-DET-001",
+        "node_id": f"{node_type}:{detection_id}",
         "node_type": node_type,
         "status": status,
-        "evidence": evidence or {},
+        "evidence": node_evidence,
     }
     hoxline_assert_no_raw_private_fields(packet)
     packet["node_hash"] = canonical_sha256(packet)
@@ -7114,26 +7212,31 @@ def hoxline_edge(edge_type: str, source: str, target: str, evidence_hash: str | 
 def hoxline_runtime_replay_fixture(
     *,
     execution_id: str = "HO-DET-001-20260620T173615Z-6ELQ03",
+    detection_id: str | None = None,
     include_signal_receipt: bool = True,
     include_human_review_packet: bool = True,
     include_proofcard_draft: bool = False,
     include_claim_decision: bool = False,
 ) -> dict[str, Any]:
     hoxline_validate_execution_id(execution_id)
-    signal_digest = "9b44ac77420ec3f87d30c228bdb246875e2d7a263dad083cd3c7acab9e4d88b4" if include_signal_receipt else None
-    candidate_digest = "bf0ef4fc62e11d612b08083d0326eeb3ae65ae996fbc34422ba3edefcd89dd30"
+    resolved_detection_id = detection_id or hoxline_detection_from_execution_id(execution_id)
+    if resolved_detection_id != hoxline_detection_from_execution_id(execution_id):
+        raise FactoryError("Hoxline fixture detection_id must match execution_id")
+    contract = hoxline_runtime_contract(resolved_detection_id)
+    signal_digest = hashlib.sha256(f"{execution_id}:signal-receipt".encode("utf-8")).hexdigest() if include_signal_receipt else None
+    candidate_digest = hashlib.sha256(f"{execution_id}:candidate".encode("utf-8")).hexdigest()
     normalized_digest = hashlib.sha256(f"{execution_id}:normalized".encode("utf-8")).hexdigest()
     enrichment_digest = hashlib.sha256(f"{execution_id}:enrichment".encode("utf-8")).hexdigest()
     ai_output_digest = hashlib.sha256(f"{execution_id}:ai-support".encode("utf-8")).hexdigest()
     review_digest = hashlib.sha256(f"{execution_id}:human-review-packet".encode("utf-8")).hexdigest() if include_human_review_packet else None
-    case_id = hoxline_runtime_case_id(execution_id)
+    case_id = hoxline_runtime_case_id(execution_id, resolved_detection_id)
     manifest = {
         "schema_version": "hoxline-private-evidence-manifest-v0",
         "execution_id": execution_id,
         "case_id": case_id,
-        "detection_id": "HO-DET-001",
-        "wazuh_rule_id": "100204",
-        "controlled_event_class": "PowerShell_EncodedCommand",
+        "detection_id": resolved_detection_id,
+        "wazuh_rule_id": contract["expected_wazuh_rule_id"],
+        "controlled_event_class": contract["event_class"],
         "signal_receipt_digest": signal_digest,
         "candidate_digest": candidate_digest,
         "normalized_digest": normalized_digest,
@@ -7176,8 +7279,7 @@ def hoxline_build_evidence_graph(replay: dict[str, Any]) -> dict[str, Any]:
     metrics = replay["metrics"]
     detection_id = manifest.get("detection_id")
     execution_id = manifest.get("execution_id")
-    if detection_id != "HO-DET-001":
-        raise FactoryError("Hoxline evidence graph v0 supports HO-DET-001 only")
+    contract = hoxline_runtime_contract(str(detection_id))
     hoxline_validate_execution_id(str(execution_id))
     missing_evidence = list(HOXLINE_REQUIRED_MISSING_EVIDENCE)
     if not manifest.get("signal_receipt_digest"):
@@ -7190,21 +7292,21 @@ def hoxline_build_evidence_graph(replay: dict[str, Any]) -> dict[str, Any]:
     for field in ("candidate_digest", "normalized_digest", "enrichment_digest", "journal_head_hash"):
         hoxline_validate_sha256(str(manifest.get(field)), field)
     node_specs = [
-        ("detection_source", "PASS", {"detection_id": detection_id, "wazuh_rule_id_hash": canonical_sha256(manifest["wazuh_rule_id"])}),
-        ("validation_result", "PASS", {"validation_result_ref_hash": canonical_sha256("hawkinsoperations-validation/reports/ho-det-001/validation-result.json")}),
-        ("runtime_signal_receipt", "PASS", {"signal_receipt_digest": manifest["signal_receipt_digest"], "backend_identity_hash": canonical_sha256(manifest["backend_identity"])}),
-        ("runtime_candidate", "PASS", {"candidate_digest": manifest["candidate_digest"]}),
-        ("normalized_candidate", "PASS", {"normalized_digest": manifest["normalized_digest"]}),
-        ("dedupe_result", "PASS", {"dedupe_state_hash": canonical_sha256(manifest["duplicate_state"]), "duplicate_count": metrics["duplicate_suppression_count"]}),
-        ("enrichment_result", "PASS", {"enrichment_digest": manifest["enrichment_digest"]}),
-        ("ai_support_result", "PASS", {"ai_state": manifest["ai_state"], "ai_output_digest": manifest.get("ai_output_digest"), "ai_decided_disposition": False}),
-        ("human_review_packet", "PASS" if manifest.get("human_review_packet_digest") else "PENDING_HUMAN_REVIEW", {"human_review_packet_digest": manifest.get("human_review_packet_digest")}),
-        ("runtime_log_chain", "PASS", {"journal_head_hash": manifest["journal_head_hash"]}),
-        ("runtime_metrics", "PASS", {"metrics_hash": canonical_sha256(metrics), "runtime_candidate_count": metrics["runtime_candidate_count"], "lifetime_ledger_case_count": metrics["lifetime_ledger_case_count"], "ledger_append_count": 0, "public_proof_promotion_count": 0, "schedule_enabled": 0}),
-        ("checkpoint", "PASS", {"checkpoint_ref_hash": canonical_sha256({"execution_id": execution_id, "candidate_digest": manifest["candidate_digest"]})}),
-        ("dead_letter", "NOT_STARTED", {"dead_letter_count": metrics["dead_letter_count"]}),
-        ("proofcard_draft", "PASS" if replay.get("proofcard_draft_hash") else "NOT_STARTED", {"proofcard_draft_hash": replay.get("proofcard_draft_hash")}),
-        ("claim_decision", "PASS" if replay.get("claim_decision_hash") else "NOT_STARTED", {"claim_decision_hash": replay.get("claim_decision_hash")}),
+        ("detection_source", "PASS", {"detection_id": detection_id, "wazuh_rule_id_hash": canonical_sha256(manifest["wazuh_rule_id"]), "rule_ref_hash": canonical_sha256(contract["rule_ref"])}),
+        ("validation_result", "PASS", {"detection_id": detection_id, "validation_result_ref_hash": canonical_sha256(contract["validation_result_ref"])}),
+        ("runtime_signal_receipt", "PASS", {"detection_id": detection_id, "signal_receipt_digest": manifest["signal_receipt_digest"], "backend_identity_hash": canonical_sha256(manifest["backend_identity"])}),
+        ("runtime_candidate", "PASS", {"detection_id": detection_id, "candidate_digest": manifest["candidate_digest"]}),
+        ("normalized_candidate", "PASS", {"detection_id": detection_id, "normalized_digest": manifest["normalized_digest"]}),
+        ("dedupe_result", "PASS", {"detection_id": detection_id, "dedupe_state_hash": canonical_sha256(manifest["duplicate_state"]), "duplicate_count": metrics["duplicate_suppression_count"]}),
+        ("enrichment_result", "PASS", {"detection_id": detection_id, "enrichment_digest": manifest["enrichment_digest"]}),
+        ("ai_support_result", "PASS", {"detection_id": detection_id, "ai_state": manifest["ai_state"], "ai_output_digest": manifest.get("ai_output_digest"), "ai_decided_disposition": False}),
+        ("human_review_packet", "PASS" if manifest.get("human_review_packet_digest") else "PENDING_HUMAN_REVIEW", {"detection_id": detection_id, "human_review_packet_digest": manifest.get("human_review_packet_digest")}),
+        ("runtime_log_chain", "PASS", {"detection_id": detection_id, "journal_head_hash": manifest["journal_head_hash"]}),
+        ("runtime_metrics", "PASS", {"detection_id": detection_id, "metrics_hash": canonical_sha256(metrics), "runtime_candidate_count": metrics["runtime_candidate_count"], "lifetime_ledger_case_count": metrics["lifetime_ledger_case_count"], "ledger_append_count": 0, "public_proof_promotion_count": 0, "schedule_enabled": 0}),
+        ("checkpoint", "PASS", {"detection_id": detection_id, "checkpoint_ref_hash": canonical_sha256({"execution_id": execution_id, "candidate_digest": manifest["candidate_digest"]})}),
+        ("dead_letter", "NOT_STARTED", {"detection_id": detection_id, "dead_letter_count": metrics["dead_letter_count"]}),
+        ("proofcard_draft", "PASS" if replay.get("proofcard_draft_hash") else "NOT_STARTED", {"detection_id": detection_id, "proofcard_draft_hash": replay.get("proofcard_draft_hash")}),
+        ("claim_decision", "PASS" if replay.get("claim_decision_hash") else "NOT_STARTED", {"detection_id": detection_id, "claim_decision_hash": replay.get("claim_decision_hash")}),
     ]
     nodes = [hoxline_node(*spec) for spec in node_specs]
     node_ids = {node["node_type"]: node["node_id"] for node in nodes}
@@ -7263,8 +7365,7 @@ def hoxline_validate_evidence_graph_shape(graph: dict[str, Any], *, verify_hash:
     hoxline_assert_no_raw_private_fields(graph)
     if graph.get("schema_version") != HOXLINE_EVIDENCE_GRAPH_SCHEMA_VERSION:
         raise FactoryError("Hoxline evidence graph schema_version invalid")
-    if graph.get("detection_id") != "HO-DET-001":
-        raise FactoryError("Hoxline evidence graph detection_id invalid")
+    hoxline_runtime_contract(str(graph.get("detection_id")))
     hoxline_validate_execution_id(str(graph.get("execution_id")))
     if graph.get("public_safe") is not False or graph.get("proof_ceiling") != HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING:
         raise FactoryError("Hoxline evidence graph public/proof ceiling boundary promoted")
@@ -7372,9 +7473,10 @@ def hoxline_claim_authority_check(graph: dict[str, Any], promotion: dict[str, An
     blocked_reason_codes = sorted({code for phrase, code in HOXLINE_CLAIM_BLOCK_RULES.items() if phrase in normalized})
     if "ledger appended" in normalized and promotion.get("ledger_append_allowed") is True:
         blocked_reason_codes = [code for code in blocked_reason_codes if code != "LEDGER_APPEND_EVIDENCE_MISSING"]
-    if normalized == HOXLINE_BOUNDED_ALLOWED_CLAIM.lower():
+    scoped_runtime_claim = hoxline_bounded_runtime_claim(str(graph["detection_id"]))
+    if normalized == scoped_runtime_claim.lower():
         decision = "ALLOWED_WITH_SCOPE"
-        allowed_claim_text = HOXLINE_BOUNDED_ALLOWED_CLAIM
+        allowed_claim_text = scoped_runtime_claim
         required_missing_evidence: list[str] = []
     elif normalized == HOXLINE_BOUNDED_SCHEDULE_PILOT_CLAIM.lower():
         decision = "ALLOWED_WITH_SCOPE"
@@ -7386,7 +7488,7 @@ def hoxline_claim_authority_check(graph: dict[str, Any], promotion: dict[str, An
         required_missing_evidence = list(graph["missing_evidence"])
     else:
         decision = "CONSTRAINED_REWRITE_REQUIRED"
-        allowed_claim_text = HOXLINE_BOUNDED_ALLOWED_CLAIM
+        allowed_claim_text = scoped_runtime_claim
         required_missing_evidence = list(graph["missing_evidence"])
         blocked_reason_codes = ["CLAIM_OUTSIDE_EXACT_SUPPORTED_SCOPE"]
     output = {
@@ -7408,7 +7510,7 @@ def hoxline_claim_authority_check(graph: dict[str, Any], promotion: dict[str, An
 def hoxline_proofcard_draft(graph: dict[str, Any], promotion: dict[str, Any]) -> dict[str, Any]:
     hoxline_validate_evidence_graph_shape(graph)
     hoxline_validate_promotion_state(promotion, graph)
-    allowed = hoxline_claim_authority_check(graph, promotion, HOXLINE_BOUNDED_ALLOWED_CLAIM)
+    allowed = hoxline_claim_authority_check(graph, promotion, hoxline_bounded_runtime_claim(str(graph["detection_id"])))
     draft = {
         "schema_version": HOXLINE_PROOFCARD_DRAFT_SCHEMA_VERSION,
         "detection_id": graph["detection_id"],
@@ -7435,6 +7537,392 @@ def hoxline_proofcard_draft(graph: dict[str, Any], promotion: dict[str, Any]) ->
     hoxline_assert_no_raw_private_fields(draft)
     draft["proofcard_draft_hash"] = canonical_sha256({key: value for key, value in draft.items() if key != "proofcard_draft_hash"})
     return draft
+
+
+def hoxline_multi_detection_default_execution_id(detection_id: str) -> str:
+    hoxline_runtime_contract(detection_id)
+    suffixes = {
+        "HO-DET-001": "6ELQ03",
+        "HO-DET-011": "MD011A",
+        "HO-DET-012": "MD012A",
+    }
+    return f"{detection_id}-20260621T080000Z-{suffixes[detection_id]}"
+
+
+def hoxline_multi_detection_runtime_fixture(
+    detection_id: str,
+    *,
+    execution_id: str | None = None,
+    omit_signal_field: str | None = None,
+    omit_candidate_field: str | None = None,
+    wazuh_rule_id: str | None = None,
+) -> dict[str, Any]:
+    contract = hoxline_runtime_contract(detection_id)
+    resolved_execution_id = execution_id or hoxline_multi_detection_default_execution_id(detection_id)
+    hoxline_validate_execution_id(resolved_execution_id)
+    if hoxline_detection_from_execution_id(resolved_execution_id) != detection_id:
+        raise FactoryError("Hoxline multi-detection execution_id detection mismatch")
+    replay = hoxline_runtime_replay_fixture(
+        execution_id=resolved_execution_id,
+        detection_id=detection_id,
+        include_proofcard_draft=True,
+        include_claim_decision=True,
+    )
+    manifest = replay["evidence_manifest"]
+    receipt = {
+        "schema_version": "hoxline-sanitized-runtime-signal-receipt-v0",
+        "detection_id": detection_id,
+        "execution_id": resolved_execution_id,
+        "backend_class": contract["backend_class"],
+        "wazuh_rule_id": wazuh_rule_id or contract["expected_wazuh_rule_id"],
+        "rule_ref_hash": canonical_sha256(contract["rule_ref"]),
+        "event_class": contract["event_class"],
+        "observed_at_utc": "2026-06-21T08:00:00Z",
+        "event_id_hash": hashlib.sha256(f"{resolved_execution_id}:event-id".encode("utf-8")).hexdigest(),
+        "receipt_digest": manifest["signal_receipt_digest"],
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+    }
+    if omit_signal_field:
+        receipt.pop(omit_signal_field, None)
+    candidate = {
+        "schema_version": "hoxline-runtime-candidate-v0",
+        "detection_id": detection_id,
+        "execution_id": resolved_execution_id,
+        "candidate_id": hoxline_runtime_case_id(resolved_execution_id, detection_id),
+        "candidate_hash": manifest["candidate_digest"],
+        "detection_family": "host-runtime",
+        "source_system": "Wazuh/Sysmon",
+        "source_truth_status": "SANITIZED_SIGNAL_RECEIPT_HASH_ONLY",
+        "runtime_truth_status": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "signal_truth_status": "PRIVATE_SIGNAL_RECEIPT_HASH_ONLY",
+        "observed_time_utc": receipt["observed_at_utc"],
+        "candidate_content_hash": hashlib.sha256(f"{resolved_execution_id}:candidate-content".encode("utf-8")).hexdigest(),
+        "sanitized_event_fingerprint": hashlib.sha256(f"{resolved_execution_id}:event-fingerprint".encode("utf-8")).hexdigest(),
+        "source_receipt_refs_hash": canonical_sha256({"receipt_digest": manifest["signal_receipt_digest"], "wazuh_rule_id": receipt["wazuh_rule_id"]}),
+        "signal_receipt_digest": manifest["signal_receipt_digest"],
+        "candidate_truth_class": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "human_review_required": True,
+        "ai_disposition_authority": False,
+    }
+    if detection_id == "HO-DET-011":
+        candidate.update(
+            {
+                "service_name_hash": hashlib.sha256(f"{resolved_execution_id}:service-name".encode("utf-8")).hexdigest(),
+                "service_image_path_hash": hashlib.sha256(f"{resolved_execution_id}:service-image-path".encode("utf-8")).hexdigest(),
+            }
+        )
+    if detection_id == "HO-DET-012":
+        candidate.update(
+            {
+                "task_name_hash": hashlib.sha256(f"{resolved_execution_id}:task-name".encode("utf-8")).hexdigest(),
+                "task_action_hash": hashlib.sha256(f"{resolved_execution_id}:task-action".encode("utf-8")).hexdigest(),
+            }
+        )
+    if omit_candidate_field:
+        candidate.pop(omit_candidate_field, None)
+    normalization_key = {field: candidate.get(field) for field in contract["normalization_key_fields"]}
+    dedupe_key = {field: candidate.get(field) for field in contract["dedupe_key_fields"]}
+    normalized = {
+        "schema_version": "hoxline-normalized-runtime-candidate-v0",
+        "detection_id": detection_id,
+        "execution_id": resolved_execution_id,
+        "normalization_key_fields": contract["normalization_key_fields"],
+        "normalization_key_hash": canonical_sha256(normalization_key),
+        "normalized_hash": manifest["normalized_digest"],
+    }
+    dedupe = {
+        "schema_version": "hoxline-dedupe-result-v0",
+        "detection_id": detection_id,
+        "execution_id": resolved_execution_id,
+        "dedupe_key_fields": contract["dedupe_key_fields"],
+        "dedupe_key_hash": canonical_sha256(dedupe_key),
+        "decision": "REPLAY_NO_DUPLICATE",
+        "duplicate_count": 0,
+    }
+    enrichment = {
+        "schema_version": "hoxline-deterministic-enrichment-v0",
+        "detection_id": detection_id,
+        "execution_id": resolved_execution_id,
+        "attack_technique": contract["attack_technique"],
+        "event_class": contract["event_class"],
+        "enrichment_digest": manifest["enrichment_digest"],
+    }
+    ai_support = {
+        "schema_version": "hoxline-ai-support-triage-v0",
+        "detection_id": detection_id,
+        "execution_id": resolved_execution_id,
+        "state": "AI_TRIAGE_UNAVAILABLE",
+        "ai_decided_disposition": False,
+        "ai_disposition_authority": False,
+        "ai_output_digest": manifest["ai_output_digest"],
+    }
+    review_packet = {
+        "schema_version": "hoxline-human-review-packet-v0",
+        "detection_id": detection_id,
+        "execution_id": resolved_execution_id,
+        "candidate_hash": manifest["candidate_digest"],
+        "normalized_hash": manifest["normalized_digest"],
+        "dedupe_decision": dedupe["decision"],
+        "enrichment_digest": manifest["enrichment_digest"],
+        "ai_state": "AI_TRIAGE_UNAVAILABLE",
+        "human_review_required": True,
+        "ledger_append_allowed": False,
+        "public_proof_allowed": False,
+        "schedule_enabled": False,
+        "review_packet_digest": manifest["human_review_packet_digest"],
+    }
+    packet = {
+        "contract": contract,
+        "receipt": receipt,
+        "candidate": candidate,
+        "normalized_candidate": normalized,
+        "dedupe_result": dedupe,
+        "enrichment": enrichment,
+        "ai_support": ai_support,
+        "human_review_packet": review_packet,
+        "replay": replay,
+    }
+    hoxline_assert_no_raw_private_fields(packet)
+    return packet
+
+
+def hoxline_validate_multi_detection_fixture_packet(packet: dict[str, Any]) -> None:
+    contract = hoxline_runtime_contract(str(packet.get("contract", {}).get("detection_id")))
+    receipt = packet["receipt"]
+    candidate = packet["candidate"]
+    for field in contract["required_signal_fields"]:
+        if field not in receipt:
+            raise FactoryError(f"Hoxline multi-detection receipt missing field: {field}")
+    for field in contract["required_candidate_fields"]:
+        if field not in candidate:
+            raise FactoryError(f"Hoxline multi-detection candidate missing field: {field}")
+    if receipt.get("wazuh_rule_id") != contract["expected_wazuh_rule_id"]:
+        raise FactoryError(f"Hoxline multi-detection wrong Wazuh rule for {contract['detection_id']}")
+    if candidate.get("detection_id") != contract["detection_id"] or receipt.get("detection_id") != contract["detection_id"]:
+        raise FactoryError("Hoxline multi-detection detection_id mismatch")
+    if candidate.get("execution_id") != receipt.get("execution_id"):
+        raise FactoryError("Hoxline multi-detection execution_id mismatch")
+    if candidate.get("signal_receipt_digest") != receipt.get("receipt_digest"):
+        raise FactoryError("Hoxline multi-detection signal/candidate digest mismatch")
+    for digest_field in ("receipt_digest",):
+        hoxline_validate_sha256(str(receipt[digest_field]), digest_field)
+    for digest_field in ("candidate_hash", "signal_receipt_digest"):
+        hoxline_validate_sha256(str(candidate[digest_field]), digest_field)
+    hoxline_assert_no_raw_private_fields(packet)
+
+
+def hoxline_multi_detection_runtime_verify(
+    *,
+    repo_root: Path,
+    detection_id: str,
+    execution_id: str | None,
+    private_route: str | None,
+    fixture: bool,
+) -> dict[str, Any]:
+    hoxline_runtime_contract(detection_id)
+    if fixture:
+        packet = hoxline_multi_detection_runtime_fixture(detection_id, execution_id=execution_id)
+        replay = packet["replay"]
+    else:
+        if not execution_id or not private_route:
+            raise FactoryError("hoxline-multi-detection-runtime-verify requires --fixture or both --execution-id and --private-route")
+        if hoxline_detection_from_execution_id(execution_id) != detection_id:
+            raise FactoryError("hoxline multi-detection execution_id detection mismatch")
+        replay = hoxline_runtime_replay(execution_id, private_route)
+        packet = hoxline_multi_detection_runtime_fixture(detection_id, execution_id=execution_id)
+    hoxline_validate_multi_detection_fixture_packet(packet)
+    graph = hoxline_build_evidence_graph(replay)
+    promotion = hoxline_promotion_state_from_graph(graph)
+    claim = hoxline_claim_authority_check(graph, promotion, hoxline_bounded_runtime_claim(detection_id))
+    proofcard = hoxline_proofcard_draft(graph, promotion)
+    review_queue = hoxline_runtime_review_queue_from_replay(replay)
+    checkpoint = hoxline_runtime_checkpoint_from_replay(replay)
+    checkpoint_verify = hoxline_verify_checkpoint(checkpoint)
+    log_chain = hoxline_verify_runtime_log_chain(hoxline_runtime_logs_from_replay(replay))
+    no_new_signal = hoxline_checkpoint_decision(checkpoint, signal_digest=None, execution_id=None)
+    duplicate_signal = hoxline_checkpoint_decision(
+        checkpoint,
+        signal_digest=checkpoint["last_signal_digest"],
+        execution_id=checkpoint["last_execution_id"],
+        candidate_digest=checkpoint["last_candidate_digest"],
+    )
+    unsafe_claims = {
+        "production": hoxline_claim_authority_check(graph, promotion, f"{detection_id} production SOC"),
+        "public_safe": hoxline_claim_authority_check(graph, promotion, f"{detection_id} public-safe runtime proof"),
+        "ai_approved": hoxline_claim_authority_check(graph, promotion, f"AI approved {detection_id}"),
+        "analyst_approved": hoxline_claim_authority_check(graph, promotion, f"analyst approved {detection_id}"),
+        "case_closed": hoxline_claim_authority_check(graph, promotion, f"{detection_id} case closed"),
+        "socaas": hoxline_claim_authority_check(graph, promotion, f"{detection_id} SOCaaS deployed"),
+        "customer": hoxline_claim_authority_check(graph, promotion, f"{detection_id} customer deployed"),
+        "fleet_wide": hoxline_claim_authority_check(graph, promotion, f"{detection_id} fleet-wide coverage"),
+    }
+    checks = {
+        "contract_verified": packet["contract"]["detection_id"] == detection_id,
+        "candidate_shape_verified": True,
+        "normalization_verified": packet["normalized_candidate"]["normalized_hash"] == replay["evidence_manifest"]["normalized_digest"],
+        "dedupe_verified": packet["dedupe_result"]["decision"] == "REPLAY_NO_DUPLICATE",
+        "human_review_required": packet["human_review_packet"]["human_review_required"] is True,
+        "replay_no_duplicate": replay["replay_result"] == "REPLAY_NO_DUPLICATE",
+        "metrics_separated": replay["metrics"]["runtime_candidate_count"] == 1 and replay["metrics"]["lifetime_ledger_case_count"] == 6,
+        "review_queue_private": review_queue["ledger_appended"] == 0 and review_queue["public_safe_case_count"] == 0,
+        "checkpoint_verified": checkpoint_verify["status"] == "pass",
+        "log_chain_verified": log_chain["status"] == "pass",
+        "evidence_graph_verified": graph["runtime_truth_class"] == HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "promotion_private": promotion["ledger_append_allowed"] is False and promotion["public_proof_allowed"] is False,
+        "claim_allowed_with_scope": claim["decision"] == "ALLOWED_WITH_SCOPE",
+        "proofcard_private": proofcard["public_proof_promoted"] is False and proofcard["ledger_mutated"] is False,
+        "unsafe_claims_blocked": all(item["decision"] == "BLOCKED" for item in unsafe_claims.values()),
+        "no_new_signal_no_candidate": no_new_signal["decision"] == "NO_NEW_SIGNAL_NO_CANDIDATE",
+        "duplicate_signal_suppressed": duplicate_signal["decision"] == "DUPLICATE_SIGNAL_SUPPRESSED",
+        "ledger_append_zero": replay["metrics"]["ledger_append_count"] == 0,
+        "public_proof_zero": replay["metrics"]["public_proof_promotion_count"] == 0,
+        "schedule_disabled": replay["metrics"]["schedule_enabled"] == 0,
+        "ai_support_only": packet["ai_support"]["ai_disposition_authority"] is False,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Hoxline multi-detection runtime verify failed checks: {', '.join(failed)}")
+    output = {
+        "controller_version": CONTROLLER_VERSION,
+        "schema_version": HOXLINE_MULTI_DETECTION_RUNTIME_SCHEMA_VERSION,
+        "mode": "hoxline-multi-detection-runtime-verify",
+        "status": "pass",
+        "detection_id": detection_id,
+        "execution_id": replay["execution_id"],
+        "contract": packet["contract"],
+        "sanitized_signal_receipt_hash": packet["receipt"]["receipt_digest"],
+        "candidate_hash": packet["candidate"]["candidate_hash"],
+        "normalization_hash": packet["normalized_candidate"]["normalized_hash"],
+        "dedupe_key_hash": packet["dedupe_result"]["dedupe_key_hash"],
+        "enrichment_digest": packet["enrichment"]["enrichment_digest"],
+        "ai_state": replay["ai_state"],
+        "human_review_packet_digest": packet["human_review_packet"]["review_packet_digest"],
+        "replay_result": replay["replay_result"],
+        "metrics": replay["metrics"],
+        "review_queue": review_queue,
+        "checkpoint_hash": checkpoint["checkpoint_hash"],
+        "log_head_hash": log_chain["log_head_hash"],
+        "evidence_graph_hash": graph["graph_hash"],
+        "promotion_hash": promotion["promotion_hash"],
+        "claim_decision_hash": claim["claim_decision_hash"],
+        "proofcard_draft_hash": proofcard["proofcard_draft_hash"],
+        "allowed_claim_text": claim["allowed_claim_text"],
+        "blocked_claims": {key: value["blocked_reason_codes"] for key, value in unsafe_claims.items()},
+        "checks": checks,
+        "ledger_mutated": False,
+        "ledger_append_count": 0,
+        "public_proof_promoted": False,
+        "public_proof_promotion_count": 0,
+        "schedule_enabled": False,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "ai_disposition_authority": False,
+        "human_review_required": True,
+        "case_closed": False,
+        "result_hash": "",
+    }
+    hoxline_assert_no_raw_private_fields(output)
+    output["result_hash"] = canonical_sha256({key: value for key, value in output.items() if key != "result_hash"})
+    return output
+
+
+def hoxline_multi_detection_runtime_self_test(repo_root: Path) -> dict[str, Any]:
+    results = {
+        detection_id: hoxline_multi_detection_runtime_verify(
+            repo_root=repo_root,
+            detection_id=detection_id,
+            execution_id=None,
+            private_route=None,
+            fixture=True,
+        )
+        for detection_id in HOXLINE_SUPPORTED_RUNTIME_DETECTIONS
+    }
+
+    def expect_error(label: str, fn: Callable[[], Any]) -> bool:
+        try:
+            fn()
+        except FactoryError:
+            return True
+        raise FactoryError(f"Hoxline multi-detection negative test did not fail closed: {label}")
+
+    missing_011 = expect_error(
+        "ho-det-011-missing-required-field",
+        lambda: hoxline_validate_multi_detection_fixture_packet(
+            hoxline_multi_detection_runtime_fixture("HO-DET-011", omit_candidate_field="service_name_hash")
+        ),
+    )
+    missing_012 = expect_error(
+        "ho-det-012-missing-required-field",
+        lambda: hoxline_validate_multi_detection_fixture_packet(
+            hoxline_multi_detection_runtime_fixture("HO-DET-012", omit_candidate_field="task_name_hash")
+        ),
+    )
+    wrong_rule = expect_error(
+        "wrong-wazuh-rule",
+        lambda: hoxline_validate_multi_detection_fixture_packet(
+            hoxline_multi_detection_runtime_fixture("HO-DET-011", wazuh_rule_id="910021")
+        ),
+    )
+    unsupported = expect_error(
+        "unsupported-detection",
+        lambda: hoxline_multi_detection_runtime_verify(
+            repo_root=repo_root,
+            detection_id="HO-DET-999",
+            execution_id=None,
+            private_route=None,
+            fixture=True,
+        ),
+    )
+    graph_011 = hoxline_build_evidence_graph(hoxline_runtime_replay_fixture(execution_id=hoxline_multi_detection_default_execution_id("HO-DET-011"), detection_id="HO-DET-011"))
+    promotion_011 = hoxline_promotion_state_from_graph(graph_011)
+    graph_012 = hoxline_build_evidence_graph(hoxline_runtime_replay_fixture(execution_id=hoxline_multi_detection_default_execution_id("HO-DET-012"), detection_id="HO-DET-012"))
+    promotion_012 = hoxline_promotion_state_from_graph(graph_012)
+    checks = {
+        "ho_det_001_still_passes": results["HO-DET-001"]["status"] == "pass",
+        "ho_det_011_fixture_passes": results["HO-DET-011"]["status"] == "pass",
+        "ho_det_012_fixture_passes": results["HO-DET-012"]["status"] == "pass",
+        "unsupported_detection_fails_closed": unsupported,
+        "ho_det_011_missing_required_field_fails": missing_011,
+        "ho_det_012_missing_required_field_fails": missing_012,
+        "wrong_wazuh_rule_fails": wrong_rule,
+        "duplicate_signal_suppressed_all": all(result["checks"]["duplicate_signal_suppressed"] for result in results.values()),
+        "no_new_signal_no_candidate_all": all(result["checks"]["no_new_signal_no_candidate"] for result in results.values()),
+        "candidate_count_not_ledger_count": all(result["metrics"]["runtime_candidate_count"] != result["metrics"]["lifetime_ledger_case_count"] for result in results.values()),
+        "runtime_candidate_count_per_detection": {key: value["metrics"]["runtime_candidate_count"] for key, value in results.items()} == {"HO-DET-001": 1, "HO-DET-011": 1, "HO-DET-012": 1},
+        "ho_det_011_production_blocked": hoxline_claim_authority_check(graph_011, promotion_011, "HO-DET-011 production SOC")["decision"] == "BLOCKED",
+        "ho_det_012_public_safe_blocked": hoxline_claim_authority_check(graph_012, promotion_012, "HO-DET-012 public-safe runtime proof")["decision"] == "BLOCKED",
+        "ho_det_011_ai_approved_blocked": hoxline_claim_authority_check(graph_011, promotion_011, "AI approved HO-DET-011")["decision"] == "BLOCKED",
+        "ho_det_012_analyst_approved_blocked": hoxline_claim_authority_check(graph_012, promotion_012, "analyst approved HO-DET-012")["decision"] == "BLOCKED",
+        "bounded_claim_allowed_all": all(result["checks"]["claim_allowed_with_scope"] for result in results.values()),
+        "no_ledger_mutation": all(result["ledger_append_count"] == 0 and result["ledger_mutated"] is False for result in results.values()),
+        "no_public_proof": all(result["public_proof_promotion_count"] == 0 and result["public_proof_promoted"] is False for result in results.values()),
+        "no_schedule_enablement": all(result["schedule_enabled"] is False for result in results.values()),
+        "ai_support_only": all(result["ai_disposition_authority"] is False for result in results.values()),
+        "human_review_required": all(result["human_review_required"] is True for result in results.values()),
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Hoxline multi-detection runtime self-test failed checks: {', '.join(failed)}")
+    output = {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-multi-detection-runtime-self-test",
+        "status": "pass",
+        "supported_detection_ids": list(HOXLINE_SUPPORTED_RUNTIME_DETECTIONS),
+        "checks": checks,
+        "result_hashes": {key: value["result_hash"] for key, value in results.items()},
+        "evidence_graph_hashes": {key: value["evidence_graph_hash"] for key, value in results.items()},
+        "promotion_hashes": {key: value["promotion_hash"] for key, value in results.items()},
+        "claim_decision_hashes": {key: value["claim_decision_hash"] for key, value in results.items()},
+        "ledger_append_count": 0,
+        "public_proof_promotion_count": 0,
+        "schedule_enabled": False,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+    }
+    hoxline_assert_no_raw_private_fields(output)
+    return output
 
 
 def hoxline_control_plane_self_test(repo_root: Path) -> dict[str, Any]:
@@ -8092,10 +8580,11 @@ def hoxline_pilot_backpressure_policy() -> dict[str, Any]:
 
 
 def hoxline_pilot_checkpoint_from_replay(replay: dict[str, Any]) -> dict[str, Any]:
+    detection_id = replay["evidence_manifest"]["detection_id"]
     checkpoint = {
         "schema_version": "hoxline-runtime-checkpoint-v0",
         "backend_identity": "HO-WAZUH-01",
-        "detection_id": "HO-DET-001",
+        "detection_id": detection_id,
         "last_successful_observed_at": "2026-06-20T17:37:27Z",
         "last_signal_digest": replay["evidence_manifest"]["signal_receipt_digest"],
         "last_execution_id": replay["execution_id"],
@@ -9280,6 +9769,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub = subparsers.add_parser("hoxline-schedule-pilot-self-test")
     sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-multi-detection-runtime-verify")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
+    sub.add_argument("--detection-id", required=True)
+    sub.add_argument("--execution-id")
+    sub.add_argument("--private-route")
+    sub.add_argument("--fixture", action="store_true")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-multi-detection-runtime-self-test")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("public-status-source-contract-verify")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("self-test-id-det-001-missing-surfaces")
@@ -9725,6 +10224,22 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "hoxline-schedule-pilot-self-test":
         output = hoxline_schedule_pilot_self_test(Path(args.repo_root).resolve())
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-multi-detection-runtime-verify":
+        output = hoxline_multi_detection_runtime_verify(
+            repo_root=Path(args.repo_root).resolve(),
+            detection_id=args.detection_id,
+            execution_id=args.execution_id,
+            private_route=args.private_route,
+            fixture=args.fixture,
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-multi-detection-runtime-self-test":
+        output = hoxline_multi_detection_runtime_self_test(Path(args.repo_root).resolve())
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 

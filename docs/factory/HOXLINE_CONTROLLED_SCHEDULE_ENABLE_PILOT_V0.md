@@ -96,4 +96,4 @@ python -B -m unittest tests\test_hoxline_controlled_schedule_pilot.py
 
 ## Next Legal Gate
 
-After a successful bounded pilot, the next safe gate is multi-detection runtime expansion readiness for `HO-DET-011` and `HO-DET-012`, not website work.
+After a successful bounded pilot, the next safe gate is the fixture-based multi-detection runtime expansion runbook in `docs/factory/HOXLINE_MULTI_DETECTION_RUNTIME_EXPANSION_V0.md`, not website work.
