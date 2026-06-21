@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -68,6 +71,57 @@ class HoxlineRuntimeOpsTests(unittest.TestCase):
         self.assertEqual(result["status"], "pass")
         self.assertTrue(result["pr_source_checks_github_hosted_only"])
         self.assertFalse(result["unrestricted_artifact_upload"])
+
+    def test_canary_from_sanitized_receipts_builds_replay_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            route = Path(tmp) / "private-route"
+            route.mkdir()
+            receipts = []
+            for index in range(1, 4):
+                execution_id = f"HO-DET-001-20260620T173615Z-CAN00{index}"
+                receipts.append(
+                    {
+                        "execution_id": execution_id,
+                        "receipt_digest": hashlib.sha256(execution_id.encode("utf-8")).hexdigest(),
+                        "observed_at_utc": f"2026-06-20T17:3{index}:00Z",
+                        "wazuh_rule_id": "100204",
+                        "backend_identity": "HO-WAZUH-01",
+                        "event_class": "PowerShell_EncodedCommand",
+                        "signal_count": 1,
+                    }
+                )
+            receipts_path = Path(tmp) / "receipts.json"
+            receipts_path.write_text(
+                json.dumps({"schema_version": "hoxline-wazuh-signal-receipts-v0", "receipts": receipts}),
+                encoding="utf-8",
+            )
+
+            result = ho_factory.hoxline_runtime_canary_from_receipts(
+                str(receipts_path),
+                str(route),
+                allow_unapproved_test_route=True,
+            )
+
+            self.assertEqual(result["status"], "pass")
+            self.assertEqual(result["controlled_execution_count"], 3)
+            self.assertFalse(result["ledger_mutated"])
+            self.assertFalse(result["public_proof_promoted"])
+            self.assertEqual({row["ai_state"] for row in result["canary_rows"]}, {"AI_TRIAGE_UNAVAILABLE"})
+
+    def test_canary_receipt_rejects_raw_private_field(self) -> None:
+        receipt = {
+            "execution_id": "HO-DET-001-20260620T173615Z-CAN001",
+            "receipt_digest": hashlib.sha256(b"receipt").hexdigest(),
+            "observed_at_utc": "2026-06-20T17:31:00Z",
+            "wazuh_rule_id": "100204",
+            "backend_identity": "HO-WAZUH-01",
+            "event_class": "PowerShell_EncodedCommand",
+            "signal_count": 1,
+            "raw_alert": "blocked",
+        }
+
+        with self.assertRaises(ho_factory.FactoryError):
+            ho_factory.hoxline_validate_canary_receipt(receipt)
 
 
 if __name__ == "__main__":

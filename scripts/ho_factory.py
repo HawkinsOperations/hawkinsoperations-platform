@@ -7041,6 +7041,295 @@ def hoxline_runtime_canary_dry_run(controlled_count: int) -> dict[str, Any]:
     }
 
 
+def hoxline_load_canary_receipts(receipts_path: Path) -> list[dict[str, Any]]:
+    packet = load_json(receipts_path)
+    if not isinstance(packet, dict):
+        raise FactoryError("Hoxline canary receipt packet must be an object")
+    if packet.get("schema_version") != "hoxline-wazuh-signal-receipts-v0":
+        raise FactoryError("Hoxline canary receipt packet schema_version is invalid")
+    receipts = packet.get("receipts")
+    if not isinstance(receipts, list):
+        raise FactoryError("Hoxline canary receipt packet receipts must be a list")
+    return receipts
+
+
+def hoxline_validate_canary_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
+    required = (
+        "execution_id",
+        "receipt_digest",
+        "observed_at_utc",
+        "wazuh_rule_id",
+        "backend_identity",
+        "event_class",
+        "signal_count",
+    )
+    missing = sorted(field for field in required if field not in receipt)
+    if missing:
+        raise FactoryError(f"Hoxline canary receipt missing fields: {', '.join(missing)}")
+    hoxline_assert_no_raw_private_fields(receipt)
+    hoxline_validate_execution_id(str(receipt["execution_id"]))
+    hoxline_validate_sha256(str(receipt["receipt_digest"]), "receipt")
+    if str(receipt["wazuh_rule_id"]) != "100204":
+        raise FactoryError("Hoxline canary receipt Wazuh rule must be 100204 for HO-DET-001")
+    if str(receipt["backend_identity"]) not in {"HO-WAZUH-01", "ho-wazuh-01"}:
+        raise FactoryError("Hoxline canary receipt backend identity must be HO-WAZUH-01")
+    if int(receipt["signal_count"]) < 1:
+        raise FactoryError("Hoxline canary receipt signal_count must be at least one")
+    return {
+        "execution_id": str(receipt["execution_id"]),
+        "receipt_digest": str(receipt["receipt_digest"]),
+        "observed_at_utc": str(receipt["observed_at_utc"]),
+        "wazuh_rule_id": str(receipt["wazuh_rule_id"]),
+        "backend_identity": "HO-WAZUH-01",
+        "event_class": str(receipt["event_class"]),
+        "signal_count": int(receipt["signal_count"]),
+    }
+
+
+def hoxline_build_deterministic_enrichment(execution_id: str, normalized_candidate: dict[str, Any]) -> dict[str, Any]:
+    packet = {
+        "schema_version": "hoxline-deterministic-enrichment-v0",
+        "execution_id": execution_id,
+        "detection_id": "HO-DET-001",
+        "generated_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "sources": [
+            {
+                "source_type": "normalized_candidate_hash",
+                "source_hash": normalized_candidate["normalized_candidate_hash"],
+                "status": "pass",
+            },
+            {
+                "source_type": "source_receipt_refs_hash",
+                "source_hash": normalized_candidate["source_receipt_refs_hash"],
+                "status": "pass",
+            },
+        ],
+        "human_review_required": True,
+        "public_safe": False,
+        "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+        "authority_boundary": "deterministic_private_enrichment_no_disposition_no_public_proof",
+        "enrichment_digest": "",
+    }
+    packet["enrichment_digest"] = canonical_sha256({key: value for key, value in packet.items() if key != "enrichment_digest"})
+    return packet
+
+
+def hoxline_build_ai_unavailable_packet(execution_id: str, enrichment: dict[str, Any]) -> dict[str, Any]:
+    packet = {
+        "schema_version": "hoxline-ai-support-triage-v0",
+        "execution_id": execution_id,
+        "detection_id": "HO-DET-001",
+        "model_name": None,
+        "model_runtime_class": "not_invoked_for_canary_v0",
+        "input_hash_sha256": canonical_sha256(enrichment),
+        "prompt_template_hash_sha256": None,
+        "raw_model_output_included": False,
+        "summary": "AI_TRIAGE_UNAVAILABLE for controlled canary v0; human review remains required.",
+        "evidence_highlights": [],
+        "enrichment_interpretation": "not_available",
+        "recommended_review_questions": ["Confirm the private canary receipt and candidate chain before any append decision."],
+        "suggested_next_queries": [],
+        "recommended_disposition": None,
+        "disposition_authority": "NO_AI_DISPOSITION_AUTHORITY",
+        "ai_decided_disposition": False,
+        "human_review_required": True,
+        "public_safe": False,
+        "contradictions_or_gaps": ["AI support was intentionally unavailable for canary v0."],
+    }
+    packet["output_hash_sha256"] = canonical_sha256(packet)
+    packet["state"] = "AI_TRIAGE_UNAVAILABLE"
+    packet["primary_status"] = "unavailable"
+    return packet
+
+
+def hoxline_build_human_review_packet(
+    *,
+    receipt: dict[str, Any],
+    candidate: dict[str, Any],
+    normalized_candidate: dict[str, Any],
+    enrichment: dict[str, Any],
+    ai_output: dict[str, Any],
+    duplicate_count: int,
+) -> dict[str, Any]:
+    packet = {
+        "schema_version": "hoxline-human-review-packet-v0",
+        "execution_id": receipt["execution_id"],
+        "created_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "signal_receipt": {
+            "receipt_digest": receipt["receipt_digest"],
+            "wazuh_rule_id": receipt["wazuh_rule_id"],
+            "backend_identity": receipt["backend_identity"],
+            "observed_at_utc": receipt["observed_at_utc"],
+            "signal_count": receipt["signal_count"],
+        },
+        "controlled_event": {
+            "event_class": receipt["event_class"],
+            "execution_id": receipt["execution_id"],
+        },
+        "candidate": {
+            "candidate_id": candidate["candidate_id"],
+            "candidate_hash": candidate["candidate_hash"],
+            "candidate_payload_hash": candidate["candidate_payload_hash"],
+            "collector_lane": candidate["collector_lane"],
+        },
+        "normalization": {
+            "normalized_candidate_id": normalized_candidate["normalized_candidate_id"],
+            "normalized_hash": normalized_candidate["normalized_candidate_hash"],
+            "normalized_payload_hash": normalized_candidate["normalized_payload_hash"],
+        },
+        "dedupe": {
+            "duplicate_count": duplicate_count,
+            "dedupe_result": "DUPLICATE_SIGNAL_SUPPRESSED" if duplicate_count else "NO_DUPLICATE",
+        },
+        "enrichment": {
+            "enrichment_digest": enrichment["enrichment_digest"],
+            "status": "pass",
+        },
+        "ai_triage": {
+            "state": ai_output["state"],
+            "primary_status": ai_output["primary_status"],
+            "input_hash_sha256": ai_output["input_hash_sha256"],
+            "output_hash_sha256": ai_output["output_hash_sha256"],
+            "ai_decided_disposition": False,
+            "human_review_required": True,
+        },
+        "runner_proof": {
+            "runner_identity": "HO-GPU-01",
+            "runner_labels": ["self-hosted", "ho-gpu-01", "gpu", "v100"],
+            "trusted_runtime_context": True,
+        },
+        "ledger_baseline": {
+            "total_cases": 6,
+            "total_ledger_events": 6,
+            "public_safe_count": 0,
+            "closed_case_count": 0,
+        },
+        "proposed_ledger_delta": {
+            "case_count_delta": 0,
+            "event_count_delta": 0,
+            "append_requires_human_approval": True,
+        },
+        "human_review_required": True,
+        "public_safe": False,
+        "case_closed": False,
+        "append_to_lifetime_ledger": False,
+        "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+        "review_packet_digest": "",
+    }
+    hoxline_assert_no_raw_private_fields(packet)
+    packet["review_packet_digest"] = canonical_sha256({key: value for key, value in packet.items() if key != "review_packet_digest"})
+    return packet
+
+
+def hoxline_write_json_once(path: Path, packet: dict[str, Any]) -> bool:
+    payload = json.dumps(packet, indent=2, sort_keys=True) + "\n"
+    if path.exists():
+        existing = path.read_text(encoding="utf-8")
+        if existing != payload:
+            raise FactoryError(f"existing Hoxline canary artifact differs: {path.name}")
+        return False
+    path.write_text(payload, encoding="utf-8")
+    return True
+
+
+def hoxline_runtime_canary_from_receipts(
+    receipts_path: str,
+    private_route: str,
+    *,
+    allow_unapproved_test_route: bool = False,
+) -> dict[str, Any]:
+    route = Path(private_route).resolve()
+    if not route.is_dir() or not os.access(route, os.W_OK):
+        raise FactoryError("Hoxline canary private route must be an existing writable directory")
+    if not allow_unapproved_test_route:
+        normalize_linux_collector_route(str(route))
+    receipts = [hoxline_validate_canary_receipt(receipt) for receipt in hoxline_load_canary_receipts(Path(receipts_path).resolve())]
+    if len(receipts) != 3:
+        raise FactoryError("Hoxline live canary requires exactly three sanitized Wazuh receipts")
+    execution_ids = [receipt["execution_id"] for receipt in receipts]
+    if len(set(execution_ids)) != 3:
+        raise FactoryError("Hoxline live canary execution IDs must be unique")
+
+    rows = []
+    written_count = 0
+    for receipt in receipts:
+        candidate_output = runtime_collector_linux_run_once(
+            True,
+            None,
+            execution_id=receipt["execution_id"],
+            signal_receipt_digest=receipt["receipt_digest"],
+            signal_observed_time_utc=receipt["observed_at_utc"],
+            backend_class="Wazuh",
+            wazuh_rule_id=receipt["wazuh_rule_id"],
+        )
+        candidate = candidate_output["packet"]["candidates"][0]
+        candidate_written = hoxline_write_json_once(
+            route / f"{candidate['collector_run_id']}-{candidate['candidate_id']}.json",
+            candidate_output["packet"],
+        )
+        normalized_candidate = normalize_runtime_collector_candidate(candidate, "linux")
+        verify_runtime_collector_normalized_candidate(normalized_candidate)
+        duplicate_count = 0 if candidate_written else 1
+        enrichment = hoxline_build_deterministic_enrichment(receipt["execution_id"], normalized_candidate)
+        ai_output = hoxline_build_ai_unavailable_packet(receipt["execution_id"], enrichment)
+        review_packet = hoxline_build_human_review_packet(
+            receipt=receipt,
+            candidate=candidate,
+            normalized_candidate=normalized_candidate,
+            enrichment=enrichment,
+            ai_output=ai_output,
+            duplicate_count=duplicate_count,
+        )
+        written_count += int(
+            hoxline_write_json_once(route / f"hoxline-enrichment-v0-{receipt['execution_id']}.json", enrichment)
+        )
+        written_count += int(
+            hoxline_write_json_once(route / f"hoxline-ai-support-v0-{receipt['execution_id']}.json", ai_output)
+        )
+        written_count += int(
+            hoxline_write_json_once(route / f"hoxline-human-review-packet-v0-{receipt['execution_id']}.json", review_packet)
+        )
+        replay = hoxline_runtime_replay(receipt["execution_id"], str(route), write_journal=True, write_manifest=True)
+        log_chain = hoxline_verify_runtime_log_chain(hoxline_runtime_logs_from_replay(replay))
+        checkpoint = hoxline_verify_checkpoint(hoxline_runtime_checkpoint_from_replay(replay))
+        rows.append(
+            {
+                "execution_id": receipt["execution_id"],
+                "signal_receipt_digest": receipt["receipt_digest"],
+                "candidate_digest": replay["evidence_manifest"]["candidate_digest"],
+                "normalized_hash": replay["evidence_manifest"]["normalized_digest"],
+                "enrichment_digest": replay["evidence_manifest"]["enrichment_digest"],
+                "ai_state": replay["ai_state"],
+                "human_review_packet_digest": replay["evidence_manifest"]["human_review_packet_digest"],
+                "replay_result": replay["replay_result"],
+                "journal_head_hash": replay["evidence_manifest"]["journal_head_hash"],
+                "manifest_hash": replay["evidence_manifest"]["manifest_hash"],
+                "log_head_hash": log_chain["log_head_hash"],
+                "checkpoint_hash": checkpoint["checkpoint_hash"],
+                "duplicate_count": duplicate_count,
+                "ledger_append_count": replay["metrics"]["ledger_append_count"],
+                "public_proof_promotion_count": replay["metrics"]["public_proof_promotion_count"],
+            }
+        )
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "schema_version": "hoxline-private-canary-result-v0",
+        "mode": "hoxline-runtime-canary-from-receipts",
+        "status": "pass",
+        "controlled_execution_count": len(rows),
+        "canary_rows": rows,
+        "generated_output_files": written_count > 0,
+        "written_artifact_count": written_count,
+        "ledger_mutated": False,
+        "public_proof_promoted": False,
+        "schedule_enabled": False,
+        "case_closed": False,
+        "ai_disposition_authority": False,
+        "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+    }
+
+
 def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
     workflow_dir = repo_root / ".github" / "workflows"
     workflows = {path.name: path.read_text(encoding="utf-8") for path in sorted(workflow_dir.glob("*.yml"))}
@@ -7423,6 +7712,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub = subparsers.add_parser("hoxline-runtime-canary")
     sub.add_argument("--controlled-count", type=int, default=3)
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-canary-from-receipts")
+    sub.add_argument("--receipts", required=True)
+    sub.add_argument("--private-route", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("hoxline-runtime-schedule-gate")
     sub.add_argument("--event-name", default="workflow_dispatch", choices=("workflow_dispatch", "schedule"))
     sub.add_argument("--enable-input", action="store_true")
@@ -7781,6 +8074,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "hoxline-runtime-canary":
         output = hoxline_runtime_canary_dry_run(args.controlled_count)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-canary-from-receipts":
+        output = hoxline_runtime_canary_from_receipts(args.receipts, args.private_route)
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 

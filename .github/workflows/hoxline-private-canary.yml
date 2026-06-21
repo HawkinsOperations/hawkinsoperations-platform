@@ -8,17 +8,22 @@ on:
         required: true
         type: string
       canary_mode:
-        description: Use dry-run unless Raylee separately approves live canary execution.
+        description: Use dry-run or process an existing sanitized receipt packet on the trusted runner.
         required: true
         type: choice
         default: dry-run
         options:
           - dry-run
+          - from-receipts
       controlled_count:
         description: Must be exactly 3.
         required: true
         type: string
         default: "3"
+      receipt_packet_path:
+        description: Trusted-runner path to sanitized hoxline-wazuh-signal-receipts-v0 JSON.
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -40,7 +45,6 @@ jobs:
 
       - name: Preflight trusted context and count
         run: |
-          test "${{ inputs.canary_mode }}" = "dry-run"
           test "${{ inputs.controlled_count }}" = "3"
           python3 -B scripts/ho_factory.py hoxline-runtime-job-guard \
             --event-name "$GITHUB_EVENT_NAME" \
@@ -56,7 +60,20 @@ jobs:
         run: python3 -B scripts/ho_factory.py hoxline-runtime-health --private-route "$PRIVATE_ROUTE" --format json >/dev/null
 
       - name: Run exactly three controlled canary dry-run rows
+        if: inputs.canary_mode == 'dry-run'
         run: python3 -B scripts/ho_factory.py hoxline-runtime-canary --controlled-count 3 --format json >/dev/null
+
+      - name: Process exactly three sanitized Wazuh receipts
+        if: inputs.canary_mode == 'from-receipts'
+        env:
+          PRIVATE_ROUTE: ${{ inputs.private_route }}
+          RECEIPT_PACKET_PATH: ${{ inputs.receipt_packet_path }}
+        run: |
+          test -n "$RECEIPT_PACKET_PATH"
+          python3 -B scripts/ho_factory.py hoxline-runtime-canary-from-receipts \
+            --receipts "$RECEIPT_PACKET_PATH" \
+            --private-route "$PRIVATE_ROUTE" \
+            --format json >/dev/null
 
       - name: Verify no repository mutation
         run: git diff --exit-code

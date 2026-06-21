@@ -24,12 +24,17 @@ Hoxline continuous runtime operations v0 is a private, controlled runtime operat
 - `hoxline-runtime-checkpoint-verify`
 - `hoxline-runtime-dead-letter-self-test`
 - `hoxline-runtime-canary`
+- `hoxline-runtime-canary-from-receipts`
 - `hoxline-runtime-schedule-gate`
 - `hoxline-runtime-job-guard`
 - `hoxline-workflow-safety-verify`
 - `hoxline-runtime-ops-self-test`
 
 The metrics command intentionally separates runtime candidate counts from Lifetime Ledger case/event counts. Review queue counts are runtime queue counters only; they are not public proof and do not imply ledger append readiness.
+
+## Canary Receipts
+
+Live canary artifact processing starts from a private sanitized receipt packet with schema `hoxline-wazuh-signal-receipts-v0`. The packet must contain exactly three unique execution IDs and sanitized Wazuh receipt digests. The command writes only private-route artifacts and verifies replay, metrics, log chain, checkpoint, ledger guards, public-proof guards, and AI authority boundaries. It rejects raw alert fields, raw candidate fields, private route fields, credentials, tokens, passwords, and private keys.
 
 ## Logging And Retention
 
