@@ -1,0 +1,32 @@
+{
+  "backend_identity": "HO-WAZUH-01",
+  "detection_id": "HO-DET-012",
+  "execution_id": "HO-DET-012-20260621T084000Z-LR012A",
+  "fixture_mode": false,
+  "generated_by_hoxline": false,
+  "observed_at_utc": "2026-06-21T08:40:00Z",
+  "operator_supplied": true,
+  "raw_alert_included": false,
+  "raw_command_included": false,
+  "receipt_digest": "8140f7d4e6d1d8ac878591093a4c15c6324c6b29d708d8b3c67e61001147ff7a",
+  "receipt_hash": "4c4f0b05d6273f813ff4fcbbf82239fe522dfee5b87b8d080ff7786fa63b4b1e",
+  "receipt_source_class": "OPERATOR_SUPPLIED_SANITIZED_LIVE_RECEIPT",
+  "rule_ref": "detections/successor/ho-det-012/wazuh.xml",
+  "sanitized_field_hashes": {
+    "event_id_hash": "c7b284f49be9643d63e2075d7439f3f7efd2ad2eba3cd1287a390a027a432534",
+    "task_action_hash": "8a06cfe99fa7740cf238eeb6706520a534010de5dac7bd1220c836ee8a01d902",
+    "task_name_hash": "02729c665235ad06fac22e279295d285dbcfd2993f436cc82f74714024200a45"
+  },
+  "schema_version": "hoxline-sanitized-live-receipt-v0",
+  "signal_count": 1,
+  "source_attestation": {
+    "fixture_source": false,
+    "generated_by_hoxline": false,
+    "operator_supplied": true,
+    "raw_event_included": false,
+    "raw_private_evidence_in_repo": false,
+    "source_attestation_hash": "04c62b7693368be7f45c97be5a03ce81b393de283b4ca02eeddb5e83a6b5b8b9",
+    "source_kind": "trusted_live_wazuh_sanitized_receipt",
+    "trusted_runtime_context": true
+  }
+}
