@@ -1,0 +1,59 @@
+{
+  "fixture_mode": false,
+  "generated_by_hoxline": false,
+  "operator_attestation": {
+    "attestation_id": "hoxline-operator-attestation-20260621T084000Z",
+    "collection_method": "alerts_json_sanitized_hash_only_scan",
+    "operator_attestation_hash": "a2119452714fc6bfda2352e249bcbb571ec2d003cc10d204c95737e345cb28dd",
+    "operator_supplied": true,
+    "persistence_behavior_generated_by_hoxline": false,
+    "raw_payload_omitted": true,
+    "source_system": "Wazuh",
+    "source_time_window_end_utc": "2026-06-21T08:45:00Z",
+    "source_time_window_start_utc": "2026-06-21T08:40:00Z"
+  },
+  "packet_hash": "55a73db6934f38d4f12e59e3ac4e4e22eae6d950272657728b41e65044b62359",
+  "packet_id": "hoxline-operator-receipt-HO-DET-011-20260621T084000Z-LR011A-886790676633",
+  "raw_alerts_included": false,
+  "raw_commands_included": false,
+  "receipt_count": 1,
+  "receipts": [
+    {
+      "backend_identity": "HO-WAZUH-01",
+      "detection_id": "HO-DET-011",
+      "execution_id": "HO-DET-011-20260621T084000Z-LR011A",
+      "fixture_mode": false,
+      "generated_by_hoxline": false,
+      "observed_at_utc": "2026-06-21T08:40:00Z",
+      "operator_supplied": true,
+      "raw_alert_included": false,
+      "raw_command_included": false,
+      "receipt_digest": "c2a3722d201fe33e54c1cf980850367dd998f533f33e4feea92391a17bd15cc1",
+      "receipt_hash": "886790676633d852d923307409fcad2808f8c8763a2e2576c1be28bbf91bbb13",
+      "receipt_source_class": "OPERATOR_SUPPLIED_SANITIZED_LIVE_RECEIPT",
+      "rule_ref": "detections/successor/ho-det-011/wazuh.xml",
+      "sanitized_field_hashes": {
+        "event_id_hash": "fe1ba3bff7d1426f1141d3bd2dfe71be40fe1d8a7e58b5135f77ee6a7602da34",
+        "service_image_path_hash": "e36a51feb24ca019dfba8c34f2ece5a527492c44a394e37fc2316321898e720b",
+        "service_name_hash": "db14217153d20483129729d432acdd037590c564db429b5e77bd626078afe68f"
+      },
+      "schema_version": "hoxline-sanitized-live-receipt-v0",
+      "signal_count": 1,
+      "source_attestation": {
+        "fixture_source": false,
+        "generated_by_hoxline": false,
+        "operator_supplied": true,
+        "raw_event_included": false,
+        "raw_private_evidence_in_repo": false,
+        "source_attestation_hash": "04c62b7693368be7f45c97be5a03ce81b393de283b4ca02eeddb5e83a6b5b8b9",
+        "source_kind": "trusted_live_wazuh_sanitized_receipt",
+        "trusted_runtime_context": true
+      }
+    }
+  ],
+  "schema_version": "hoxline-operator-receipt-packet-v0",
+  "supported_detection_ids": [
+    "HO-DET-011",
+    "HO-DET-012"
+  ]
+}

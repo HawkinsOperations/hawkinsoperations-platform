@@ -54,6 +54,7 @@ jobs:
           python -B scripts/ho_factory.py hoxline-schedule-pilot-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
           python -B scripts/ho_factory.py hoxline-multi-detection-runtime-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
           python -B scripts/ho_factory.py hoxline-sanitized-live-receipt-intake-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-operator-receipt-collection-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
           python -B scripts/ho_factory.py hoxline-workflow-safety-verify --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
           python -B -m unittest discover -s tests
           git diff --check

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hawkinsoperations.dev/contracts/hoxline-operator-receipt-packet-v0.schema.json",
+  "title": "Hoxline Operator Receipt Packet v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "packet_id",
+    "operator_attestation",
+    "receipts",
+    "receipt_count",
+    "supported_detection_ids",
+    "raw_alerts_included",
+    "raw_commands_included",
+    "generated_by_hoxline",
+    "fixture_mode",
+    "packet_hash"
+  ],
+  "properties": {
+    "schema_version": { "const": "hoxline-operator-receipt-packet-v0" },
+    "packet_id": { "type": "string", "minLength": 1 },
+    "operator_attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attestation_id",
+        "operator_supplied",
+        "source_system",
+        "source_time_window_start_utc",
+        "source_time_window_end_utc",
+        "collection_method",
+        "raw_payload_omitted",
+        "persistence_behavior_generated_by_hoxline",
+        "operator_attestation_hash"
+      ],
+      "properties": {
+        "attestation_id": { "type": "string", "minLength": 1 },
+        "operator_supplied": { "const": true },
+        "source_system": { "enum": ["Wazuh", "Wazuh alerts.json", "HO-WAZUH"] },
+        "source_time_window_start_utc": { "type": "string", "pattern": "Z$" },
+        "source_time_window_end_utc": { "type": "string", "pattern": "Z$" },
+        "collection_method": { "const": "alerts_json_sanitized_hash_only_scan" },
+        "raw_payload_omitted": { "const": true },
+        "persistence_behavior_generated_by_hoxline": { "const": false },
+        "operator_attestation_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "receipts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": { "type": "object" }
+    },
+    "receipt_count": { "const": 1 },
+    "supported_detection_ids": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "HO-DET-011" },
+        { "const": "HO-DET-012" }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "raw_alerts_included": { "const": false },
+    "raw_commands_included": { "const": false },
+    "generated_by_hoxline": { "const": false },
+    "fixture_mode": { "const": false },
+    "packet_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}
