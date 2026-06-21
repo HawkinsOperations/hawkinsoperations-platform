@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hoxline Claim Decision v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "decision",
+    "allowed_claim_text",
+    "blocked_reason_codes",
+    "required_missing_evidence",
+    "proof_ceiling",
+    "public_safe_status",
+    "human_review_required",
+    "claim_decision_hash"
+  ],
+  "properties": {
+    "schema_version": { "const": "hoxline-claim-decision-v0" },
+    "decision": { "enum": ["ALLOWED_WITH_SCOPE", "CONSTRAINED_REWRITE_REQUIRED", "BLOCKED"] },
+    "allowed_claim_text": { "type": ["string", "null"] },
+    "blocked_reason_codes": { "type": "array", "items": { "type": "string" } },
+    "required_missing_evidence": { "type": "array", "items": { "type": "string" } },
+    "proof_ceiling": { "const": "PRIVATE_CONTROLLED_RUNTIME_PROOF" },
+    "public_safe_status": { "const": "NOT_PUBLIC_SAFE" },
+    "human_review_required": { "const": true },
+    "claim_decision_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hoxline Evidence Graph v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "graph_id",
+    "detection_id",
+    "execution_id",
+    "source_truth_class",
+    "runtime_truth_class",
+    "public_safe",
+    "proof_ceiling",
+    "nodes",
+    "edges",
+    "missing_evidence",
+    "blocked_claims",
+    "graph_hash"
+  ],
+  "properties": {
+    "schema_version": { "const": "hoxline-evidence-graph-v0" },
+    "graph_id": { "type": "string" },
+    "detection_id": { "const": "HO-DET-001" },
+    "execution_id": { "type": "string" },
+    "source_truth_class": { "type": "string" },
+    "runtime_truth_class": { "const": "PRIVATE_CONTROLLED_RUNTIME_PROOF" },
+    "public_safe": { "const": false },
+    "proof_ceiling": { "const": "PRIVATE_CONTROLLED_RUNTIME_PROOF" },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "node_type", "status", "evidence", "node_hash"],
+        "properties": {
+          "node_id": { "type": "string" },
+          "node_type": { "type": "string" },
+          "status": { "type": "string" },
+          "evidence": { "type": "object" },
+          "node_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["edge_id", "edge_type", "from", "to", "evidence_hash", "edge_hash"],
+        "properties": {
+          "edge_id": { "type": "string" },
+          "edge_type": { "type": "string" },
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "evidence_hash": { "type": ["string", "null"] },
+          "edge_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    },
+    "missing_evidence": { "type": "array", "items": { "type": "string" } },
+    "blocked_claims": { "type": "array", "items": { "type": "string" } },
+    "graph_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

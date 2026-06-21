@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hoxline Promotion State v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "detection_id",
+    "execution_id",
+    "graph_hash",
+    "stage_statuses",
+    "current_state",
+    "allowed_next_actions",
+    "blocked_next_actions",
+    "human_review_required",
+    "ledger_append_allowed",
+    "public_proof_allowed",
+    "schedule_enabled",
+    "proof_ceiling",
+    "promotion_hash"
+  ],
+  "properties": {
+    "schema_version": { "const": "hoxline-promotion-state-v0" },
+    "detection_id": { "const": "HO-DET-001" },
+    "execution_id": { "type": "string" },
+    "graph_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "stage_statuses": { "type": "object" },
+    "current_state": { "type": "string" },
+    "allowed_next_actions": { "type": "array", "items": { "type": "string" } },
+    "blocked_next_actions": { "type": "array", "items": { "type": "string" } },
+    "human_review_required": { "const": true },
+    "ledger_append_allowed": { "const": false },
+    "public_proof_allowed": { "const": false },
+    "schedule_enabled": { "const": false },
+    "proof_ceiling": { "const": "PRIVATE_CONTROLLED_RUNTIME_PROOF" },
+    "promotion_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}
