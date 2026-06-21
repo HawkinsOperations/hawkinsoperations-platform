@@ -28,10 +28,20 @@ EXPECTED_DETECTION_COUNTS = {
     "HO-DET-012": 1,
 }
 EXPECTED_APPEND_ONLY_TRIGGERS = ["case_events_no_delete", "case_events_no_update"]
+PLATFORM_REPO_DIRNAME = "hawkinsoperations-platform"
 
 
 class DrillError(Exception):
     """Recoverability drill failure."""
+
+
+def resolve_repo_root(repo_root: Path) -> Path:
+    if (repo_root / EXPECTED_LEDGER_PATH).is_file():
+        return repo_root
+    sibling_platform_root = repo_root / PLATFORM_REPO_DIRNAME
+    if (sibling_platform_root / EXPECTED_LEDGER_PATH).is_file():
+        return sibling_platform_root
+    return repo_root
 
 
 def sha256_file(path: Path) -> str:
@@ -384,7 +394,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--repo-root",
         default=str(Path(__file__).resolve().parents[1]),
-        help="Path to hawkinsoperations-platform repository root",
+        help="Path to hawkinsoperations-platform repository root or HawkinsOperations parent root",
     )
     parser.add_argument("--format", choices=("json", "text"), default="json")
     return parser.parse_args(argv)
@@ -392,7 +402,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
-    repo_root = Path(args.repo_root).resolve()
+    repo_root = resolve_repo_root(Path(args.repo_root).resolve())
     try:
         report = build_report(repo_root)
     except DrillError as exc:

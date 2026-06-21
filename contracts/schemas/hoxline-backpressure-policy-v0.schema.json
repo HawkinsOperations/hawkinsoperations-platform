@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hoxline Backpressure Policy v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "max_candidates_per_run",
+    "max_runtime_seconds",
+    "max_retries_per_execution_id",
+    "max_dead_letters_per_run",
+    "max_duplicate_suppressions_per_run",
+    "max_new_signals_per_run",
+    "no_new_signal_is_success",
+    "duplicate_signal_is_success",
+    "fail_closed_on_raw_payload",
+    "fail_closed_on_ledger_mutation",
+    "fail_closed_on_public_proof_mutation",
+    "fail_closed_on_schedule_enabled",
+    "backpressure_hash"
+  ],
+  "properties": {
+    "schema_version": { "const": "hoxline-backpressure-policy-v0" },
+    "max_candidates_per_run": { "type": "integer", "minimum": 0 },
+    "max_runtime_seconds": { "type": "integer", "minimum": 0 },
+    "max_retries_per_execution_id": { "type": "integer", "minimum": 0 },
+    "max_dead_letters_per_run": { "type": "integer", "minimum": 0 },
+    "max_duplicate_suppressions_per_run": { "type": "integer", "minimum": 0 },
+    "max_new_signals_per_run": { "type": "integer", "minimum": 0 },
+    "no_new_signal_is_success": { "const": true },
+    "duplicate_signal_is_success": { "const": true },
+    "fail_closed_on_raw_payload": { "const": true },
+    "fail_closed_on_ledger_mutation": { "const": true },
+    "fail_closed_on_public_proof_mutation": { "const": true },
+    "fail_closed_on_schedule_enabled": { "const": true },
+    "backpressure_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

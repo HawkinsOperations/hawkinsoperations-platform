@@ -32,6 +32,8 @@ Hoxline continuous runtime operations v0 is a private, controlled runtime operat
 
 The next private control-plane layer is documented in `docs/factory/HOXLINE_EVIDENCE_GRAPH_CLAIM_AUTHORITY_V0.md`. It adds hash-only evidence graph, promotion state, Claim Authority, private ProofCard draft, and control-plane self-test commands while preserving the same proof ceiling and public-safe boundary.
 
+Schedule-enable readiness remains disabled-by-default and is documented in `docs/factory/HOXLINE_SCHEDULE_ENABLE_READINESS_V0.md`. It proves future schedule readiness, backpressure, emergency-disable, retry/dead-letter recovery, and claim-boundary checks without adding cron, enabling schedule, mutating repo variables, appending the Lifetime Ledger, or promoting public proof.
+
 The metrics command intentionally separates runtime candidate counts from Lifetime Ledger case/event counts. Review queue counts are runtime queue counters only; they are not public proof and do not imply ledger append readiness.
 
 ## Canary Receipts
