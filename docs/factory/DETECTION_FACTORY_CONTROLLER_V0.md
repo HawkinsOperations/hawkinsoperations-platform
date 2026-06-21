@@ -428,8 +428,10 @@ appends, proof promotion, or public promotion.
 
 ### Current collector scope
 
-Windows and Linux runtime collector workflows are scheduled. The current
-collector target is `HO-DET-001` only. The collector does not currently
+Windows and Linux runtime collector workflows are not continuously scheduled.
+The Hoxline schedule-gated workflow remains manual and disabled-by-default until
+a separate schedule-enable approval gate is satisfied. The current collector
+target is `HO-DET-001` only. The collector does not currently
 enumerate all detections, does not currently read an org-wide detection
 registry, and does not currently implement per-detection eligibility.
 
@@ -451,8 +453,8 @@ disposition, or closed.
 | Public-safe runtime rows | 0 |
 | Case-closure rows | 0 |
 | AI/analyst disposition rows | 0 |
-| Windows lane | Scheduled; self-hosted runner availability may affect queued runs |
-| Linux lane | Scheduled |
+| Windows lane | Manual/disabled-by-default; self-hosted runner availability may affect queued runs |
+| Linux lane | Manual/disabled-by-default |
 
 ### Detection eligibility matrix
 

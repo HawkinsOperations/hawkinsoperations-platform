@@ -11,8 +11,8 @@ evidence/autosoc-case-ledger-v0.sqlite
 
 Current expected seed bridge state:
 
-- 4 events
-- 4 cases
+- 6 events
+- 6 cases
 - appended detections: `HO-DET-001`, `HO-DET-011`, `HO-DET-012`
 - public-safe rows: 0
 - closed cases: 0
@@ -87,7 +87,7 @@ Mechanics:
 
 ## Future Append Update Rule
 
-The hard-coded 4 events / 4 cases expectation is an intentional current-state
+The hard-coded 6 events / 6 cases expectation is an intentional current-state
 fail-closed control. Any future approved ledger append must update the expected
 metrics in this document, the recoverability contract, and the verifier
 constants in the same bounded change. If the canonical seed bridge changes but

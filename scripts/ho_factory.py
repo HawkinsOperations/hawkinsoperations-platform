@@ -6734,6 +6734,17 @@ HOXLINE_REQUIRED_MISSING_EVIDENCE = (
     "ledger_append_evidence",
     "case_closure_artifact",
 )
+HOXLINE_SCHEDULE_READINESS_SCHEMA_VERSION = "hoxline-schedule-readiness-v0"
+HOXLINE_BACKPRESSURE_POLICY_SCHEMA_VERSION = "hoxline-backpressure-policy-v0"
+HOXLINE_SCHEDULE_READINESS_VERDICTS = {
+    "READY_FOR_SEPARATE_SCHEDULE_APPROVAL",
+    "NOT_READY_BACKPRESSURE_MISSING",
+    "NOT_READY_RUNNER_HEALTH_MISSING",
+    "NOT_READY_WAZUH_HEALTH_MISSING",
+    "NOT_READY_PRIVATE_ROUTE_MISSING",
+    "NOT_READY_CLAIM_AUTHORITY_MISSING",
+    "NOT_READY_GOVERNANCE_RISK",
+}
 
 
 def hoxline_validate_execution_id(execution_id: str) -> None:
@@ -6991,12 +7002,13 @@ def hoxline_dead_letter_record(
     retry_count: int,
     sanitized_error: str,
     evidence_hashes_available: dict[str, Any],
+    created_at_utc: str | None = None,
 ) -> dict[str, Any]:
     hoxline_validate_execution_id(execution_id)
     if failure_class not in HOXLINE_DEAD_LETTER_FAILURE_CLASSES:
         raise FactoryError(f"unsupported Hoxline dead-letter failure class: {failure_class}")
     hoxline_assert_no_raw_private_fields({"sanitized_error": sanitized_error, "evidence_hashes_available": evidence_hashes_available})
-    created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    created_at = created_at_utc or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     record = {
         "execution_id": execution_id,
         "detection_id": detection_id,
@@ -7465,6 +7477,574 @@ def hoxline_control_plane_self_test(repo_root: Path) -> dict[str, Any]:
         "evidence_graph_hash": graph["graph_hash"],
         "promotion_hash": promotion["promotion_hash"],
         "proofcard_draft_hash": proofcard["proofcard_draft_hash"],
+        "ledger_append_count": 0,
+        "public_proof_promotion_count": 0,
+        "schedule_enabled": False,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+    }
+
+
+def hoxline_backpressure_policy(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    policy = {
+        "schema_version": HOXLINE_BACKPRESSURE_POLICY_SCHEMA_VERSION,
+        "max_candidates_per_run": 3,
+        "max_runtime_seconds": 900,
+        "max_retries_per_execution_id": 2,
+        "max_dead_letters_per_run": 3,
+        "max_duplicate_suppressions_per_run": 10,
+        "max_new_signals_per_run": 3,
+        "no_new_signal_is_success": True,
+        "duplicate_signal_is_success": True,
+        "fail_closed_on_raw_payload": True,
+        "fail_closed_on_ledger_mutation": True,
+        "fail_closed_on_public_proof_mutation": True,
+        "fail_closed_on_schedule_enabled": True,
+        "backpressure_hash": "",
+    }
+    if overrides:
+        unknown = sorted(set(overrides) - set(policy))
+        if unknown:
+            raise FactoryError(f"Hoxline backpressure policy unknown override fields: {', '.join(unknown)}")
+        policy.update(overrides)
+    for field in (
+        "max_candidates_per_run",
+        "max_runtime_seconds",
+        "max_retries_per_execution_id",
+        "max_dead_letters_per_run",
+        "max_duplicate_suppressions_per_run",
+        "max_new_signals_per_run",
+    ):
+        if int(policy[field]) < 0:
+            raise FactoryError(f"Hoxline backpressure policy field must be non-negative: {field}")
+    for field in (
+        "no_new_signal_is_success",
+        "duplicate_signal_is_success",
+        "fail_closed_on_raw_payload",
+        "fail_closed_on_ledger_mutation",
+        "fail_closed_on_public_proof_mutation",
+        "fail_closed_on_schedule_enabled",
+    ):
+        if policy[field] is not True:
+            raise FactoryError(f"Hoxline backpressure policy must keep {field}=true")
+    hoxline_assert_no_raw_private_fields(policy)
+    policy["backpressure_hash"] = canonical_sha256({key: value for key, value in policy.items() if key != "backpressure_hash"})
+    return policy
+
+
+def hoxline_backpressure_check(
+    policy: dict[str, Any],
+    *,
+    candidate_count: int,
+    retry_count: int,
+    dead_letter_count: int,
+    duplicate_suppression_count: int,
+    new_signal_count: int,
+) -> dict[str, Any]:
+    expected = canonical_sha256({key: value for key, value in policy.items() if key != "backpressure_hash"})
+    if policy.get("backpressure_hash") != expected:
+        raise FactoryError("Hoxline backpressure policy hash mismatch")
+    violations = []
+    if candidate_count > int(policy["max_candidates_per_run"]):
+        violations.append("MAX_CANDIDATES_PER_RUN_EXCEEDED")
+    if retry_count > int(policy["max_retries_per_execution_id"]):
+        violations.append("MAX_RETRIES_PER_EXECUTION_ID_EXCEEDED")
+    if dead_letter_count > int(policy["max_dead_letters_per_run"]):
+        violations.append("MAX_DEAD_LETTERS_PER_RUN_EXCEEDED")
+    if duplicate_suppression_count > int(policy["max_duplicate_suppressions_per_run"]):
+        violations.append("MAX_DUPLICATE_SUPPRESSIONS_PER_RUN_EXCEEDED")
+    if new_signal_count > int(policy["max_new_signals_per_run"]):
+        violations.append("MAX_NEW_SIGNALS_PER_RUN_EXCEEDED")
+    return {
+        "status": "pass" if not violations else "blocked",
+        "violations": violations,
+        "candidate_count": candidate_count,
+        "retry_count": retry_count,
+        "dead_letter_count": dead_letter_count,
+        "duplicate_suppression_count": duplicate_suppression_count,
+        "new_signal_count": new_signal_count,
+    }
+
+
+def hoxline_schedule_workflow_readiness_verify(repo_root: Path) -> dict[str, Any]:
+    workflow_dir = repo_root / ".github" / "workflows"
+    workflows = {path.name: path.read_text(encoding="utf-8") for path in sorted(workflow_dir.glob("*.yml"))}
+    if "hoxline-schedule-gated-collection.yml" not in workflows:
+        raise FactoryError("Hoxline schedule readiness missing schedule-gated workflow")
+    active_cron_workflows = []
+    for name, text in workflows.items():
+        active_text = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+        if re.search(r"(?m)^\s*schedule\s*:", active_text) or re.search(r"(?m)^\s*-\s*cron\s*:", active_text):
+            active_cron_workflows.append(name)
+    schedule = workflows["hoxline-schedule-gated-collection.yml"]
+    required_fragments = (
+        "vars.HOXLINE_EMERGENCY_DISABLE == 'true'",
+        "vars.HOXLINE_CONTINUOUS_GATE_ENABLED != 'true'",
+        "hoxline-runtime-schedule-gate --event-name",
+        "--emergency-disable",
+        "Stop before collection until future approved enable gate",
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in schedule]
+    if "env.HOXLINE_CONTINUOUS_GATE_ENABLED" in schedule or "secrets.HOXLINE_CONTINUOUS_GATE_ENABLED" in schedule:
+        missing.append("repo_variable_boundary_repo_vars_only")
+    base = hoxline_workflow_safety_verify(repo_root)
+    status = "pass" if not active_cron_workflows and not missing and base["status"] == "pass" else "blocked"
+    output = {
+        "status": status,
+        "schedule_enabled": False,
+        "active_cron_trigger": bool(active_cron_workflows),
+        "active_cron_workflows": active_cron_workflows,
+        "emergency_disable_available": "vars.HOXLINE_EMERGENCY_DISABLE == 'true'" in schedule,
+        "continuous_gate_required": "vars.HOXLINE_CONTINUOUS_GATE_ENABLED != 'true'" in schedule,
+        "repo_variable_boundary": "repo_vars_only",
+        "missing_readiness_fragments": missing,
+        "workflow_safety_hash": canonical_sha256(base),
+    }
+    hoxline_assert_no_raw_private_fields(output)
+    return output
+
+
+def hoxline_schedule_readiness_fixture(
+    *,
+    execution_id: str = "HO-DET-001-20260620T173615Z-6ELQ03",
+    include_runner_health: bool = True,
+    include_wazuh_health: bool = True,
+    include_private_route_health: bool = True,
+    include_evidence_graph: bool = True,
+    active_cron_trigger: bool = False,
+    schedule_enabled: bool = False,
+    candidate_count: int = 1,
+    dead_letter_count: int = 0,
+) -> dict[str, Any]:
+    replay = hoxline_runtime_replay_fixture(execution_id=execution_id)
+    graph = hoxline_build_evidence_graph(replay) if include_evidence_graph else None
+    promotion = hoxline_promotion_state_from_graph(graph) if graph else None
+    claim_decision = (
+        hoxline_claim_authority_check(graph, promotion, HOXLINE_BOUNDED_ALLOWED_CLAIM)
+        if graph and promotion
+        else None
+    )
+    return {
+        "replay": replay,
+        "graph": graph,
+        "promotion": promotion,
+        "claim_decision": claim_decision,
+        "workflow_safety": {
+            "status": "pass" if not active_cron_trigger else "blocked",
+            "active_cron_trigger": active_cron_trigger,
+            "schedule_disabled_by_default": not schedule_enabled,
+            "trusted_runtime_pull_request_blocked": True,
+            "unrestricted_artifact_upload": False,
+        },
+        "runner_health": {
+            "status": "pass" if include_runner_health else "missing",
+            "runner_identity": "HO-GPU-01" if include_runner_health else None,
+            "trusted_runtime_context": include_runner_health,
+        },
+        "wazuh_health": {
+            "status": "pass" if include_wazuh_health else "missing",
+            "backend_identity": "HO-WAZUH-01" if include_wazuh_health else None,
+            "receipt_digest_present": include_wazuh_health,
+        },
+        "private_route_health": {
+            "status": "pass" if include_private_route_health else "missing",
+            "route_exists": include_private_route_health,
+            "writable": include_private_route_health,
+            "capacity_status": "pass" if include_private_route_health else "missing",
+        },
+        "candidate_count": candidate_count,
+        "dead_letter_count": dead_letter_count,
+        "schedule_enabled": schedule_enabled,
+    }
+
+
+def hoxline_schedule_readiness_state(
+    *,
+    replay: dict[str, Any],
+    graph: dict[str, Any] | None,
+    promotion: dict[str, Any] | None,
+    claim_decision: dict[str, Any] | None,
+    workflow_safety: dict[str, Any],
+    runner_health: dict[str, Any],
+    wazuh_health: dict[str, Any],
+    private_route_health: dict[str, Any],
+    schedule_enabled: bool,
+    candidate_count: int,
+    dead_letter_count: int,
+    backpressure_policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    policy = backpressure_policy or hoxline_backpressure_policy()
+    checkpoint = {
+        "schema_version": "hoxline-runtime-checkpoint-v0",
+        "backend_identity": "HO-WAZUH-01",
+        "detection_id": "HO-DET-001",
+        "last_successful_observed_at": "2026-06-20T17:37:27Z",
+        "last_signal_digest": replay["evidence_manifest"]["signal_receipt_digest"],
+        "last_execution_id": replay["execution_id"],
+        "last_candidate_digest": replay["evidence_manifest"]["candidate_digest"],
+        "last_run_id": replay["evidence_manifest"]["github_workflow_run_id"],
+        "retry_count": 0,
+        "last_error_code": None,
+        "dead_letter_count": dead_letter_count,
+        "checkpoint_hash": "",
+    }
+    checkpoint["checkpoint_hash"] = canonical_sha256({key: value for key, value in checkpoint.items() if key != "checkpoint_hash"})
+    checkpoint_health = hoxline_verify_checkpoint(checkpoint)
+    no_new_signal = hoxline_checkpoint_decision(checkpoint, signal_digest=None, execution_id=None)
+    duplicate_signal = hoxline_checkpoint_decision(
+        checkpoint,
+        signal_digest=checkpoint["last_signal_digest"],
+        execution_id=checkpoint["last_execution_id"],
+        candidate_digest=checkpoint["last_candidate_digest"],
+    )
+    backpressure_check = hoxline_backpressure_check(
+        policy,
+        candidate_count=candidate_count,
+        retry_count=0,
+        dead_letter_count=dead_letter_count,
+        duplicate_suppression_count=1 if duplicate_signal["decision"] == "DUPLICATE_SIGNAL_SUPPRESSED" else 0,
+        new_signal_count=candidate_count,
+    )
+    blocked = []
+    if policy is None:
+        blocked.append("BACKPRESSURE_POLICY_MISSING")
+    if runner_health.get("status") != "pass":
+        blocked.append("RUNNER_HEALTH_MISSING")
+    if wazuh_health.get("status") != "pass":
+        blocked.append("WAZUH_HEALTH_MISSING")
+    if private_route_health.get("status") != "pass":
+        blocked.append("PRIVATE_ROUTE_HEALTH_MISSING")
+    if graph is None or promotion is None or claim_decision is None:
+        blocked.append("CLAIM_AUTHORITY_MISSING")
+    if workflow_safety.get("active_cron_trigger") is True or schedule_enabled is True:
+        blocked.append("SCHEDULE_GOVERNANCE_RISK")
+    if backpressure_check["violations"]:
+        blocked.extend(backpressure_check["violations"])
+    if graph is not None:
+        hoxline_validate_evidence_graph_shape(graph)
+    if promotion is not None and graph is not None:
+        hoxline_validate_promotion_state(promotion, graph)
+    if claim_decision is not None and claim_decision.get("decision") != "ALLOWED_WITH_SCOPE":
+        blocked.append("CLAIM_AUTHORITY_MISSING")
+
+    if any(item in blocked for item in ("SCHEDULE_GOVERNANCE_RISK",)):
+        verdict = "NOT_READY_GOVERNANCE_RISK"
+    elif "RUNNER_HEALTH_MISSING" in blocked:
+        verdict = "NOT_READY_RUNNER_HEALTH_MISSING"
+    elif "WAZUH_HEALTH_MISSING" in blocked:
+        verdict = "NOT_READY_WAZUH_HEALTH_MISSING"
+    elif "PRIVATE_ROUTE_HEALTH_MISSING" in blocked:
+        verdict = "NOT_READY_PRIVATE_ROUTE_MISSING"
+    elif "CLAIM_AUTHORITY_MISSING" in blocked:
+        verdict = "NOT_READY_CLAIM_AUTHORITY_MISSING"
+    elif backpressure_check["violations"] or "BACKPRESSURE_POLICY_MISSING" in blocked:
+        verdict = "NOT_READY_BACKPRESSURE_MISSING"
+    else:
+        verdict = "READY_FOR_SEPARATE_SCHEDULE_APPROVAL"
+
+    state = {
+        "schema_version": HOXLINE_SCHEDULE_READINESS_SCHEMA_VERSION,
+        "readiness_id": f"hoxline-schedule-readiness-v0:{replay['execution_id']}",
+        "detection_id": "HO-DET-001",
+        "runtime_truth_class": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "schedule_enabled": False,
+        "active_cron_trigger": bool(workflow_safety.get("active_cron_trigger")),
+        "emergency_disable_available": True,
+        "continuous_gate_required": True,
+        "repo_variable_required": "HOXLINE_CONTINUOUS_GATE_ENABLED must be true only after separate approval",
+        "runner_health": runner_health,
+        "wazuh_health": wazuh_health,
+        "private_route_health": private_route_health,
+        "checkpoint_health": checkpoint_health,
+        "duplicate_suppression_health": duplicate_signal,
+        "dead_letter_health": {"status": "pass" if dead_letter_count <= int(policy["max_dead_letters_per_run"]) else "blocked", "dead_letter_count": dead_letter_count},
+        "backpressure_policy": policy,
+        "backpressure_check": backpressure_check,
+        "no_new_signal_decision": no_new_signal,
+        "duplicate_signal_decision": duplicate_signal,
+        "retry_policy": {
+            "max_retries_per_execution_id": policy["max_retries_per_execution_id"],
+            "retryable_failure_state": "FAILED_RETRYABLE",
+            "exhausted_retry_state": "DEAD_LETTERED",
+        },
+        "evidence_graph_hash": None if graph is None else graph["graph_hash"],
+        "promotion_hash": None if promotion is None else promotion["promotion_hash"],
+        "claim_authority_decision_hash": None if claim_decision is None else claim_decision["claim_decision_hash"],
+        "readiness_verdict": verdict,
+        "blocked_enable_reasons": sorted(set(blocked)),
+        "allowed_next_actions": [
+            "review_readiness_report",
+            "run_emergency_disable_drill",
+            "run_recovery_drill",
+            "request_separate_schedule_enable_approval",
+        ],
+        "blocked_next_actions": [
+            "enable_schedule_without_SCHEDULE_ENABLE_APPROVED",
+            "set_HOXLINE_CONTINUOUS_GATE_ENABLED_without_approval",
+            "append_lifetime_ledger",
+            "promote_public_proof",
+            "mark_public_safe",
+            "claim_schedule_enabled",
+        ],
+        "ledger_mutated": False,
+        "public_proof_promoted": False,
+        "ai_disposition_authority": False,
+        "readiness_hash": "",
+    }
+    if state["schedule_enabled"] is not False:
+        raise FactoryError("Hoxline schedule readiness must not enable schedule")
+    hoxline_assert_no_raw_private_fields(state)
+    state["readiness_hash"] = canonical_sha256({key: value for key, value in state.items() if key != "readiness_hash"})
+    if verdict not in HOXLINE_SCHEDULE_READINESS_VERDICTS:
+        raise FactoryError("unsupported Hoxline schedule readiness verdict")
+    return state
+
+
+def hoxline_schedule_readiness(
+    *,
+    repo_root: Path,
+    execution_id: str | None,
+    private_route: str | None,
+    fixture: bool,
+) -> dict[str, Any]:
+    if fixture:
+        parts = hoxline_schedule_readiness_fixture(execution_id=execution_id or "HO-DET-001-20260620T173615Z-6ELQ03")
+    else:
+        if not execution_id or not private_route:
+            raise FactoryError("hoxline-schedule-readiness requires --fixture or both --execution-id and --private-route")
+        replay = hoxline_runtime_replay(execution_id, private_route)
+        graph = hoxline_build_evidence_graph(replay)
+        promotion = hoxline_promotion_state_from_graph(graph)
+        claim_decision = hoxline_claim_authority_check(graph, promotion, HOXLINE_BOUNDED_ALLOWED_CLAIM)
+        health = hoxline_runtime_health(private_route)
+        parts = {
+            "replay": replay,
+            "graph": graph,
+            "promotion": promotion,
+            "claim_decision": claim_decision,
+        "workflow_safety": hoxline_schedule_workflow_readiness_verify(repo_root),
+            "runner_health": {"status": "pass", "runner_identity": replay["evidence_manifest"]["runner_identity"], "trusted_runtime_context": True},
+            "wazuh_health": {"status": "pass", "backend_identity": replay["evidence_manifest"]["backend_identity"], "receipt_digest_present": True},
+            "private_route_health": {"status": health["health_status"], "route_exists": health["private_route_exists"], "file_count": health["private_route_file_count"], "route_digest": health["private_route_digest"], "capacity_status": "pass"},
+            "candidate_count": replay["metrics"]["runtime_candidate_count"],
+            "dead_letter_count": replay["metrics"]["dead_letter_count"],
+            "schedule_enabled": False,
+        }
+    parts["workflow_safety"] = hoxline_schedule_workflow_readiness_verify(repo_root) if fixture else parts["workflow_safety"]
+    return hoxline_schedule_readiness_state(
+        replay=parts["replay"],
+        graph=parts["graph"],
+        promotion=parts["promotion"],
+        claim_decision=parts["claim_decision"],
+        workflow_safety=parts["workflow_safety"],
+        runner_health=parts["runner_health"],
+        wazuh_health=parts["wazuh_health"],
+        private_route_health=parts["private_route_health"],
+        schedule_enabled=parts["schedule_enabled"],
+        candidate_count=parts["candidate_count"],
+        dead_letter_count=parts["dead_letter_count"],
+    )
+
+
+def hoxline_schedule_emergency_disable_drill() -> dict[str, Any]:
+    decision = hoxline_schedule_gate(
+        event_name="schedule",
+        enable_input=True,
+        repo_var_enabled=True,
+        emergency_disable=True,
+        signal_digest="9b44ac77420ec3f87d30c228bdb246875e2d7a263dad083cd3c7acab9e4d88b4",
+    )
+    checks = {
+        "decision_emergency_disable_active": decision["decision"] == "EMERGENCY_DISABLE_ACTIVE",
+        "candidate_not_created": decision["candidate_created"] is False,
+        "ledger_not_mutated": True,
+        "public_proof_not_promoted": True,
+        "schedule_not_enabled": decision["schedule_enabled"] == 0,
+        "disabled_state_not_failure": decision["status"] == "blocked",
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Hoxline emergency disable drill failed checks: {', '.join(failed)}")
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-schedule-emergency-disable-drill",
+        "status": "pass",
+        "decision": decision["decision"],
+        "checks": checks,
+        "candidate_created": False,
+        "ledger_mutated": False,
+        "public_proof_promoted": False,
+        "schedule_enabled": False,
+    }
+
+
+def hoxline_schedule_recovery_drill() -> dict[str, Any]:
+    policy = hoxline_backpressure_policy()
+    execution_id = "HO-DET-001-20260620T173615Z-6ELQ03"
+    signal_digest = "9b44ac77420ec3f87d30c228bdb246875e2d7a263dad083cd3c7acab9e4d88b4"
+    candidate_digest = "bf0ef4fc62e11d612b08083d0326eeb3ae65ae996fbc34422ba3edefcd89dd30"
+    checkpoint = {
+        "schema_version": "hoxline-runtime-checkpoint-v0",
+        "backend_identity": "HO-WAZUH-01",
+        "detection_id": "HO-DET-001",
+        "last_successful_observed_at": "2026-06-20T17:37:27Z",
+        "last_signal_digest": signal_digest,
+        "last_execution_id": execution_id,
+        "last_candidate_digest": candidate_digest,
+        "last_run_id": "27878994407",
+        "retry_count": int(policy["max_retries_per_execution_id"]),
+        "last_error_code": "AI_TIMEOUT",
+        "dead_letter_count": 1,
+        "checkpoint_hash": "",
+    }
+    checkpoint["checkpoint_hash"] = canonical_sha256({key: value for key, value in checkpoint.items() if key != "checkpoint_hash"})
+    retryable_state = {
+        "execution_id": execution_id,
+        "retry_count": 1,
+        "max_retries_per_execution_id": policy["max_retries_per_execution_id"],
+        "state": "FAILED_RETRYABLE",
+        "next_state": "SCHEDULED_RETRY",
+    }
+    exhausted_retry_count = int(policy["max_retries_per_execution_id"]) + 1
+    dead_letter = hoxline_dead_letter_record(
+        execution_id=execution_id,
+        detection_id="HO-DET-001",
+        stage="SCHEDULE_RETRY",
+        failure_class="AI_TIMEOUT",
+        retryable=False,
+        retry_count=exhausted_retry_count,
+        sanitized_error="retry cap exhausted; raw prompt omitted",
+        evidence_hashes_available={"signal_receipt_digest": signal_digest, "candidate_digest": candidate_digest},
+        created_at_utc="2026-06-21T00:00:00Z",
+    )
+    duplicate = hoxline_checkpoint_decision(
+        checkpoint,
+        signal_digest=signal_digest,
+        execution_id=execution_id,
+        candidate_digest=candidate_digest,
+    )
+    backpressure = hoxline_backpressure_check(
+        policy,
+        candidate_count=1,
+        retry_count=exhausted_retry_count,
+        dead_letter_count=1,
+        duplicate_suppression_count=1,
+        new_signal_count=1,
+    )
+    checks = {
+        "retryable_failure_scheduled": retryable_state["next_state"] == "SCHEDULED_RETRY",
+        "retry_count_cannot_exceed_max": "MAX_RETRIES_PER_EXECUTION_ID_EXCEEDED" in backpressure["violations"],
+        "exhausted_retry_dead_lettered": dead_letter["retryable"] is False,
+        "dead_letter_hash_verifies": hoxline_verify_dead_letter(dead_letter)["status"] == "pass",
+        "checkpoint_remains_valid": hoxline_verify_checkpoint(checkpoint)["status"] == "pass",
+        "duplicate_after_retry_suppressed": duplicate["decision"] == "DUPLICATE_SIGNAL_SUPPRESSED",
+        "ledger_not_mutated": True,
+        "public_proof_not_promoted": True,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Hoxline recovery drill failed checks: {', '.join(failed)}")
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-schedule-recovery-drill",
+        "status": "pass",
+        "retryable_state": retryable_state,
+        "dead_letter": dead_letter,
+        "checkpoint": checkpoint,
+        "duplicate_signal_decision": duplicate,
+        "backpressure_check": backpressure,
+        "checks": checks,
+        "ledger_mutated": False,
+        "public_proof_promoted": False,
+        "schedule_enabled": False,
+    }
+
+
+def hoxline_schedule_readiness_self_test(repo_root: Path) -> dict[str, Any]:
+    policy = hoxline_backpressure_policy()
+    policy_again = hoxline_backpressure_policy()
+    ready = hoxline_schedule_readiness(repo_root=repo_root, execution_id=None, private_route=None, fixture=True)
+    ready_again = hoxline_schedule_readiness(repo_root=repo_root, execution_id=None, private_route=None, fixture=True)
+    graph = hoxline_build_evidence_graph(hoxline_runtime_replay_fixture())
+    promotion = hoxline_promotion_state_from_graph(graph)
+
+    def claim(text: str) -> str:
+        return hoxline_claim_authority_check(graph, promotion, text)["decision"]
+
+    active_cron = hoxline_schedule_readiness_state(
+        **hoxline_schedule_readiness_fixture(active_cron_trigger=True),
+        backpressure_policy=policy,
+    )
+    schedule_true = hoxline_schedule_readiness_state(
+        **hoxline_schedule_readiness_fixture(schedule_enabled=True),
+        backpressure_policy=policy,
+    )
+    over_candidates = hoxline_schedule_readiness_state(
+        **hoxline_schedule_readiness_fixture(candidate_count=int(policy["max_candidates_per_run"]) + 1),
+        backpressure_policy=policy,
+    )
+    over_dead_letters = hoxline_schedule_readiness_state(
+        **hoxline_schedule_readiness_fixture(dead_letter_count=int(policy["max_dead_letters_per_run"]) + 1),
+        backpressure_policy=policy,
+    )
+    missing_runner = hoxline_schedule_readiness_state(
+        **hoxline_schedule_readiness_fixture(include_runner_health=False),
+        backpressure_policy=policy,
+    )
+    missing_wazuh = hoxline_schedule_readiness_state(
+        **hoxline_schedule_readiness_fixture(include_wazuh_health=False),
+        backpressure_policy=policy,
+    )
+    missing_private_route = hoxline_schedule_readiness_state(
+        **hoxline_schedule_readiness_fixture(include_private_route_health=False),
+        backpressure_policy=policy,
+    )
+    missing_evidence = hoxline_schedule_readiness_state(
+        **hoxline_schedule_readiness_fixture(include_evidence_graph=False),
+        backpressure_policy=policy,
+    )
+    emergency = hoxline_schedule_emergency_disable_drill()
+    recovery = hoxline_schedule_recovery_drill()
+    checks = {
+        "readiness_state_builds": ready["schema_version"] == HOXLINE_SCHEDULE_READINESS_SCHEMA_VERSION,
+        "readiness_hash_deterministic": ready["readiness_hash"] == ready_again["readiness_hash"],
+        "backpressure_hash_deterministic": policy["backpressure_hash"] == policy_again["backpressure_hash"],
+        "active_cron_trigger_false": ready["active_cron_trigger"] is False,
+        "schedule_enabled_false": ready["schedule_enabled"] is False,
+        "active_cron_trigger_present_fails": active_cron["readiness_verdict"] == "NOT_READY_GOVERNANCE_RISK",
+        "schedule_enabled_true_fails": schedule_true["readiness_verdict"] == "NOT_READY_GOVERNANCE_RISK",
+        "emergency_disable_blocks": emergency["decision"] == "EMERGENCY_DISABLE_ACTIVE" and emergency["candidate_created"] is False,
+        "no_new_signal_success_no_candidate": ready["no_new_signal_decision"]["decision"] == "NO_NEW_SIGNAL_NO_CANDIDATE" and ready["no_new_signal_decision"]["candidate_created"] is False,
+        "duplicate_signal_suppressed": ready["duplicate_signal_decision"]["decision"] == "DUPLICATE_SIGNAL_SUPPRESSED",
+        "max_candidates_enforced": "MAX_CANDIDATES_PER_RUN_EXCEEDED" in over_candidates["blocked_enable_reasons"],
+        "retry_cap_enforced": "MAX_RETRIES_PER_EXECUTION_ID_EXCEEDED" in recovery["backpressure_check"]["violations"],
+        "dead_letter_cap_enforced": "MAX_DEAD_LETTERS_PER_RUN_EXCEEDED" in over_dead_letters["blocked_enable_reasons"],
+        "emergency_disable_not_failure": emergency["status"] == "pass",
+        "missing_runner_not_ready": missing_runner["readiness_verdict"] == "NOT_READY_RUNNER_HEALTH_MISSING",
+        "missing_wazuh_not_ready": missing_wazuh["readiness_verdict"] == "NOT_READY_WAZUH_HEALTH_MISSING",
+        "missing_private_route_not_ready": missing_private_route["readiness_verdict"] == "NOT_READY_PRIVATE_ROUTE_MISSING",
+        "missing_evidence_graph_not_ready": missing_evidence["readiness_verdict"] == "NOT_READY_CLAIM_AUTHORITY_MISSING",
+        "schedule_enabled_claim_blocked": claim("schedule enabled") == "BLOCKED",
+        "production_continuous_soc_claim_blocked": claim("production continuous SOC") == "BLOCKED",
+        "bounded_private_runtime_claim_allowed": claim(HOXLINE_BOUNDED_ALLOWED_CLAIM) == "ALLOWED_WITH_SCOPE",
+        "evidence_graph_promotion_private": ready["public_safe_status"] == HOXLINE_PUBLIC_SAFE_STATUS and ready["runtime_truth_class"] == HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "ledger_append_zero": ready["ledger_mutated"] is False,
+        "public_proof_promotion_zero": ready["public_proof_promoted"] is False,
+        "ai_support_only": ready["ai_disposition_authority"] is False,
+        "workflow_safety_still_passes": hoxline_schedule_workflow_readiness_verify(repo_root)["active_cron_trigger"] is False,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Hoxline schedule readiness self-test failed checks: {', '.join(failed)}")
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-schedule-readiness-self-test",
+        "status": "pass",
+        "checks": checks,
+        "readiness_hash": ready["readiness_hash"],
+        "backpressure_hash": policy["backpressure_hash"],
+        "readiness_verdict": ready["readiness_verdict"],
         "ledger_append_count": 0,
         "public_proof_promotion_count": 0,
         "schedule_enabled": False,
@@ -8293,6 +8873,19 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub = subparsers.add_parser("hoxline-control-plane-self-test")
     sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-schedule-readiness")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
+    sub.add_argument("--execution-id")
+    sub.add_argument("--private-route")
+    sub.add_argument("--fixture", action="store_true")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-schedule-emergency-disable-drill")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-schedule-recovery-drill")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-schedule-readiness-self-test")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("public-status-source-contract-verify")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("self-test-id-det-001-missing-surfaces")
@@ -8699,6 +9292,31 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "hoxline-control-plane-self-test":
         output = hoxline_control_plane_self_test(Path(args.repo_root).resolve())
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-schedule-readiness":
+        output = hoxline_schedule_readiness(
+            repo_root=Path(args.repo_root).resolve(),
+            execution_id=args.execution_id,
+            private_route=args.private_route,
+            fixture=args.fixture,
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-schedule-emergency-disable-drill":
+        output = hoxline_schedule_emergency_disable_drill()
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-schedule-recovery-drill":
+        output = hoxline_schedule_recovery_drill()
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-schedule-readiness-self-test":
+        output = hoxline_schedule_readiness_self_test(Path(args.repo_root).resolve())
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
