@@ -38,6 +38,7 @@ permissions:
 jobs:
   collect-linux-candidates:
     name: Collect Linux runtime candidates
+    if: github.repository == 'HawkinsOperations/hawkinsoperations-platform' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, ho-gpu-01, gpu, v100]
     defaults:
       run:
@@ -45,6 +46,8 @@ jobs:
     steps:
       - name: Check out platform repo
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Preflight Linux collector lane
         run: |

@@ -1,0 +1,56 @@
+name: Hoxline Main Checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  main-governance-checks:
+    name: Main/push governance checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HawkinsOperations/hawkinsoperations-detections
+          path: hawkinsoperations-detections
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HawkinsOperations/hawkinsoperations-validation
+          path: hawkinsoperations-validation
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HawkinsOperations/hawkinsoperations-proof
+          path: hawkinsoperations-proof
+          persist-credentials: false
+
+      - name: Source checks
+        run: |
+          python -B -m py_compile scripts/ho_factory.py
+          python -B scripts/ho_factory.py collector-linux-self-test --format json >/dev/null
+          python -B scripts/ho_factory.py collector-normalizer-self-test --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-workflow-safety-verify --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+          python -B -m unittest discover -s tests
+          git diff --check
+
+      - name: Ledger and state manifest verify
+        run: |
+          python -B scripts/ho_factory.py lifetime-ledger-verify --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+          python -B scripts/ho_factory.py lifetime-ledger-state-manifest-verify --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+
+      - name: Recoverability drill
+        run: python -B scripts/verify-lifetime-ledger-backup-drill.py --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+
+      - name: Hoxline runtime sanity with sanitized fixtures
+        run: |
+          python -B scripts/ho_factory.py hoxline-runtime-canary --controlled-count 3 --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-runtime-schedule-gate --event-name schedule --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-runtime-job-guard --event-name workflow_dispatch --runner-label self-hosted --runner-label ho-gpu-01 --trusted-runtime --uses-private-route --format json >/dev/null

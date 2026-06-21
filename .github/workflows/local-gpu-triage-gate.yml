@@ -13,12 +13,15 @@ concurrency:
 jobs:
   local-gpu-triage-status:
     name: Local GPU triage status
+    if: github.repository == 'HawkinsOperations/hawkinsoperations-platform' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, ho-gpu-01, gpu, v100]
     timeout-minutes: 10
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Confirm runner context
         run: |

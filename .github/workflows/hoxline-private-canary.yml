@@ -1,0 +1,62 @@
+name: Hoxline Private Canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      private_route:
+        description: Private runtime route on trusted runner
+        required: true
+        type: string
+      canary_mode:
+        description: Use dry-run unless Raylee separately approves live canary execution.
+        required: true
+        type: choice
+        default: dry-run
+        options:
+          - dry-run
+      controlled_count:
+        description: Must be exactly 3.
+        required: true
+        type: string
+        default: "3"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hoxline-private-canary
+  cancel-in-progress: false
+
+jobs:
+  controlled-private-canary:
+    name: Three-run private canary gate
+    if: github.repository == 'HawkinsOperations/hawkinsoperations-platform' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, ho-gpu-01, gpu, v100]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Preflight trusted context and count
+        run: |
+          test "${{ inputs.canary_mode }}" = "dry-run"
+          test "${{ inputs.controlled_count }}" = "3"
+          python3 -B scripts/ho_factory.py hoxline-runtime-job-guard \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --runner-label self-hosted \
+            --runner-label ho-gpu-01 \
+            --trusted-runtime \
+            --uses-private-route \
+            --format json >/dev/null
+
+      - name: Verify route health
+        env:
+          PRIVATE_ROUTE: ${{ inputs.private_route }}
+        run: python3 -B scripts/ho_factory.py hoxline-runtime-health --private-route "$PRIVATE_ROUTE" --format json >/dev/null
+
+      - name: Run exactly three controlled canary dry-run rows
+        run: python3 -B scripts/ho_factory.py hoxline-runtime-canary --controlled-count 3 --format json >/dev/null
+
+      - name: Verify no repository mutation
+        run: git diff --exit-code

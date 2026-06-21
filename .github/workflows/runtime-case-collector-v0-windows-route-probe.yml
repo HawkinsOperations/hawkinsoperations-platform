@@ -18,6 +18,7 @@ concurrency:
 jobs:
   windows-route-probe:
     name: Windows collector private route probe
+    if: github.repository == 'HawkinsOperations/hawkinsoperations-platform' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 10
 
@@ -40,9 +41,18 @@ jobs:
             Write-Output "WINDOWS_ROUTE_PROBE=fail_missing_route_input"
             exit 1
           }
+          $allowed = @(
+            'C:\Raylee\Data\runtime-case-collector-v0\windows',
+            'C:\Raylee\Data\HawkinsOperations\runtime-case-collector-v0\windows'
+          )
+          if ($allowed -notcontains $route) {
+            Write-Output "WINDOWS_ROUTE_PROBE=fail_route_not_allowlisted"
+            exit 1
+          }
           $routeExistsBefore = Test-Path -LiteralPath $route
           if (-not $routeExistsBefore) {
-            New-Item -ItemType Directory -Path $route -Force | Out-Null
+            Write-Output "WINDOWS_ROUTE_PROBE=fail_route_missing"
+            exit 1
           }
           $probeName = "route-probe-$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT).txt"
           $probePath = Join-Path -Path $route -ChildPath $probeName
