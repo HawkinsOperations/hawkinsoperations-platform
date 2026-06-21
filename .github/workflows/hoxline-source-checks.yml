@@ -31,6 +31,7 @@ jobs:
           python -B scripts/ho_factory.py hoxline-control-plane-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
           python -B scripts/ho_factory.py hoxline-schedule-readiness-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
           python -B scripts/ho_factory.py hoxline-schedule-pilot-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-multi-detection-runtime-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
 
       - name: Schema parse checks
         run: |
@@ -59,6 +60,7 @@ jobs:
           python -B -m unittest tests/test_hoxline_control_plane.py
           python -B -m unittest tests/test_hoxline_schedule_readiness.py
           python -B -m unittest tests/test_hoxline_controlled_schedule_pilot.py
+          python -B -m unittest tests/test_hoxline_multi_detection_runtime.py
           python -B -m unittest tests/test_verify_public_status_source_contract.py
 
       - name: Git whitespace check

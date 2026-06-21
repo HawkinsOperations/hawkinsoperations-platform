@@ -21,7 +21,7 @@
   "properties": {
     "schema_version": { "const": "hoxline-evidence-graph-v0" },
     "graph_id": { "type": "string" },
-    "detection_id": { "const": "HO-DET-001" },
+    "detection_id": { "enum": ["HO-DET-001", "HO-DET-011", "HO-DET-012"] },
     "execution_id": { "type": "string" },
     "source_truth_class": { "type": "string" },
     "runtime_truth_class": { "const": "PRIVATE_CONTROLLED_RUNTIME_PROOF" },
