@@ -12,8 +12,9 @@ on:
         description: Private runtime route on trusted runner
         required: false
         type: string
-  schedule:
-    - cron: "37 * * * *"
+
+# Schedule support is intentionally inactive in v0. A future approved enable
+# gate may add an active cron trigger after repo variable governance is set.
 
 permissions:
   contents: read

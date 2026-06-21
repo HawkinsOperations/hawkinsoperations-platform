@@ -70,6 +70,7 @@ class HoxlineRuntimeOpsTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "pass")
         self.assertTrue(result["pr_source_checks_github_hosted_only"])
+        self.assertFalse(result["active_cron_trigger"])
         self.assertFalse(result["unrestricted_artifact_upload"])
 
     def test_canary_from_sanitized_receipts_builds_replay_artifacts(self) -> None:

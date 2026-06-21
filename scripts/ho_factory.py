@@ -7353,10 +7353,17 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
     trusted = workflows["hoxline-trusted-runtime-verify.yml"]
     canary = workflows["hoxline-private-canary.yml"]
     schedule = workflows["hoxline-schedule-gated-collection.yml"]
+    active_schedule_text = "\n".join(
+        line for line in schedule.splitlines() if not line.lstrip().startswith("#")
+    )
     if "pull_request:" in trusted or "pull_request:" in canary or "pull_request:" in schedule:
         raise FactoryError("trusted runtime workflows must not run from pull_request")
     if "workflow_dispatch:" not in trusted or "workflow_dispatch:" not in canary:
         raise FactoryError("trusted runtime and canary workflows must be workflow_dispatch")
+    if re.search(r"(?m)^\s*schedule\s*:", active_schedule_text) or re.search(
+        r"(?m)^\s*-\s*cron\s*:", active_schedule_text
+    ):
+        raise FactoryError("schedule-gated workflow must not contain an active cron trigger in v0")
     if "HOXLINE_CONTINUOUS_GATE_ENABLED" not in schedule or "HOXLINE_EMERGENCY_DISABLE" not in schedule:
         raise FactoryError("schedule-gated workflow must expose continuous gate and emergency disable")
     if "actions/upload-artifact" in "\n".join(workflows.values()):
@@ -7367,6 +7374,7 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
         "pr_source_checks_github_hosted_only": True,
         "trusted_runtime_pull_request_blocked": True,
         "schedule_disabled_by_default": True,
+        "active_cron_trigger": False,
         "unrestricted_artifact_upload": False,
     }
 
