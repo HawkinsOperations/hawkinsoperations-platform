@@ -33,6 +33,7 @@ jobs:
           python -B scripts/ho_factory.py hoxline-schedule-pilot-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
           python -B scripts/ho_factory.py hoxline-multi-detection-runtime-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
           python -B scripts/ho_factory.py hoxline-sanitized-live-receipt-intake-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-operator-receipt-collection-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
 
       - name: Schema parse checks
         run: |
@@ -47,6 +48,9 @@ jobs:
           python -m json.tool contracts/schemas/hoxline-schedule-readiness-v0.schema.json >/dev/null
           python -m json.tool contracts/schemas/hoxline-controlled-schedule-pilot-v0.schema.json >/dev/null
           python -m json.tool contracts/schemas/hoxline-sanitized-live-receipt-v0.schema.json >/dev/null
+          python -m json.tool contracts/schemas/hoxline-operator-receipt-packet-v0.schema.json >/dev/null
+          python -m json.tool contracts/examples/hoxline-operator-receipt-packet-v0.ho-det-011.sample.json >/dev/null
+          python -m json.tool contracts/examples/hoxline-operator-receipt-packet-v0.ho-det-012.sample.json >/dev/null
 
       - name: Claim-boundary checks
         run: |
@@ -64,6 +68,7 @@ jobs:
           python -B -m unittest tests/test_hoxline_controlled_schedule_pilot.py
           python -B -m unittest tests/test_hoxline_multi_detection_runtime.py
           python -B -m unittest tests/test_hoxline_sanitized_live_receipt_intake.py
+          python -B -m unittest tests/test_hoxline_operator_receipt_collection.py
           python -B -m unittest tests/test_verify_public_status_source_contract.py
 
       - name: Git whitespace check

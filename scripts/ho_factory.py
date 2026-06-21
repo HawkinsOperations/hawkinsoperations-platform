@@ -6791,6 +6791,8 @@ HOXLINE_SANITIZED_LIVE_RECEIPT_SOURCE_CLASSES = {
     "UNTRUSTED_RECEIPT",
 }
 HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS = ("HO-DET-011", "HO-DET-012")
+HOXLINE_OPERATOR_RECEIPT_PACKET_SCHEMA_VERSION = "hoxline-operator-receipt-packet-v0"
+HOXLINE_OPERATOR_RECEIPT_SUPPORTED_SOURCE_SYSTEMS = {"Wazuh", "Wazuh alerts.json", "HO-WAZUH"}
 HOXLINE_MULTI_DETECTION_CONTRACTS = {
     "HO-DET-001": {
         "detection_id": "HO-DET-001",
@@ -6908,6 +6910,9 @@ def hoxline_receipt_specific_private_field_scan(packet: Any) -> None:
                 if normalized_key not in {
                     "raw_alert_included",
                     "raw_command_included",
+                    "raw_alerts_included",
+                    "raw_commands_included",
+                    "raw_payload_omitted",
                     "raw_event_included",
                     "raw_private_evidence_in_repo",
                 }:
@@ -6942,6 +6947,27 @@ def hoxline_assert_no_raw_private_fields(packet: Any) -> None:
         for pattern in HOXLINE_FORBIDDEN_LOG_PATTERNS:
             if pattern.lower() in packet.lower():
                 raise FactoryError("raw/private value is not allowed in Hoxline runtime log")
+
+
+def hoxline_assert_operator_output_safe(packet: Any) -> None:
+    allowed_false_raw_flags = {"raw_alerts_included", "raw_commands_included"}
+    if isinstance(packet, dict):
+        for key, value in packet.items():
+            normalized_key = str(key).lower()
+            if normalized_key in allowed_false_raw_flags:
+                if value is not False:
+                    raise FactoryError(f"Hoxline operator output raw flag must be false: {key}")
+                continue
+            if normalized_key in HOXLINE_FORBIDDEN_LOG_KEYS or normalized_key.startswith("raw_"):
+                raise FactoryError(f"raw/private field is not allowed in Hoxline operator output: {key}")
+            hoxline_assert_operator_output_safe(value)
+    elif isinstance(packet, list):
+        for item in packet:
+            hoxline_assert_operator_output_safe(item)
+    elif isinstance(packet, str):
+        for pattern in HOXLINE_FORBIDDEN_LOG_PATTERNS:
+            if pattern.lower() in packet.lower():
+                raise FactoryError("raw/private value is not allowed in Hoxline operator output")
 
 
 def hoxline_runtime_log_event(
@@ -8011,7 +8037,7 @@ def hoxline_sanitized_live_receipt_intake(receipt_path: str) -> dict[str, Any]:
             "close_case",
         ],
     }
-    hoxline_assert_no_raw_private_fields(output)
+    hoxline_assert_operator_output_safe(output)
     return output
 
 
@@ -8240,7 +8266,7 @@ def hoxline_sanitized_live_receipt_intake_self_test(repo_root: Path) -> dict[str
         "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
         "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
     }
-    hoxline_assert_no_raw_private_fields(output)
+    hoxline_assert_operator_output_safe(output)
     return output
 
 
@@ -8248,6 +8274,593 @@ def hoxline_write_temp_receipt(receipt: dict[str, Any]) -> str:
     path = Path(tempfile.gettempdir()) / f"hoxline-sanitized-receipt-{receipt['detection_id']}-{receipt['receipt_hash'][:12]}.json"
     path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return str(path)
+
+
+def hoxline_operator_attestation_hash(attestation: dict[str, Any]) -> str:
+    return canonical_sha256({key: value for key, value in attestation.items() if key != "operator_attestation_hash"})
+
+
+def hoxline_operator_receipt_packet_hash(packet: dict[str, Any]) -> str:
+    return canonical_sha256({key: value for key, value in packet.items() if key != "packet_hash"})
+
+
+def hoxline_operator_attestation_sample(
+    *,
+    start_utc: str = "2026-06-21T08:40:00Z",
+    end_utc: str = "2026-06-21T08:45:00Z",
+    generated_by_hoxline: bool = False,
+) -> dict[str, Any]:
+    attestation = {
+        "attestation_id": "hoxline-operator-attestation-20260621T084000Z",
+        "operator_supplied": True,
+        "source_system": "Wazuh",
+        "source_time_window_start_utc": start_utc,
+        "source_time_window_end_utc": end_utc,
+        "collection_method": "alerts_json_sanitized_hash_only_scan",
+        "raw_payload_omitted": True,
+        "persistence_behavior_generated_by_hoxline": generated_by_hoxline,
+        "operator_attestation_hash": "",
+    }
+    attestation["operator_attestation_hash"] = hoxline_operator_attestation_hash(attestation)
+    return attestation
+
+
+def hoxline_validate_operator_attestation(attestation: Any) -> dict[str, Any]:
+    required = (
+        "attestation_id",
+        "operator_supplied",
+        "source_system",
+        "source_time_window_start_utc",
+        "source_time_window_end_utc",
+        "collection_method",
+        "raw_payload_omitted",
+        "persistence_behavior_generated_by_hoxline",
+        "operator_attestation_hash",
+    )
+    if not isinstance(attestation, dict):
+        raise FactoryError("Hoxline operator receipt packet attestation missing")
+    missing = [field for field in required if field not in attestation]
+    if missing:
+        raise FactoryError(f"Hoxline operator attestation missing fields: {', '.join(missing)}")
+    hoxline_receipt_specific_private_field_scan(attestation)
+    if attestation.get("operator_supplied") is not True:
+        raise FactoryError("Hoxline operator attestation must be operator supplied")
+    if str(attestation.get("source_system")) not in HOXLINE_OPERATOR_RECEIPT_SUPPORTED_SOURCE_SYSTEMS:
+        raise FactoryError("Hoxline operator attestation source_system must be Wazuh")
+    if attestation.get("raw_payload_omitted") is not True:
+        raise FactoryError("Hoxline operator attestation must omit raw payloads")
+    if attestation.get("persistence_behavior_generated_by_hoxline") is not False:
+        raise FactoryError("Hoxline operator attestation must not report Hoxline-generated persistence behavior")
+    start = str(attestation["source_time_window_start_utc"])
+    end = str(attestation["source_time_window_end_utc"])
+    if not start.endswith("Z") or not end.endswith("Z") or start >= end:
+        raise FactoryError("Hoxline operator attestation time window is invalid")
+    if attestation.get("operator_attestation_hash") != hoxline_operator_attestation_hash(attestation):
+        raise FactoryError("Hoxline operator attestation hash mismatch")
+    return {
+        "status": "pass",
+        "source_system": str(attestation["source_system"]),
+        "time_window_start": start,
+        "time_window_end": end,
+        "operator_attestation_hash": str(attestation["operator_attestation_hash"]),
+    }
+
+
+def hoxline_operator_packet_from_receipt(
+    receipt: dict[str, Any],
+    *,
+    operator_attestation: dict[str, Any] | None = None,
+    raw_alerts_included: bool = False,
+    raw_commands_included: bool = False,
+    generated_by_hoxline: bool = False,
+    fixture_mode: bool = False,
+) -> dict[str, Any]:
+    validation = hoxline_validate_sanitized_live_receipt(receipt)
+    attestation = operator_attestation or hoxline_operator_attestation_sample()
+    hoxline_validate_operator_attestation(attestation)
+    packet = {
+        "schema_version": HOXLINE_OPERATOR_RECEIPT_PACKET_SCHEMA_VERSION,
+        "packet_id": f"hoxline-operator-receipt-{validation['execution_id']}-{validation['receipt_hash'][:12]}",
+        "operator_attestation": attestation,
+        "receipts": [receipt],
+        "receipt_count": 1,
+        "supported_detection_ids": list(HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS),
+        "raw_alerts_included": raw_alerts_included,
+        "raw_commands_included": raw_commands_included,
+        "generated_by_hoxline": generated_by_hoxline,
+        "fixture_mode": fixture_mode,
+        "packet_hash": "",
+    }
+    packet["packet_hash"] = hoxline_operator_receipt_packet_hash(packet)
+    return packet
+
+
+def hoxline_validate_operator_receipt_packet(packet: dict[str, Any]) -> dict[str, Any]:
+    required = (
+        "schema_version",
+        "packet_id",
+        "operator_attestation",
+        "receipts",
+        "receipt_count",
+        "supported_detection_ids",
+        "raw_alerts_included",
+        "raw_commands_included",
+        "generated_by_hoxline",
+        "fixture_mode",
+        "packet_hash",
+    )
+    missing = [field for field in required if field not in packet]
+    if missing:
+        raise FactoryError(f"Hoxline operator receipt packet missing fields: {', '.join(missing)}")
+    hoxline_receipt_specific_private_field_scan(packet)
+    if packet["schema_version"] != HOXLINE_OPERATOR_RECEIPT_PACKET_SCHEMA_VERSION:
+        raise FactoryError("Hoxline operator receipt packet schema_version invalid")
+    if packet.get("raw_alerts_included") is not False or packet.get("raw_commands_included") is not False:
+        raise FactoryError("Hoxline operator receipt packet raw content flags must be false")
+    if packet.get("generated_by_hoxline") is not False:
+        raise FactoryError("Hoxline operator receipt packet must not be generated by Hoxline")
+    if packet.get("fixture_mode") is not False:
+        raise FactoryError("Hoxline operator receipt packet fixture_mode cannot support live receipt flow")
+    if packet.get("packet_hash") != hoxline_operator_receipt_packet_hash(packet):
+        raise FactoryError("Hoxline operator receipt packet hash mismatch")
+    attestation = hoxline_validate_operator_attestation(packet["operator_attestation"])
+    supported = packet.get("supported_detection_ids")
+    if supported != list(HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS):
+        raise FactoryError("Hoxline operator receipt packet supported detections invalid")
+    receipts = packet.get("receipts")
+    if not isinstance(receipts, list):
+        raise FactoryError("Hoxline operator receipt packet receipts must be a list")
+    if int(packet.get("receipt_count")) != len(receipts) or len(receipts) != 1:
+        raise FactoryError("Hoxline operator receipt packet v0 requires exactly one receipt")
+    seen_execution_ids: set[str] = set()
+    seen_detections: set[str] = set()
+    seen_digest_keys: set[tuple[str, str]] = set()
+    receipt_summaries: list[dict[str, Any]] = []
+    for receipt in receipts:
+        validation = hoxline_validate_sanitized_live_receipt(receipt)
+        if validation["live_receipt_accepted"] is not True or validation["fixture_receipt"] is not False:
+            raise FactoryError("Hoxline operator receipt packet requires live operator receipt, not fixture")
+        detection_id = validation["detection_id"]
+        if detection_id not in HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS:
+            raise FactoryError("Hoxline operator receipt packet unsupported detection")
+        execution_id = validation["execution_id"]
+        digest_key = (detection_id, validation["receipt_digest"])
+        if execution_id in seen_execution_ids or detection_id in seen_detections or digest_key in seen_digest_keys:
+            raise FactoryError("Hoxline operator receipt packet duplicate/conflicting receipt")
+        seen_execution_ids.add(execution_id)
+        seen_detections.add(detection_id)
+        seen_digest_keys.add(digest_key)
+        receipt_summaries.append(
+            {
+                "detection_id": detection_id,
+                "execution_id": execution_id,
+                "receipt_hash": validation["receipt_hash"],
+                "receipt_digest": validation["receipt_digest"],
+                "rule_ref": receipt["rule_ref"],
+            }
+        )
+    return {
+        "status": "pass",
+        "packet_id": str(packet["packet_id"]),
+        "packet_hash": str(packet["packet_hash"]),
+        "receipt_count": len(receipt_summaries),
+        "operator_attestation_hash": attestation["operator_attestation_hash"],
+        "receipts": receipt_summaries,
+    }
+
+
+def hoxline_operator_receipt_packet_verify(packet_path: str) -> dict[str, Any]:
+    packet = load_json(Path(packet_path).resolve())
+    validation = hoxline_validate_operator_receipt_packet(packet)
+    output = {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-operator-receipt-packet-verify",
+        "schema_version": HOXLINE_OPERATOR_RECEIPT_PACKET_SCHEMA_VERSION,
+        "status": "pass",
+        "packet_id": validation["packet_id"],
+        "packet_hash": validation["packet_hash"],
+        "receipt_count": validation["receipt_count"],
+        "receipts": validation["receipts"],
+        "operator_attestation_hash": validation["operator_attestation_hash"],
+        "raw_alerts_included": False,
+        "raw_commands_included": False,
+        "generated_by_hoxline": False,
+        "fixture_mode": False,
+        "ledger_append_count": 0,
+        "public_proof_promotion_count": 0,
+        "schedule_enabled": False,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+    }
+    hoxline_assert_operator_output_safe(output)
+    return output
+
+
+def hoxline_find_nested_value(value: Any, names: set[str]) -> Any:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if str(key).lower() in names:
+                return item
+        for item in value.values():
+            found = hoxline_find_nested_value(item, names)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = hoxline_find_nested_value(item, names)
+            if found is not None:
+                return found
+    return None
+
+
+def hoxline_load_wazuh_alert_records(alerts_path: str) -> list[dict[str, Any]]:
+    path = Path(alerts_path).resolve()
+    if not path.is_file():
+        raise FactoryError("Hoxline operator Wazuh alerts file missing")
+    text = path.read_text(encoding="utf-8")
+    stripped = text.strip()
+    if not stripped:
+        raise FactoryError("Hoxline operator Wazuh alerts file is empty")
+    if stripped.startswith("["):
+        parsed = json.loads(stripped)
+        if not isinstance(parsed, list):
+            raise FactoryError("Hoxline operator Wazuh alerts JSON array invalid")
+        records = parsed
+    else:
+        records = [json.loads(line) for line in text.splitlines() if line.strip()]
+    if not all(isinstance(record, dict) for record in records):
+        raise FactoryError("Hoxline operator Wazuh alert records must be objects")
+    return records
+
+
+def hoxline_operator_wazuh_alert_sample(detection_id: str, *, execution_id: str | None = None) -> dict[str, Any]:
+    contract = hoxline_runtime_contract(detection_id)
+    resolved_execution_id = execution_id or hoxline_sanitized_live_receipt_sample(detection_id)["execution_id"]
+    record = {
+        "timestamp": hoxline_timestamp_from_execution_id(resolved_execution_id),
+        "rule": {"id": contract["expected_wazuh_rule_id"]},
+        "backend_identity": "HO-WAZUH-01",
+        "hoxline": {
+            "detection_id": detection_id,
+            "execution_id": resolved_execution_id,
+            "rule_ref": contract["rule_ref"],
+            "event_id": f"{resolved_execution_id}:event",
+        },
+    }
+    if detection_id == "HO-DET-011":
+        record["hoxline"].update({"service_name": "operator-supplied-service-hash-source", "service_image_path": "operator-supplied-image-hash-source"})
+    elif detection_id == "HO-DET-012":
+        record["hoxline"].update({"task_name": "operator-supplied-task-hash-source", "task_action": "operator-supplied-action-hash-source"})
+    return record
+
+
+def hoxline_write_temp_json(prefix: str, payload: Any) -> str:
+    path = Path(tempfile.gettempdir()) / f"{prefix}-{canonical_sha256(payload)[:12]}.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return str(path)
+
+
+def hoxline_collect_operator_receipt_from_wazuh(
+    *,
+    detection_id: str,
+    execution_id: str,
+    alerts_json: str,
+    time_window_start_utc: str,
+    time_window_end_utc: str,
+    operator_attestation_path: str,
+    output_path: str,
+) -> dict[str, Any]:
+    if detection_id not in HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS:
+        raise FactoryError("Hoxline operator receipt collector unsupported detection")
+    if hoxline_detection_from_execution_id(execution_id) != detection_id:
+        raise FactoryError("Hoxline operator receipt collector execution_id detection mismatch")
+    attestation = load_json(Path(operator_attestation_path).resolve())
+    if attestation.get("source_time_window_start_utc") != time_window_start_utc or attestation.get("source_time_window_end_utc") != time_window_end_utc:
+        raise FactoryError("Hoxline operator receipt collector attestation time window mismatch")
+    hoxline_validate_operator_attestation(attestation)
+    contract = hoxline_runtime_contract(detection_id)
+    records = hoxline_load_wazuh_alert_records(alerts_json)
+    matches: list[dict[str, Any]] = []
+    expected_rule = str(contract["expected_wazuh_rule_id"])
+    for record in records:
+        rule_id = hoxline_find_nested_value(record, {"id", "rule_id", "wazuh_rule_id"})
+        record_text = stable_json(record)
+        if execution_id in record_text and expected_rule == str(rule_id):
+            matches.append(record)
+    if not matches:
+        raise FactoryError("Hoxline operator receipt collector found no matching Wazuh receipt")
+    if len(matches) > 1:
+        raise FactoryError("Hoxline operator receipt collector found conflicting duplicate Wazuh matches")
+    match = matches[0]
+    observed_at = str(hoxline_find_nested_value(match, {"timestamp", "observed_at_utc"}) or hoxline_timestamp_from_execution_id(execution_id))
+    backend_identity = str(hoxline_find_nested_value(match, {"backend_identity", "agent_name", "manager_name"}) or "HO-WAZUH-01")
+    field_names = {
+        "event_id_hash": {"event_id", "eventid", "event_id_hash_source"},
+    }
+    if detection_id == "HO-DET-011":
+        field_names.update(
+            {
+                "service_name_hash": {"service_name", "servicename"},
+                "service_image_path_hash": {"service_image_path", "serviceimagepath", "image_path"},
+            }
+        )
+    if detection_id == "HO-DET-012":
+        field_names.update({"task_name_hash": {"task_name", "taskname"}, "task_action_hash": {"task_action", "taskaction"}})
+    sanitized_hashes: dict[str, str] = {}
+    for hash_field, names in field_names.items():
+        found = hoxline_find_nested_value(match, names)
+        if found is None:
+            raise FactoryError(f"Hoxline operator receipt collector missing required observed field: {hash_field}")
+        sanitized_hashes[hash_field] = canonical_sha256({"execution_id": execution_id, "field": hash_field, "value": found})
+    source_attestation = {
+        "source_kind": "trusted_live_wazuh_sanitized_receipt",
+        "trusted_runtime_context": True,
+        "fixture_source": False,
+        "generated_by_hoxline": False,
+        "operator_supplied": True,
+        "raw_event_included": False,
+        "raw_private_evidence_in_repo": False,
+        "source_attestation_hash": "",
+    }
+    source_attestation["source_attestation_hash"] = hoxline_sanitized_receipt_attestation_hash(source_attestation)
+    digest_seed = {
+        "backend_identity": backend_identity,
+        "detection_id": detection_id,
+        "execution_id": execution_id,
+        "observed_at_utc": observed_at,
+        "rule_ref": contract["rule_ref"],
+        "sanitized_field_hashes": sanitized_hashes,
+        "signal_count": 1,
+    }
+    receipt = {
+        "schema_version": HOXLINE_SANITIZED_LIVE_RECEIPT_SCHEMA_VERSION,
+        "detection_id": detection_id,
+        "execution_id": execution_id,
+        "receipt_source_class": "OPERATOR_SUPPLIED_SANITIZED_LIVE_RECEIPT",
+        "source_attestation": source_attestation,
+        "observed_at_utc": observed_at,
+        "backend_identity": backend_identity,
+        "rule_ref": contract["rule_ref"],
+        "signal_count": 1,
+        "sanitized_field_hashes": sanitized_hashes,
+        "receipt_digest": canonical_sha256(digest_seed),
+        "raw_alert_included": False,
+        "raw_command_included": False,
+        "generated_by_hoxline": False,
+        "operator_supplied": True,
+        "fixture_mode": False,
+        "receipt_hash": "",
+    }
+    receipt["receipt_hash"] = hoxline_sanitized_receipt_hash(receipt)
+    packet = hoxline_operator_packet_from_receipt(receipt, operator_attestation=attestation)
+    output = Path(output_path).resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(packet, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    summary = {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-operator-receipt-collect-wazuh",
+        "status": "pass",
+        "packet_path": str(output),
+        "detection_id": detection_id,
+        "execution_id": execution_id,
+        "receipt_count": 1,
+        "receipt_digest": receipt["receipt_digest"],
+        "receipt_hash": receipt["receipt_hash"],
+        "packet_hash": packet["packet_hash"],
+        "raw_alerts_included": False,
+        "raw_commands_included": False,
+        "generated_by_hoxline": False,
+        "next_command": "hoxline-runtime-from-sanitized-receipt",
+    }
+    hoxline_assert_operator_output_safe(summary)
+    return summary
+
+
+def hoxline_runtime_from_operator_receipt_packet(
+    *,
+    packet_path: str,
+    private_route: str | None = None,
+    fixture_private_route: str | None = None,
+) -> dict[str, Any]:
+    if private_route and fixture_private_route:
+        raise FactoryError("use either --private-route or --fixture-private-route, not both")
+    packet = load_json(Path(packet_path).resolve())
+    validation = hoxline_validate_operator_receipt_packet(packet)
+    results = []
+    for receipt in packet["receipts"]:
+        results.append(
+            hoxline_runtime_from_sanitized_receipt(
+                receipt_path=hoxline_write_temp_receipt(receipt),
+                private_route=private_route,
+                fixture_private_route=fixture_private_route,
+            )
+        )
+    checks = {
+        "packet_verified": validation["status"] == "pass",
+        "one_receipt_v0": len(results) == 1,
+        "all_runtime_passed": all(result["status"] == "pass" for result in results),
+        "ledger_append_zero": all(result["ledger_append_count"] == 0 for result in results),
+        "public_proof_zero": all(result["public_proof_promotion_count"] == 0 for result in results),
+        "schedule_disabled": all(result["schedule_enabled"] is False for result in results),
+        "not_public_safe": all(result["public_safe_status"] == HOXLINE_PUBLIC_SAFE_STATUS for result in results),
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Hoxline runtime-from-operator-receipt-packet failed checks: {', '.join(failed)}")
+    output = {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-runtime-from-operator-receipt-packet",
+        "schema_version": HOXLINE_OPERATOR_RECEIPT_PACKET_SCHEMA_VERSION,
+        "status": "pass",
+        "packet_id": validation["packet_id"],
+        "packet_hash": validation["packet_hash"],
+        "receipt_count": validation["receipt_count"],
+        "results": [
+            {
+                "detection_id": result["detection_id"],
+                "execution_id": result["execution_id"],
+                "result_hash": result["result_hash"],
+                "receipt_hash": result["receipt_hash"],
+                "evidence_graph_hash": result["evidence_graph_hash"],
+                "promotion_hash": result["promotion_hash"],
+                "claim_decision_hash": result["claim_decision_hash"],
+                "proofcard_draft_hash": result["proofcard_draft_hash"],
+                "allowed_claim_text": result["allowed_claim_text"],
+            }
+            for result in results
+        ],
+        "checks": checks,
+        "ledger_append_count": 0,
+        "public_proof_promotion_count": 0,
+        "schedule_enabled": False,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+    }
+    hoxline_assert_no_raw_private_fields(output)
+    return output
+
+
+def hoxline_operator_receipt_collection_self_test(repo_root: Path) -> dict[str, Any]:
+    del repo_root
+
+    def expect_error(label: str, fn: Callable[[], Any]) -> bool:
+        try:
+            fn()
+        except FactoryError:
+            return True
+        raise FactoryError(f"Hoxline operator receipt collection negative test did not fail closed: {label}")
+
+    attestation = hoxline_operator_attestation_sample()
+    attestation_path = hoxline_write_temp_json("hoxline-operator-attestation", attestation)
+    packets: dict[str, dict[str, Any]] = {}
+    collection_results: dict[str, dict[str, Any]] = {}
+    runtime_results: dict[str, dict[str, Any]] = {}
+    for detection_id in HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS:
+        execution_id = hoxline_sanitized_live_receipt_sample(detection_id)["execution_id"]
+        alerts_path = hoxline_write_temp_json("hoxline-wazuh-alerts", [hoxline_operator_wazuh_alert_sample(detection_id, execution_id=execution_id)])
+        packet_path = str(Path(tempfile.gettempdir()) / f"hoxline-operator-packet-{detection_id}.json")
+        collection_results[detection_id] = hoxline_collect_operator_receipt_from_wazuh(
+            detection_id=detection_id,
+            execution_id=execution_id,
+            alerts_json=alerts_path,
+            time_window_start_utc=attestation["source_time_window_start_utc"],
+            time_window_end_utc=attestation["source_time_window_end_utc"],
+            operator_attestation_path=attestation_path,
+            output_path=packet_path,
+        )
+        packets[detection_id] = load_json(Path(packet_path))
+        runtime_results[detection_id] = hoxline_runtime_from_operator_receipt_packet(packet_path=packet_path, fixture_private_route="fixture")
+
+    fixture_packet = hoxline_operator_packet_from_receipt(
+        hoxline_sanitized_live_receipt_sample("HO-DET-011", receipt_source_class="FIXTURE_DRY_RUN_RECEIPT"),
+        operator_attestation=attestation,
+        fixture_mode=True,
+    )
+    generated_packet = dict(packets["HO-DET-011"])
+    generated_packet["generated_by_hoxline"] = True
+    generated_packet["packet_hash"] = hoxline_operator_receipt_packet_hash(generated_packet)
+    raw_alert_packet = dict(packets["HO-DET-011"])
+    raw_alert_packet["raw_alerts_included"] = True
+    raw_alert_packet["packet_hash"] = hoxline_operator_receipt_packet_hash(raw_alert_packet)
+    raw_command_packet = dict(packets["HO-DET-012"])
+    raw_command_packet["raw_commands_included"] = True
+    raw_command_packet["packet_hash"] = hoxline_operator_receipt_packet_hash(raw_command_packet)
+    missing_attestation = dict(packets["HO-DET-011"])
+    missing_attestation.pop("operator_attestation")
+    unsupported = dict(packets["HO-DET-011"])
+    unsupported["receipts"] = [dict(unsupported["receipts"][0])]
+    unsupported["receipts"][0]["detection_id"] = "HO-DET-001"
+    unsupported["receipts"][0]["receipt_hash"] = hoxline_sanitized_receipt_hash(unsupported["receipts"][0])
+    unsupported["packet_hash"] = hoxline_operator_receipt_packet_hash(unsupported)
+    bad_packet_hash = dict(packets["HO-DET-011"])
+    bad_packet_hash["packet_hash"] = "0" * 64
+    bad_attestation_hash = dict(packets["HO-DET-011"])
+    bad_attestation_hash["operator_attestation"] = dict(bad_attestation_hash["operator_attestation"])
+    bad_attestation_hash["operator_attestation"]["operator_attestation_hash"] = "0" * 64
+    bad_attestation_hash["packet_hash"] = hoxline_operator_receipt_packet_hash(bad_attestation_hash)
+    bad_receipt_hash = dict(packets["HO-DET-012"])
+    bad_receipt_hash["receipts"] = [dict(bad_receipt_hash["receipts"][0])]
+    bad_receipt_hash["receipts"][0]["receipt_hash"] = "0" * 64
+    bad_receipt_hash["packet_hash"] = hoxline_operator_receipt_packet_hash(bad_receipt_hash)
+    duplicate_alerts = [
+        hoxline_operator_wazuh_alert_sample("HO-DET-011"),
+        hoxline_operator_wazuh_alert_sample("HO-DET-011"),
+    ]
+    duplicate_alerts_path = hoxline_write_temp_json("hoxline-wazuh-duplicate-alerts", duplicate_alerts)
+    no_match_path = hoxline_write_temp_json("hoxline-wazuh-empty-alerts", [hoxline_operator_wazuh_alert_sample("HO-DET-012")])
+    generated_attestation = hoxline_operator_attestation_sample(generated_by_hoxline=True)
+
+    graph_011 = hoxline_build_evidence_graph(hoxline_replay_from_sanitized_receipt(packets["HO-DET-011"]["receipts"][0]))
+    promotion_011 = hoxline_promotion_state_from_graph(graph_011)
+    checks = {
+        "valid_operator_packet_011": hoxline_validate_operator_receipt_packet(packets["HO-DET-011"])["status"] == "pass",
+        "valid_operator_packet_012": hoxline_validate_operator_receipt_packet(packets["HO-DET-012"])["status"] == "pass",
+        "fixture_packet_not_live": expect_error("fixture_packet", lambda: hoxline_validate_operator_receipt_packet(fixture_packet)),
+        "generated_by_hoxline_blocks": expect_error("generated_packet", lambda: hoxline_validate_operator_receipt_packet(generated_packet)),
+        "raw_alerts_blocked": expect_error("raw_alert_packet", lambda: hoxline_validate_operator_receipt_packet(raw_alert_packet)),
+        "raw_commands_blocked": expect_error("raw_command_packet", lambda: hoxline_validate_operator_receipt_packet(raw_command_packet)),
+        "missing_attestation_blocks": expect_error("missing_attestation", lambda: hoxline_validate_operator_receipt_packet(missing_attestation)),
+        "unsupported_detection_blocks": expect_error("unsupported_detection", lambda: hoxline_validate_operator_receipt_packet(unsupported)),
+        "packet_hash_deterministic": packets["HO-DET-011"]["packet_hash"] == hoxline_operator_receipt_packet_hash(packets["HO-DET-011"]),
+        "attestation_hash_deterministic": attestation["operator_attestation_hash"] == hoxline_operator_attestation_hash(attestation),
+        "packet_hash_mismatch_blocks": expect_error("packet_hash", lambda: hoxline_validate_operator_receipt_packet(bad_packet_hash)),
+        "attestation_hash_mismatch_blocks": expect_error("attestation_hash", lambda: hoxline_validate_operator_receipt_packet(bad_attestation_hash)),
+        "receipt_hash_mismatch_blocks": expect_error("receipt_hash", lambda: hoxline_validate_operator_receipt_packet(bad_receipt_hash)),
+        "conflicting_duplicate_matches_block": expect_error(
+            "duplicate_alerts",
+            lambda: hoxline_collect_operator_receipt_from_wazuh(
+                detection_id="HO-DET-011",
+                execution_id=hoxline_sanitized_live_receipt_sample("HO-DET-011")["execution_id"],
+                alerts_json=duplicate_alerts_path,
+                time_window_start_utc=attestation["source_time_window_start_utc"],
+                time_window_end_utc=attestation["source_time_window_end_utc"],
+                operator_attestation_path=attestation_path,
+                output_path=str(Path(tempfile.gettempdir()) / "hoxline-duplicate-out.json"),
+            ),
+        ),
+        "no_matching_receipt_blocks": expect_error(
+            "no_match",
+            lambda: hoxline_collect_operator_receipt_from_wazuh(
+                detection_id="HO-DET-011",
+                execution_id=hoxline_sanitized_live_receipt_sample("HO-DET-011")["execution_id"],
+                alerts_json=no_match_path,
+                time_window_start_utc=attestation["source_time_window_start_utc"],
+                time_window_end_utc=attestation["source_time_window_end_utc"],
+                operator_attestation_path=attestation_path,
+                output_path=str(Path(tempfile.gettempdir()) / "hoxline-no-match-out.json"),
+            ),
+        ),
+        "hoxline_generated_attestation_blocks": expect_error("generated_attestation", lambda: hoxline_validate_operator_attestation(generated_attestation)),
+        "runtime_from_operator_packet_011": runtime_results["HO-DET-011"]["status"] == "pass",
+        "runtime_from_operator_packet_012": runtime_results["HO-DET-012"]["status"] == "pass",
+        "generated_live_proof_claim_blocked": hoxline_claim_authority_check(graph_011, promotion_011, "Hoxline generated live proof for HO-DET-011")["decision"] == "BLOCKED",
+        "service_generation_claim_blocked": hoxline_claim_authority_check(graph_011, promotion_011, "Hoxline safely created a service")["decision"] == "BLOCKED",
+        "scheduled_task_generation_claim_blocked": hoxline_claim_authority_check(graph_011, promotion_011, "Hoxline safely created a scheduled task")["decision"] == "BLOCKED",
+        "socaas_claim_blocked": hoxline_claim_authority_check(graph_011, promotion_011, "Hoxline is SOCaaS deployed")["decision"] == "BLOCKED",
+        "bounded_operator_receipt_claim_allowed": hoxline_claim_authority_check(graph_011, promotion_011, hoxline_bounded_sanitized_live_receipt_claim("HO-DET-011"))["decision"] == "ALLOWED_WITH_SCOPE",
+        "ledger_append_zero": all(result["ledger_append_count"] == 0 for result in runtime_results.values()),
+        "public_proof_zero": all(result["public_proof_promotion_count"] == 0 for result in runtime_results.values()),
+        "schedule_disabled": all(result["schedule_enabled"] is False for result in runtime_results.values()),
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Hoxline operator receipt collection self-test failed checks: {', '.join(failed)}")
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-operator-receipt-collection-self-test",
+        "status": "pass",
+        "checks": checks,
+        "packet_hashes": {key: value["packet_hash"] for key, value in packets.items()},
+        "result_hashes": {key: value["results"][0]["result_hash"] for key, value in runtime_results.items()},
+        "evidence_graph_hashes": {key: value["results"][0]["evidence_graph_hash"] for key, value in runtime_results.items()},
+        "promotion_hashes": {key: value["results"][0]["promotion_hash"] for key, value in runtime_results.items()},
+        "claim_decision_hashes": {key: value["results"][0]["claim_decision_hash"] for key, value in runtime_results.items()},
+        "ledger_append_count": 0,
+        "public_proof_promotion_count": 0,
+        "schedule_enabled": False,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+    }
 
 
 def hoxline_multi_detection_runtime_verify(
@@ -10327,6 +10940,26 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub = subparsers.add_parser("hoxline-sanitized-live-receipt-intake-self-test")
     sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-operator-receipt-collect-wazuh")
+    sub.add_argument("--detection-id", required=True)
+    sub.add_argument("--execution-id", required=True)
+    sub.add_argument("--alerts-json", required=True)
+    sub.add_argument("--time-window-start-utc", required=True)
+    sub.add_argument("--time-window-end-utc", required=True)
+    sub.add_argument("--operator-attestation", required=True)
+    sub.add_argument("--output", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-operator-receipt-packet-verify")
+    sub.add_argument("--packet", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-runtime-from-operator-receipt-packet")
+    sub.add_argument("--packet", required=True)
+    sub.add_argument("--private-route")
+    sub.add_argument("--fixture-private-route")
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-operator-receipt-collection-self-test")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("public-status-source-contract-verify")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("self-test-id-det-001-missing-surfaces")
@@ -10807,6 +11440,38 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "hoxline-sanitized-live-receipt-intake-self-test":
         output = hoxline_sanitized_live_receipt_intake_self_test(Path(args.repo_root).resolve())
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-operator-receipt-collect-wazuh":
+        output = hoxline_collect_operator_receipt_from_wazuh(
+            detection_id=args.detection_id,
+            execution_id=args.execution_id,
+            alerts_json=args.alerts_json,
+            time_window_start_utc=args.time_window_start_utc,
+            time_window_end_utc=args.time_window_end_utc,
+            operator_attestation_path=args.operator_attestation,
+            output_path=args.output,
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-operator-receipt-packet-verify":
+        output = hoxline_operator_receipt_packet_verify(args.packet)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-runtime-from-operator-receipt-packet":
+        output = hoxline_runtime_from_operator_receipt_packet(
+            packet_path=args.packet,
+            private_route=args.private_route,
+            fixture_private_route=args.fixture_private_route,
+        )
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-operator-receipt-collection-self-test":
+        output = hoxline_operator_receipt_collection_self_test(Path(args.repo_root).resolve())
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
