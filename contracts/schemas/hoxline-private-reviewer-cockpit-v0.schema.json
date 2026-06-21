@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hawkinsoperations.local/contracts/hoxline-private-reviewer-cockpit-v0.schema.json",
+  "title": "Hoxline Private Reviewer Cockpit v0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "generated_at_utc",
+    "proof_ceiling",
+    "public_safe_status",
+    "detections",
+    "global_state",
+    "claim_boundaries",
+    "next_actions",
+    "report_hash"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "hoxline-private-reviewer-cockpit-v0"
+    },
+    "generated_at_utc": {
+      "type": "string"
+    },
+    "proof_ceiling": {
+      "const": "PRIVATE_CONTROLLED_RUNTIME_PROOF"
+    },
+    "public_safe_status": {
+      "const": "NOT_PUBLIC_SAFE"
+    },
+    "detections": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "detection_id",
+          "human_review_required",
+          "public_safe",
+          "proof_ceiling",
+          "allowed_claim_class",
+          "blocked_claim_classes"
+        ],
+        "properties": {
+          "detection_id": {
+            "enum": ["HO-DET-001", "HO-DET-011", "HO-DET-012"]
+          },
+          "human_review_required": {
+            "const": true
+          },
+          "public_safe": {
+            "const": false
+          },
+          "proof_ceiling": {
+            "const": "PRIVATE_CONTROLLED_RUNTIME_PROOF"
+          },
+          "allowed_claim_class": {
+            "const": "PRIVATE_CONTROLLED_RUNTIME_PROOF_ONLY"
+          },
+          "blocked_claim_classes": {
+            "type": "array",
+            "contains": {
+              "const": "PUBLIC_SAFE"
+            }
+          }
+        }
+      }
+    },
+    "global_state": {
+      "type": "object",
+      "required": [
+        "lifetime_ledger_cases",
+        "lifetime_ledger_events",
+        "public_safe_count",
+        "closed_case_count",
+        "schedule_enabled",
+        "active_cron_trigger",
+        "remote_lab_authority_rule",
+        "remote_default_mode"
+      ],
+      "properties": {
+        "lifetime_ledger_cases": {
+          "const": 6
+        },
+        "lifetime_ledger_events": {
+          "const": 6
+        },
+        "public_safe_count": {
+          "const": 0
+        },
+        "closed_case_count": {
+          "const": 0
+        },
+        "schedule_enabled": {
+          "const": false
+        },
+        "active_cron_trigger": {
+          "const": false
+        },
+        "remote_lab_authority_rule": {
+          "const": "present"
+        },
+        "remote_default_mode": {
+          "const": "read_only"
+        }
+      }
+    },
+    "claim_boundaries": {
+      "type": "object",
+      "required": [
+        "allowed_claim_classes",
+        "blocked_claim_classes",
+        "human_review_required",
+        "ai_disposition_authority",
+        "analyst_approval_simulated",
+        "case_closure"
+      ]
+    },
+    "next_actions": {
+      "type": "array",
+      "minItems": 3
+    },
+    "report_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "not": {
+    "anyOf": [
+      { "required": ["raw_alert"] },
+      { "required": ["raw_alerts"] },
+      { "required": ["raw_command"] },
+      { "required": ["raw_commands"] },
+      { "required": ["command_line"] },
+      { "required": ["secret"] },
+      { "required": ["token"] },
+      { "required": ["credential"] }
+    ]
+  }
+}

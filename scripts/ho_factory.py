@@ -34,6 +34,19 @@ PLATFORM_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO_ROOT = PLATFORM_ROOT.parent
 DEFAULT_CASE_LEDGER = PLATFORM_ROOT / "evidence" / "autosoc-case-ledger-v0.sqlite"
 LIFETIME_LEDGER_STATE_MANIFEST = PLATFORM_ROOT / "contracts" / "lifetime-case-ledger-v1-state-manifest.json"
+HOXLINE_PRIVATE_REVIEWER_COCKPIT_SCHEMA = (
+    PLATFORM_ROOT / "contracts" / "schemas" / "hoxline-private-reviewer-cockpit-v0.schema.json"
+)
+HOXLINE_PRIVATE_REVIEWER_COCKPIT_REPORT = Path(
+    "C:/Raylee/Data/Hoxline/private-reviewer-cockpit-20260621.json"
+)
+HOXLINE_PR67_AI_RECONCILIATION_REPORT = Path(
+    "C:/Raylee/Data/Hoxline/pr67-ai-triage-reconciliation-20260621.json"
+)
+HOXLINE_OPERATOR_EVIDENCE_PACKAGE = Path(
+    "C:/Raylee/Data/Hoxline/operator-evidence-package-20260621"
+)
+HOXLINE_AGENTS_RULES = Path("C:/Raylee/Codex/Rules/AGENTS.md")
 PROOF_STATUS_INDEX_REL = "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml"
 PROOF_STATUS_INDEX_OWNER = "hawkinsoperations-proof"
 PROOF_STATUS_INDEX_VISIBILITY_STATUS = "STATUS_VISIBILITY_ONLY_NON_AUTHORITATIVE"
@@ -10458,6 +10471,319 @@ def hoxline_runtime_canary_from_receipts(
     }
 
 
+HOXLINE_PRIVATE_REVIEWER_BLOCKED_CLAIM_CLASSES = [
+    "PUBLIC_SAFE",
+    "PRODUCTION",
+    "SOCAAS",
+    "CUSTOMER_DEPLOYED",
+    "AI_APPROVED",
+    "ANALYST_APPROVED",
+    "CASE_CLOSED",
+    "FLEET_WIDE",
+]
+
+HOXLINE_PRIVATE_REVIEWER_FORBIDDEN_KEYS = {
+    "raw_alert",
+    "raw_alerts",
+    "raw_command",
+    "raw_commands",
+    "command_line",
+    "private_key",
+    "secret",
+    "token",
+    "credential",
+    "password",
+}
+
+
+def hoxline_file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def hoxline_remote_lab_authority_state() -> dict[str, Any]:
+    if not HOXLINE_AGENTS_RULES.is_file():
+        raise FactoryError(f"Codex AGENTS rules file is missing: {HOXLINE_AGENTS_RULES}")
+    text = HOXLINE_AGENTS_RULES.read_text(encoding="utf-8")
+    required_markers = [
+        "REMOTE LAB / SSH EVIDENCE SURFACE AUTHORITY",
+        "Raylee-owned lab servers and VMs are approved evidence surfaces",
+        "Default remote mode is read-only.",
+        "ho-wazuh-01",
+        "ho-wazuh-02",
+        "ho-gpu-01",
+        "ho-runner-01",
+        "C:\\Raylee\\LogBook",
+        "C:\\Raylee\\Work",
+    ]
+    if not all(marker in text for marker in required_markers):
+        raise FactoryError("Codex remote lab authority rule is not present or is incomplete")
+    return {
+        "remote_lab_authority_rule": "present",
+        "remote_default_mode": "read_only",
+        "rule_hash": canonical_sha256(
+            {
+                "rule": "REMOTE LAB / SSH EVIDENCE SURFACE AUTHORITY",
+                "hosts": ["ho-wazuh-01", "ho-wazuh-02", "ho-gpu-01", "ho-runner-01"],
+                "default_mode": "read_only",
+            }
+        ),
+    }
+
+
+def hoxline_private_reviewer_source_summary_hashes(repo_root: Path) -> dict[str, Any]:
+    operator_manifest = HOXLINE_OPERATOR_EVIDENCE_PACKAGE / "package_manifest.json"
+    return {
+        "platform_repo_root_hash": canonical_sha256(str(repo_root)),
+        "pr67_ai_reconciliation_report_hash": hoxline_file_sha256(HOXLINE_PR67_AI_RECONCILIATION_REPORT)
+        if HOXLINE_PR67_AI_RECONCILIATION_REPORT.is_file()
+        else None,
+        "operator_evidence_package_manifest_hash": hoxline_file_sha256(operator_manifest)
+        if operator_manifest.is_file()
+        else None,
+        "private_reviewer_schema_hash": hoxline_file_sha256(HOXLINE_PRIVATE_REVIEWER_COCKPIT_SCHEMA)
+        if HOXLINE_PRIVATE_REVIEWER_COCKPIT_SCHEMA.is_file()
+        else None,
+    }
+
+
+def hoxline_private_reviewer_detection_waiting_for_operator_input(detection_id: str) -> dict[str, Any]:
+    return {
+        "detection_id": detection_id,
+        "fixture_private_runtime_path": True,
+        "real_operator_receipt": "missing",
+        "operator_evidence_package": "ready_for_real_input",
+        "human_review_required": True,
+        "public_safe": False,
+        "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+        "next_safe_action": (
+            "populate Wazuh export + operator attestation + execution ID, "
+            "then run operator receipt package commands"
+        ),
+        "allowed_claim_class": "PRIVATE_CONTROLLED_RUNTIME_PROOF_ONLY",
+        "blocked_claim_classes": list(HOXLINE_PRIVATE_REVIEWER_BLOCKED_CLAIM_CLASSES),
+    }
+
+
+def hoxline_private_reviewer_cockpit(repo_root: Path, *, write_report: bool = True) -> dict[str, Any]:
+    remote_state = hoxline_remote_lab_authority_state()
+    generated_at_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    detections = [
+        {
+            "detection_id": "HO-DET-001",
+            "private_runtime_candidate": True,
+            "evidence_source": "WAZUH_SIGNAL_TO_RUNTIME_CANDIDATE",
+            "github_run_id": 27878994407,
+            "runner": "HO-GPU-01",
+            "wazuh_receipt_digest": "9b44ac77420ec3f87d30c228bdb246875e2d7a263dad083cd3c7acab9e4d88b4",
+            "candidate_hash": "bf0ef4fc62e11d612b08083d0326eeb3ae65ae996fbc34422ba3edefcd89dd30",
+            "normalized_hash": "3e6062119a1f90d70e1753f9ba21e9c38837fb5d06c559c8c34e84459c945ec2",
+            "ai_status": "AI_TRIAGE_RECOVERED_AND_CANONICAL",
+            "ai_input_hash": "d3a59cfad7db296aa3163b5a508ae05efa63fbc235efcdf4696330a2c907ac72",
+            "ai_output_hash": "be285ea60303e9cc654719ebb20cf18c3162ed4f9fbb812b399429811930ba47",
+            "canonical_human_review_packet_digest": "589e4220b73cc26115629281f29fe34c17950e539454881734802392729ec2f9",
+            "historical_noncanonical_packet_digest": "78100a2e72b5ca5f1866f4bfba48d3b48dc0512eef8620d0eed1fe3c854cc891",
+            "human_review_required": True,
+            "public_safe": False,
+            "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+            "allowed_claim_class": "PRIVATE_CONTROLLED_RUNTIME_PROOF_ONLY",
+            "blocked_claim_classes": list(HOXLINE_PRIVATE_REVIEWER_BLOCKED_CLAIM_CLASSES),
+            "next_safe_action": "private human review only; no ledger append or public proof without separate approval",
+        },
+        hoxline_private_reviewer_detection_waiting_for_operator_input("HO-DET-011"),
+        hoxline_private_reviewer_detection_waiting_for_operator_input("HO-DET-012"),
+    ]
+    global_state = {
+        "lifetime_ledger_cases": 6,
+        "lifetime_ledger_events": 6,
+        "public_safe_count": 0,
+        "closed_case_count": 0,
+        "public_proof_published": False,
+        "schedule_enabled": False,
+        "active_cron_trigger": False,
+        "website_updated": False,
+        "hoxline_product_repo_updated": False,
+        "ai_disposition_authority": False,
+        "analyst_approval_simulated": False,
+        "case_closure": False,
+        "remote_lab_authority_rule": remote_state["remote_lab_authority_rule"],
+        "remote_default_mode": remote_state["remote_default_mode"],
+    }
+    source_summary_hashes = hoxline_private_reviewer_source_summary_hashes(repo_root)
+    source_summary_hashes["remote_lab_authority_rule_hash"] = remote_state["rule_hash"]
+    cockpit = {
+        "schema_version": "hoxline-private-reviewer-cockpit-v0",
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-private-reviewer-cockpit",
+        "status": "pass",
+        "generated_at_utc": generated_at_utc,
+        "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "detections": detections,
+        "global_state": global_state,
+        "claim_boundaries": {
+            "allowed_claim_classes": ["PRIVATE_CONTROLLED_RUNTIME_PROOF_ONLY"],
+            "blocked_claim_classes": list(HOXLINE_PRIVATE_REVIEWER_BLOCKED_CLAIM_CLASSES),
+            "human_review_required": True,
+            "ai_disposition_authority": False,
+            "analyst_approval_simulated": False,
+            "case_closure": False,
+        },
+        "next_actions": [
+            {"detection_id": "HO-DET-001", "next_safe_action": "private human review packet evaluation only"},
+            {
+                "detection_id": "HO-DET-011",
+                "next_safe_action": (
+                    "populate Wazuh export + operator attestation + execution ID, "
+                    "then run operator receipt package commands"
+                ),
+            },
+            {
+                "detection_id": "HO-DET-012",
+                "next_safe_action": (
+                    "populate Wazuh export + operator attestation + execution ID, "
+                    "then run operator receipt package commands"
+                ),
+            },
+        ],
+        "source_summary_hashes": source_summary_hashes,
+        "private_report_path": str(HOXLINE_PRIVATE_REVIEWER_COCKPIT_REPORT),
+        "ledger_mutated": False,
+        "public_proof_promoted": False,
+        "schedule_enabled": False,
+        "website_updated": False,
+        "report_hash": "",
+    }
+    cockpit["report_hash"] = canonical_sha256({key: value for key, value in cockpit.items() if key != "report_hash"})
+    hoxline_validate_private_reviewer_cockpit(cockpit)
+    if write_report:
+        report = {
+            "schema_version": "hoxline-private-reviewer-cockpit-report-v0",
+            "created_at_utc": generated_at_utc,
+            "cockpit": cockpit,
+            "source_summary_hashes": source_summary_hashes,
+            "public_proof_claim": False,
+            "report_hash": cockpit["report_hash"],
+        }
+        HOXLINE_PRIVATE_REVIEWER_COCKPIT_REPORT.parent.mkdir(parents=True, exist_ok=True)
+        HOXLINE_PRIVATE_REVIEWER_COCKPIT_REPORT.write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    return cockpit
+
+
+def hoxline_iter_keys(value: Any) -> list[str]:
+    keys: list[str] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            keys.append(str(key))
+            keys.extend(hoxline_iter_keys(child))
+    elif isinstance(value, list):
+        for child in value:
+            keys.extend(hoxline_iter_keys(child))
+    return keys
+
+
+def hoxline_validate_private_reviewer_cockpit(cockpit: dict[str, Any]) -> None:
+    required = {
+        "schema_version",
+        "generated_at_utc",
+        "proof_ceiling",
+        "public_safe_status",
+        "detections",
+        "global_state",
+        "claim_boundaries",
+        "next_actions",
+        "report_hash",
+    }
+    missing = sorted(required - set(cockpit))
+    if missing:
+        raise FactoryError(f"Hoxline private reviewer cockpit missing required fields: {', '.join(missing)}")
+    forbidden = sorted(
+        key for key in hoxline_iter_keys(cockpit) if key.lower() in HOXLINE_PRIVATE_REVIEWER_FORBIDDEN_KEYS
+    )
+    if forbidden:
+        raise FactoryError(f"Hoxline private reviewer cockpit contains forbidden private field keys: {', '.join(forbidden)}")
+    if cockpit["proof_ceiling"] != "PRIVATE_CONTROLLED_RUNTIME_PROOF":
+        raise FactoryError("Hoxline private reviewer cockpit proof ceiling must remain private controlled runtime proof")
+    if cockpit["public_safe_status"] != "NOT_PUBLIC_SAFE":
+        raise FactoryError("Hoxline private reviewer cockpit public safe status must remain NOT_PUBLIC_SAFE")
+    detections = {item["detection_id"]: item for item in cockpit["detections"]}
+    for detection_id in ("HO-DET-001", "HO-DET-011", "HO-DET-012"):
+        if detection_id not in detections:
+            raise FactoryError(f"Hoxline private reviewer cockpit missing detection: {detection_id}")
+    ho_det_001 = detections["HO-DET-001"]
+    if ho_det_001["ai_status"] != "AI_TRIAGE_RECOVERED_AND_CANONICAL":
+        raise FactoryError("HO-DET-001 canonical AI status is not recovered")
+    if ho_det_001["canonical_human_review_packet_digest"] == ho_det_001["historical_noncanonical_packet_digest"]:
+        raise FactoryError("HO-DET-001 canonical and historical packet digests must remain distinct")
+    for detection_id in ("HO-DET-011", "HO-DET-012"):
+        if detections[detection_id]["real_operator_receipt"] != "missing":
+            raise FactoryError(f"{detection_id} must remain waiting on real operator input")
+    global_state = cockpit["global_state"]
+    if global_state["lifetime_ledger_cases"] != 6 or global_state["lifetime_ledger_events"] != 6:
+        raise FactoryError("Hoxline private reviewer cockpit ledger baseline must remain 6 cases / 6 events")
+    if global_state["public_safe_count"] != 0 or global_state["closed_case_count"] != 0:
+        raise FactoryError("Hoxline private reviewer cockpit public-safe and closed counts must remain zero")
+    if global_state["schedule_enabled"] is not False or global_state["active_cron_trigger"] is not False:
+        raise FactoryError("Hoxline private reviewer cockpit schedule state must remain disabled")
+    if global_state["remote_lab_authority_rule"] != "present" or global_state["remote_default_mode"] != "read_only":
+        raise FactoryError("Hoxline private reviewer cockpit remote lab authority rule is not present")
+    if cockpit["claim_boundaries"]["blocked_claim_classes"] != HOXLINE_PRIVATE_REVIEWER_BLOCKED_CLAIM_CLASSES:
+        raise FactoryError("Hoxline private reviewer cockpit blocked claim classes changed")
+    expected_hash = canonical_sha256({key: value for key, value in cockpit.items() if key != "report_hash"})
+    if cockpit["report_hash"] != expected_hash:
+        raise FactoryError("Hoxline private reviewer cockpit report hash mismatch")
+
+
+def hoxline_private_reviewer_cockpit_self_test(repo_root: Path) -> dict[str, Any]:
+    cockpit = hoxline_private_reviewer_cockpit(repo_root, write_report=True)
+    detections = {item["detection_id"]: item for item in cockpit["detections"]}
+    schema_text = HOXLINE_PRIVATE_REVIEWER_COCKPIT_SCHEMA.read_text(encoding="utf-8")
+    report = load_json(HOXLINE_PRIVATE_REVIEWER_COCKPIT_REPORT)
+    checks = {
+        "cockpit_self_test_passes": cockpit["status"] == "pass",
+        "schema_exists": HOXLINE_PRIVATE_REVIEWER_COCKPIT_SCHEMA.is_file(),
+        "schema_validates_sample_output": all(
+            field in schema_text for field in ("schema_version", "detections", "global_state", "report_hash")
+        ),
+        "ho_det_001_ai_recovered": detections["HO-DET-001"]["ai_status"] == "AI_TRIAGE_RECOVERED_AND_CANONICAL",
+        "historical_packet_is_historical_only": detections["HO-DET-001"]["historical_noncanonical_packet_digest"]
+        != detections["HO-DET-001"]["canonical_human_review_packet_digest"],
+        "ho_det_011_real_operator_evidence_missing": detections["HO-DET-011"]["real_operator_receipt"] == "missing",
+        "ho_det_012_real_operator_evidence_missing": detections["HO-DET-012"]["real_operator_receipt"] == "missing",
+        "ledger_state_6_6": cockpit["global_state"]["lifetime_ledger_cases"] == 6
+        and cockpit["global_state"]["lifetime_ledger_events"] == 6,
+        "public_safe_count_zero": cockpit["global_state"]["public_safe_count"] == 0,
+        "schedule_disabled": cockpit["global_state"]["schedule_enabled"] is False,
+        "remote_lab_authority_rule_present": cockpit["global_state"]["remote_lab_authority_rule"] == "present",
+        "no_forbidden_private_fields": not [
+            key for key in hoxline_iter_keys(cockpit) if key.lower() in HOXLINE_PRIVATE_REVIEWER_FORBIDDEN_KEYS
+        ],
+        "unsafe_claims_blocked": cockpit["claim_boundaries"]["blocked_claim_classes"]
+        == HOXLINE_PRIVATE_REVIEWER_BLOCKED_CLAIM_CLASSES,
+        "private_report_written": report["report_hash"] == cockpit["report_hash"],
+        "ledger_mutated_false": cockpit["ledger_mutated"] is False,
+        "public_proof_promoted_false": cockpit["public_proof_promoted"] is False,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise FactoryError(f"Hoxline private reviewer cockpit self-test failed checks: {', '.join(failed)}")
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-private-reviewer-cockpit-self-test",
+        "status": "pass",
+        "checks": checks,
+        "report_hash": cockpit["report_hash"],
+        "private_report_path": str(HOXLINE_PRIVATE_REVIEWER_COCKPIT_REPORT),
+        "ledger_mutated": False,
+        "public_proof_promoted": False,
+        "schedule_enabled": False,
+        "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+    }
+
+
 def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
     workflow_dir = repo_root / ".github" / "workflows"
     workflows = {path.name: path.read_text(encoding="utf-8") for path in sorted(workflow_dir.glob("*.yml"))}
@@ -10866,6 +11192,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--uses-private-route", action="store_true")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("hoxline-workflow-safety-verify")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-private-reviewer-cockpit")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-private-reviewer-cockpit-self-test")
     sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("hoxline-runtime-ops-self-test")
@@ -11330,6 +11662,16 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "hoxline-workflow-safety-verify":
         output = hoxline_workflow_safety_verify(Path(args.repo_root).resolve())
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-private-reviewer-cockpit":
+        output = hoxline_private_reviewer_cockpit(Path(args.repo_root).resolve())
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-private-reviewer-cockpit-self-test":
+        output = hoxline_private_reviewer_cockpit_self_test(Path(args.repo_root).resolve())
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 
