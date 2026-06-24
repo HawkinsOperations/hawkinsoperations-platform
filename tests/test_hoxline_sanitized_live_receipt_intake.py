@@ -24,7 +24,7 @@ class HoxlineSanitizedLiveReceiptIntakeTests(unittest.TestCase):
         return str(path)
 
     def test_operator_receipts_are_accepted_for_target_detections(self) -> None:
-        for detection_id in ("HO-DET-011", "HO-DET-012"):
+        for detection_id in ("HO-DET-009", "HO-DET-011", "HO-DET-012"):
             with self.subTest(detection_id=detection_id):
                 receipt = ho_factory.hoxline_sanitized_live_receipt_sample(detection_id)
                 result = ho_factory.hoxline_sanitized_live_receipt_intake(self.write_receipt(receipt))
@@ -93,7 +93,7 @@ class HoxlineSanitizedLiveReceiptIntakeTests(unittest.TestCase):
             ho_factory.hoxline_validate_sanitized_live_receipt(fixture_digest)
 
     def test_receipt_to_runtime_builds_private_control_plane_outputs(self) -> None:
-        for detection_id in ("HO-DET-011", "HO-DET-012"):
+        for detection_id in ("HO-DET-009", "HO-DET-011", "HO-DET-012"):
             with self.subTest(detection_id=detection_id):
                 result = ho_factory.hoxline_runtime_from_sanitized_receipt(
                     receipt_path=self.write_receipt(ho_factory.hoxline_sanitized_live_receipt_sample(detection_id)),

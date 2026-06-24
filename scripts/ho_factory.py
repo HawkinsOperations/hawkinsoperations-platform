@@ -6595,8 +6595,8 @@ def hoxline_runtime_verify(execution_id: str, private_route: str) -> dict[str, A
     }
 
 
-HOXLINE_SUPPORTED_RUNTIME_DETECTIONS = ("HO-DET-001", "HO-DET-011", "HO-DET-012")
-HOXLINE_EXECUTION_ID_RE = re.compile(r"^(HO-DET-001|HO-DET-011|HO-DET-012)-\d{8}T\d{6}Z-[A-Z0-9]{6}$")
+HOXLINE_SUPPORTED_RUNTIME_DETECTIONS = ("HO-DET-001", "HO-DET-009", "HO-DET-011", "HO-DET-012")
+HOXLINE_EXECUTION_ID_RE = re.compile(r"^(HO-DET-001|HO-DET-009|HO-DET-011|HO-DET-012)-\d{8}T\d{6}Z-[A-Z0-9]{6}$")
 HOXLINE_SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 HOXLINE_RUNTIME_LOG_FIELDS = (
     "schema_version",
@@ -6803,7 +6803,7 @@ HOXLINE_SANITIZED_LIVE_RECEIPT_SOURCE_CLASSES = {
     "FIXTURE_DRY_RUN_RECEIPT",
     "UNTRUSTED_RECEIPT",
 }
-HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS = ("HO-DET-011", "HO-DET-012")
+HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS = ("HO-DET-009", "HO-DET-011", "HO-DET-012")
 HOXLINE_OPERATOR_RECEIPT_PACKET_SCHEMA_VERSION = "hoxline-operator-receipt-packet-v0"
 HOXLINE_OPERATOR_RECEIPT_SUPPORTED_SOURCE_SYSTEMS = {"Wazuh", "Wazuh alerts.json", "HO-WAZUH"}
 HOXLINE_MULTI_DETECTION_CONTRACTS = {
@@ -6824,6 +6824,25 @@ HOXLINE_MULTI_DETECTION_CONTRACTS = {
         "human_review_required": True,
         "ai_disposition_authority": False,
         "validation_result_ref": "hawkinsoperations-validation/reports/ho-det-001/validation-result.json",
+    },
+    "HO-DET-009": {
+        "detection_id": "HO-DET-009",
+        "attack_technique": "T1136.001",
+        "event_class": "Windows_Local_User_Creation",
+        "backend_class": "Wazuh",
+        "expected_wazuh_rule_id": "910091",
+        "expected_wazuh_rule_ids": ["910091", "910092", "910093"],
+        "rule_ref": "detections/successor/ho-det-009/wazuh.xml",
+        "required_signal_fields": ["detection_id", "execution_id", "wazuh_rule_id", "receipt_digest", "observed_at_utc", "event_id_hash"],
+        "required_candidate_fields": ["detection_id", "execution_id", "candidate_id", "candidate_hash", "detection_family", "source_system", "source_truth_status", "runtime_truth_status", "signal_truth_status", "observed_time_utc", "candidate_content_hash", "sanitized_event_fingerprint", "source_receipt_refs_hash", "signal_receipt_digest", "local_user_hash", "creator_user_hash"],
+        "normalization_key_fields": ["detection_id", "execution_id", "local_user_hash", "creator_user_hash"],
+        "dedupe_key_fields": ["detection_id", "signal_receipt_digest", "local_user_hash", "creator_user_hash"],
+        "allowed_runtime_truth_class": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "human_review_required": True,
+        "ai_disposition_authority": False,
+        "validation_result_ref": "hawkinsoperations-validation/reports/ho-det-009/validation-result.json",
     },
     "HO-DET-011": {
         "detection_id": "HO-DET-011",
@@ -7657,6 +7676,7 @@ def hoxline_multi_detection_default_execution_id(detection_id: str) -> str:
     hoxline_runtime_contract(detection_id)
     suffixes = {
         "HO-DET-001": "6ELQ03",
+        "HO-DET-009": "MD009A",
         "HO-DET-011": "MD011A",
         "HO-DET-012": "MD012A",
     }
@@ -7720,6 +7740,13 @@ def hoxline_multi_detection_runtime_fixture(
         "human_review_required": True,
         "ai_disposition_authority": False,
     }
+    if detection_id == "HO-DET-009":
+        candidate.update(
+            {
+                "local_user_hash": hashlib.sha256(f"{resolved_execution_id}:local-user".encode("utf-8")).hexdigest(),
+                "creator_user_hash": hashlib.sha256(f"{resolved_execution_id}:creator-user".encode("utf-8")).hexdigest(),
+            }
+        )
     if detection_id == "HO-DET-011":
         candidate.update(
             {
@@ -7850,7 +7877,7 @@ def hoxline_sanitized_live_receipt_sample(
     if detection_id not in HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS:
         hoxline_runtime_contract(detection_id)
     contract = hoxline_runtime_contract(detection_id)
-    suffixes = {"HO-DET-011": "LR011A", "HO-DET-012": "LR012A"}
+    suffixes = {"HO-DET-009": "LR009A", "HO-DET-011": "LR011A", "HO-DET-012": "LR012A"}
     resolved_execution_id = execution_id or f"{detection_id}-20260621T084000Z-{suffixes[detection_id]}"
     observed_at = hoxline_timestamp_from_execution_id(resolved_execution_id)
     is_live = receipt_source_class == "OPERATOR_SUPPLIED_SANITIZED_LIVE_RECEIPT"
@@ -7861,6 +7888,13 @@ def hoxline_sanitized_live_receipt_sample(
     sanitized_hashes = {
         "event_id_hash": canonical_sha256({"execution_id": resolved_execution_id, "field": "event_id"}),
     }
+    if detection_id == "HO-DET-009":
+        sanitized_hashes.update(
+            {
+                "local_user_hash": canonical_sha256({"execution_id": resolved_execution_id, "field": "local_user"}),
+                "creator_user_hash": canonical_sha256({"execution_id": resolved_execution_id, "field": "creator_user"}),
+            }
+        )
     if detection_id == "HO-DET-011":
         sanitized_hashes.update(
             {
@@ -7969,6 +8003,8 @@ def hoxline_validate_sanitized_live_receipt(receipt: dict[str, Any]) -> dict[str
     if not isinstance(sanitized_hashes, dict):
         raise FactoryError("Hoxline sanitized live receipt sanitized_field_hashes must be an object")
     required_hashes = {"event_id_hash"}
+    if detection_id == "HO-DET-009":
+        required_hashes.update({"local_user_hash", "creator_user_hash"})
     if detection_id == "HO-DET-011":
         required_hashes.update({"service_name_hash", "service_image_path_hash"})
     if detection_id == "HO-DET-012":
@@ -8582,7 +8618,9 @@ def hoxline_operator_wazuh_alert_sample(detection_id: str, *, execution_id: str 
             "event_id": f"{resolved_execution_id}:event",
         },
     }
-    if detection_id == "HO-DET-011":
+    if detection_id == "HO-DET-009":
+        record["hoxline"].update({"local_user": "operator-supplied-local-user-hash-source", "creator_user": "operator-supplied-creator-user-hash-source"})
+    elif detection_id == "HO-DET-011":
         record["hoxline"].update({"service_name": "operator-supplied-service-hash-source", "service_image_path": "operator-supplied-image-hash-source"})
     elif detection_id == "HO-DET-012":
         record["hoxline"].update({"task_name": "operator-supplied-task-hash-source", "task_action": "operator-supplied-action-hash-source"})
@@ -8632,6 +8670,13 @@ def hoxline_collect_operator_receipt_from_wazuh(
     field_names = {
         "event_id_hash": {"event_id", "eventid", "event_id_hash_source"},
     }
+    if detection_id == "HO-DET-009":
+        field_names.update(
+            {
+                "local_user_hash": {"local_user", "target_user", "targetusername", "target_user_name"},
+                "creator_user_hash": {"creator_user", "subject_user", "subjectusername", "subject_user_name"},
+            }
+        )
     if detection_id == "HO-DET-011":
         field_names.update(
             {
@@ -9095,7 +9140,7 @@ def hoxline_multi_detection_runtime_self_test(repo_root: Path) -> dict[str, Any]
         "duplicate_signal_suppressed_all": all(result["checks"]["duplicate_signal_suppressed"] for result in results.values()),
         "no_new_signal_no_candidate_all": all(result["checks"]["no_new_signal_no_candidate"] for result in results.values()),
         "candidate_count_not_ledger_count": all(result["metrics"]["runtime_candidate_count"] != result["metrics"]["lifetime_ledger_case_count"] for result in results.values()),
-        "runtime_candidate_count_per_detection": {key: value["metrics"]["runtime_candidate_count"] for key, value in results.items()} == {"HO-DET-001": 1, "HO-DET-011": 1, "HO-DET-012": 1},
+        "runtime_candidate_count_per_detection": {key: value["metrics"]["runtime_candidate_count"] for key, value in results.items()} == {"HO-DET-001": 1, "HO-DET-009": 1, "HO-DET-011": 1, "HO-DET-012": 1},
         "ho_det_011_production_blocked": hoxline_claim_authority_check(graph_011, promotion_011, "HO-DET-011 production SOC")["decision"] == "BLOCKED",
         "ho_det_012_public_safe_blocked": hoxline_claim_authority_check(graph_012, promotion_012, "HO-DET-012 public-safe runtime proof")["decision"] == "BLOCKED",
         "ho_det_011_ai_approved_blocked": hoxline_claim_authority_check(graph_011, promotion_011, "AI approved HO-DET-011")["decision"] == "BLOCKED",
