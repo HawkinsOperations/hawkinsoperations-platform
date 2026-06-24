@@ -11014,6 +11014,8 @@ HOXLINE_PRIVATE_REVIEWER_FORBIDDEN_KEYS = {
     "password",
 }
 
+HOXLINE_STANDING_PRIVATE_COLLECTOR_SCOPE = ("HO-DET-009", "HO-DET-010", "HO-DET-011", "HO-DET-012")
+
 
 def hoxline_file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -11098,6 +11100,42 @@ def hoxline_private_reviewer_detection_waiting_for_operator_input(detection_id: 
         "blocked_claim_classes": list(HOXLINE_PRIVATE_REVIEWER_BLOCKED_CLAIM_CLASSES),
     }
 
+def hoxline_private_reviewer_detection_private_runtime_candidate(
+    detection_id: str,
+    *,
+    artifact_name: str,
+    telemetry_source: str,
+    event_ids: list[int],
+    rule_ids: list[int],
+) -> dict[str, Any]:
+    return {
+        "detection_id": detection_id,
+        "artifact_name": artifact_name,
+        "source_status": "source_package_present",
+        "validation_status": "controlled_validation_present",
+        "telemetry_source": telemetry_source,
+        "event_ids_required": event_ids,
+        "wazuh_rule_family": rule_ids,
+        "private_runtime_candidate": True,
+        "runtime_truth": "private_runtime_candidate_signal_observed",
+        "private_runtime_packet": "verified_private_packet",
+        "wazuh_signal_status": "private_signal_observed",
+        "standing_private_collector_included": True,
+        "scheduled_collection_included": True,
+        "scheduled_collection_scope": list(HOXLINE_STANDING_PRIVATE_COLLECTOR_SCOPE),
+        "human_review_required": True,
+        "ai_disposition_authority": False,
+        "public_safe": False,
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "proof_ceiling": "PRIVATE_CONTROLLED_RUNTIME_PROOF",
+        "allowed_claim_class": "PRIVATE_CONTROLLED_RUNTIME_PROOF_ONLY",
+        "allowed_internal_claim": (
+            f"{detection_id} has private runtime candidate signal evidence and a verified private packet; "
+            "it remains NOT_PUBLIC_SAFE pending governed review."
+        ),
+        "blocked_claim_classes": list(HOXLINE_PRIVATE_REVIEWER_BLOCKED_CLAIM_CLASSES),
+        "next_safe_action": "private human review packet evaluation only; no ledger append or public proof promotion",
+    }
 
 def hoxline_private_reviewer_cockpit(repo_root: Path, *, write_report: bool = True) -> dict[str, Any]:
     remote_state = hoxline_remote_lab_authority_state()
@@ -11124,8 +11162,34 @@ def hoxline_private_reviewer_cockpit(repo_root: Path, *, write_report: bool = Tr
             "blocked_claim_classes": list(HOXLINE_PRIVATE_REVIEWER_BLOCKED_CLAIM_CLASSES),
             "next_safe_action": "private human review only; no ledger append or public proof without separate approval",
         },
-        hoxline_private_reviewer_detection_waiting_for_operator_input("HO-DET-011"),
-        hoxline_private_reviewer_detection_waiting_for_operator_input("HO-DET-012"),
+        hoxline_private_reviewer_detection_private_runtime_candidate(
+            "HO-DET-009",
+            artifact_name="Windows local user creation detection",
+            telemetry_source="Windows Security EventChannel",
+            event_ids=[4720, 4725, 4726, 4738],
+            rule_ids=[910091, 910092, 910093],
+        ),
+        hoxline_private_reviewer_detection_private_runtime_candidate(
+            "HO-DET-010",
+            artifact_name="Windows local Administrators group membership change detection",
+            telemetry_source="Windows Security EventChannel",
+            event_ids=[4720, 4725, 4726, 4732, 4733, 4738],
+            rule_ids=[910101, 910102, 910103],
+        ),
+        hoxline_private_reviewer_detection_private_runtime_candidate(
+            "HO-DET-011",
+            artifact_name="Windows temporary service creation detection",
+            telemetry_source="Windows Security EventChannel",
+            event_ids=[4697, 7045],
+            rule_ids=[910011, 910012, 910013, 910014],
+        ),
+        hoxline_private_reviewer_detection_private_runtime_candidate(
+            "HO-DET-012",
+            artifact_name="Windows scheduled task telemetry detection",
+            telemetry_source="Windows Security and TaskScheduler Operational EventChannels",
+            event_ids=[106, 140, 4698],
+            rule_ids=[910021, 910022],
+        ),
     ]
     global_state = {
         "lifetime_ledger_cases": 6,
@@ -11133,6 +11197,9 @@ def hoxline_private_reviewer_cockpit(repo_root: Path, *, write_report: bool = Tr
         "public_safe_count": 0,
         "closed_case_count": 0,
         "public_proof_published": False,
+        "standing_private_collector_enabled": True,
+        "scheduled_collection_scope": list(HOXLINE_STANDING_PRIVATE_COLLECTOR_SCOPE),
+        "scheduled_collection_scope_status": "PRIVATE_STANDING_COLLECTOR_ACTIVE",
         "schedule_enabled": False,
         "active_cron_trigger": hoxline_workflow_safety_verify(repo_root)["active_cron_trigger"],
         "website_updated": False,
@@ -11167,19 +11234,15 @@ def hoxline_private_reviewer_cockpit(repo_root: Path, *, write_report: bool = Tr
         "next_actions": [
             {"detection_id": "HO-DET-001", "next_safe_action": "private human review packet evaluation only"},
             {
-                "detection_id": "HO-DET-011",
-                "next_safe_action": (
-                    "populate Wazuh export + operator attestation + execution ID, "
-                    "then run operator receipt package commands"
-                ),
+                "detection_id": "HO-DET-009",
+                "next_safe_action": "private reviewer evaluation of runtime candidate packet and scheduled collection behavior",
             },
             {
-                "detection_id": "HO-DET-012",
-                "next_safe_action": (
-                    "populate Wazuh export + operator attestation + execution ID, "
-                    "then run operator receipt package commands"
-                ),
+                "detection_id": "HO-DET-010",
+                "next_safe_action": "private reviewer evaluation of runtime candidate packet and scheduled collection behavior",
             },
+            {"detection_id": "HO-DET-011", "next_safe_action": "private reviewer evaluation only"},
+            {"detection_id": "HO-DET-012", "next_safe_action": "private reviewer evaluation only"},
         ],
         "source_summary_hashes": source_summary_hashes,
         "private_report_path": str(HOXLINE_PRIVATE_REVIEWER_COCKPIT_REPORT),
@@ -11245,7 +11308,7 @@ def hoxline_validate_private_reviewer_cockpit(cockpit: dict[str, Any]) -> None:
     if cockpit["public_safe_status"] != "NOT_PUBLIC_SAFE":
         raise FactoryError("Hoxline private reviewer cockpit public safe status must remain NOT_PUBLIC_SAFE")
     detections = {item["detection_id"]: item for item in cockpit["detections"]}
-    for detection_id in ("HO-DET-001", "HO-DET-011", "HO-DET-012"):
+    for detection_id in ("HO-DET-001", *HOXLINE_STANDING_PRIVATE_COLLECTOR_SCOPE):
         if detection_id not in detections:
             raise FactoryError(f"Hoxline private reviewer cockpit missing detection: {detection_id}")
     ho_det_001 = detections["HO-DET-001"]
@@ -11253,16 +11316,25 @@ def hoxline_validate_private_reviewer_cockpit(cockpit: dict[str, Any]) -> None:
         raise FactoryError("HO-DET-001 canonical AI status is not recovered")
     if ho_det_001["canonical_human_review_packet_digest"] == ho_det_001["historical_noncanonical_packet_digest"]:
         raise FactoryError("HO-DET-001 canonical and historical packet digests must remain distinct")
-    for detection_id in ("HO-DET-011", "HO-DET-012"):
-        if detections[detection_id]["real_operator_receipt"] != "missing":
-            raise FactoryError(f"{detection_id} must remain waiting on real operator input")
+    for detection_id in HOXLINE_STANDING_PRIVATE_COLLECTOR_SCOPE:
+        detection = detections[detection_id]
+        if detection["private_runtime_packet"] != "verified_private_packet":
+            raise FactoryError(f"{detection_id} must remain represented as a verified private runtime packet")
+        if detection["scheduled_collection_included"] is not True:
+            raise FactoryError(f"{detection_id} must remain included in the private scheduled collection scope")
+        if detection["public_safe_status"] != "NOT_PUBLIC_SAFE" or detection["ai_disposition_authority"] is not False:
+            raise FactoryError(f"{detection_id} must remain private, human-review-only, and not AI-authorized")
     global_state = cockpit["global_state"]
     if global_state["lifetime_ledger_cases"] != 6 or global_state["lifetime_ledger_events"] != 6:
         raise FactoryError("Hoxline private reviewer cockpit ledger baseline must remain 6 cases / 6 events")
     if global_state["public_safe_count"] != 0 or global_state["closed_case_count"] != 0:
         raise FactoryError("Hoxline private reviewer cockpit public-safe and closed counts must remain zero")
+    if tuple(global_state["scheduled_collection_scope"]) != HOXLINE_STANDING_PRIVATE_COLLECTOR_SCOPE:
+        raise FactoryError("Hoxline private reviewer cockpit scheduled collection scope is not current")
+    if global_state["standing_private_collector_enabled"] is not True:
+        raise FactoryError("Hoxline private reviewer cockpit must show the standing private collector as active")
     if global_state["schedule_enabled"] is not False:
-        raise FactoryError("Hoxline private reviewer cockpit schedule state must remain disabled")
+        raise FactoryError("Hoxline private reviewer cockpit command side-effect schedule flag must remain false")
     if global_state["remote_lab_authority_rule"] != "present" or global_state["remote_default_mode"] != "read_only":
         raise FactoryError("Hoxline private reviewer cockpit remote lab authority rule is not present")
     if cockpit["claim_boundaries"]["blocked_claim_classes"] != HOXLINE_PRIVATE_REVIEWER_BLOCKED_CLAIM_CLASSES:
@@ -11286,8 +11358,15 @@ def hoxline_private_reviewer_cockpit_self_test(repo_root: Path) -> dict[str, Any
         "ho_det_001_ai_recovered": detections["HO-DET-001"]["ai_status"] == "AI_TRIAGE_RECOVERED_AND_CANONICAL",
         "historical_packet_is_historical_only": detections["HO-DET-001"]["historical_noncanonical_packet_digest"]
         != detections["HO-DET-001"]["canonical_human_review_packet_digest"],
-        "ho_det_011_real_operator_evidence_missing": detections["HO-DET-011"]["real_operator_receipt"] == "missing",
-        "ho_det_012_real_operator_evidence_missing": detections["HO-DET-012"]["real_operator_receipt"] == "missing",
+        "scheduled_scope_current": tuple(cockpit["global_state"]["scheduled_collection_scope"]) == HOXLINE_STANDING_PRIVATE_COLLECTOR_SCOPE,
+        "standing_private_collector_enabled": cockpit["global_state"]["standing_private_collector_enabled"] is True,
+        "ho_det_010_private_packet_represented": detections["HO-DET-010"]["private_runtime_packet"] == "verified_private_packet",
+        "scheduled_detections_private_only": all(
+            detections[detection_id]["public_safe_status"] == "NOT_PUBLIC_SAFE"
+            and detections[detection_id]["human_review_required"] is True
+            and detections[detection_id]["ai_disposition_authority"] is False
+            for detection_id in HOXLINE_STANDING_PRIVATE_COLLECTOR_SCOPE
+        ),
         "ledger_state_6_6": cockpit["global_state"]["lifetime_ledger_cases"] == 6
         and cockpit["global_state"]["lifetime_ledger_events"] == 6,
         "public_safe_count_zero": cockpit["global_state"]["public_safe_count"] == 0,
@@ -11319,6 +11398,106 @@ def hoxline_private_reviewer_cockpit_self_test(repo_root: Path) -> dict[str, Any
         "public_safe_status": "NOT_PUBLIC_SAFE",
     }
 
+
+def hoxline_read_required_text(path: Path, label: str) -> str:
+    if not path.is_file():
+        raise FactoryError(f"Hoxline convergence missing {label}: {path}")
+    return path.read_text(encoding="utf-8")
+
+
+def hoxline_evidence_to_product_convergence_self_test(repo_root: Path) -> dict[str, Any]:
+    workflow_path = repo_root / ".github" / "workflows" / "hoxline-schedule-gated-collection.yml"
+    workflow_text = hoxline_read_required_text(workflow_path, "schedule-gated collector workflow")
+    scheduled_scope = tuple(dict.fromkeys(re.findall(r"--detection-id\s+(HO-DET-\d{3})", workflow_text)))
+    cockpit = hoxline_private_reviewer_cockpit(repo_root, write_report=False)
+    detections = {item["detection_id"]: item for item in cockpit["detections"]}
+    org_root = repo_root.parent
+    sibling_repos = {
+        ".github": org_root / ".github",
+        "hoxline": org_root / "hoxline",
+        "hawkinsoperations-detections": org_root / "hawkinsoperations-detections",
+        "hawkinsoperations-validation": org_root / "hawkinsoperations-validation",
+        "hawkinsoperations-platform": repo_root,
+        "hawkinsoperations-proof": org_root / "hawkinsoperations-proof",
+        "hawkinsoperations-website": org_root / "hawkinsoperations-website",
+    }
+    sibling_surfaces_available = all(path.is_dir() for path in sibling_repos.values())
+    checks: dict[str, Any] = {
+        "scheduled_scope_exact": scheduled_scope == HOXLINE_STANDING_PRIVATE_COLLECTOR_SCOPE,
+        "emergency_disable_guard_present": "vars.HOXLINE_EMERGENCY_DISABLE == 'true'" in workflow_text
+        and "Run standing private collector" in workflow_text
+        and "vars.HOXLINE_EMERGENCY_DISABLE != 'true'" in workflow_text,
+        "github_artifact_upload_absent": "upload-artifact" not in workflow_text,
+        "private_reviewer_has_ho_det_010": "HO-DET-010" in detections,
+        "private_reviewer_scope_current": tuple(cockpit["global_state"]["scheduled_collection_scope"])
+        == HOXLINE_STANDING_PRIVATE_COLLECTOR_SCOPE,
+        "ho_det_010_not_public_safe": detections["HO-DET-010"]["public_safe_status"] == "NOT_PUBLIC_SAFE",
+        "ho_det_010_human_review_required": detections["HO-DET-010"]["human_review_required"] is True,
+        "ho_det_010_ai_disposition_false": detections["HO-DET-010"]["ai_disposition_authority"] is False,
+        "raw_private_keys_absent": not [
+            key for key in hoxline_iter_keys(cockpit) if key.lower() in HOXLINE_PRIVATE_REVIEWER_FORBIDDEN_KEYS
+        ],
+        "seven_repo_system_local_surfaces_available": sibling_surfaces_available,
+    }
+    if sibling_surfaces_available:
+        org_profile = hoxline_read_required_text(sibling_repos[".github"] / "profile" / "README.md", "org profile README")
+        org_start = hoxline_read_required_text(sibling_repos[".github"] / "profile" / "START_HERE.md", "org START_HERE")
+        hoxline_readme = hoxline_read_required_text(sibling_repos["hoxline"] / "README.md", "Hoxline README")
+        hoxline_proofcard = hoxline_read_required_text(
+            sibling_repos["hoxline"] / "docs" / "proofcards" / "PROOFCARD_V1.md", "Hoxline ProofCard v1"
+        )
+        website_hoxline = hoxline_read_required_text(
+            sibling_repos["hawkinsoperations-website"] / "app" / "hoxline" / "page.tsx", "website Hoxline route"
+        )
+        website_aevumguard = hoxline_read_required_text(
+            sibling_repos["hawkinsoperations-website"] / "app" / "aevumguard" / "page.tsx", "website AevumGuard route"
+        )
+        website_ho_det_001 = hoxline_read_required_text(
+            sibling_repos["hawkinsoperations-website"] / "app" / "proof" / "ho-det-001" / "page.tsx",
+            "website HO-DET-001 route",
+        )
+        website_proof_records = hoxline_read_required_text(
+            sibling_repos["hawkinsoperations-website"] / "src" / "data" / "proofRecords.ts",
+            "website proof records data",
+        )
+        combined_public_text = "\n".join(
+            [org_profile, org_start, hoxline_readme, hoxline_proofcard, website_hoxline, website_aevumguard]
+        )
+        checks.update(
+            {
+                "seven_repo_system_exact": all(name in combined_public_text for name in sibling_repos),
+                "active_product_identity_hoxline": "Hoxline by HawkinsOperations" in combined_public_text
+                and "Hoxline is the current product name" in combined_public_text,
+                "aevumguard_legacy_only": "AevumGuard was a prior working name" in combined_public_text
+                and "prior working name" in website_aevumguard,
+                "claim_firewall_not_product": "Claim Firewall is not the product" in hoxline_readme
+                and "Claim Firewall is the first Claim Authority enforcement capability inside Hoxline" in org_profile,
+                "proofcard_runtime_candidate_lane_documented": "Runtime Candidate Review Lane" in hoxline_proofcard,
+                "website_rendering_not_proof": "Website rendering is not proof" in combined_public_text,
+                "green_ci_not_approval": "green CI" in combined_public_text and "approval" in combined_public_text,
+                "no_soc_aas_receipt_label_active": "SOCaaS Pilot Receipt" not in website_ho_det_001
+                and "SOCaaS Pilot Receipt" not in website_proof_records,
+                "public_safe_status_not_public_safe_visible": "NOT_PUBLIC_SAFE" in combined_public_text
+                or "public_safe false" in combined_public_text,
+                "human_review_required_visible": "human_review_required" in combined_public_text,
+            }
+        )
+    failed = sorted(name for name, passed in checks.items() if passed is False)
+    if failed:
+        raise FactoryError(f"Hoxline evidence-to-product convergence self-test failed checks: {', '.join(failed)}")
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-evidence-product-convergence-self-test",
+        "status": "pass",
+        "checks": checks,
+        "scheduled_collection_scope": list(HOXLINE_STANDING_PRIVATE_COLLECTOR_SCOPE),
+        "public_safe_status": "NOT_PUBLIC_SAFE",
+        "human_review_required": True,
+        "ai_disposition_authority": False,
+        "ledger_mutated": False,
+        "public_proof_promoted": False,
+        "website_proof_promotion": False,
+    }
 
 def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
     workflow_dir = repo_root / ".github" / "workflows"
@@ -11738,6 +11917,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("hoxline-runtime-ops-self-test")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-evidence-product-convergence-self-test")
     sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("hoxline-evidence-graph")
@@ -12233,6 +12415,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "hoxline-runtime-ops-self-test":
         output = hoxline_runtime_ops_self_test(Path(args.repo_root).resolve())
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-evidence-product-convergence-self-test":
+        output = hoxline_evidence_to_product_convergence_self_test(Path(args.repo_root).resolve())
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 

@@ -63,14 +63,15 @@ class HoxlinePrivateReviewerCockpitTests(unittest.TestCase):
             ho_det_001["canonical_human_review_packet_digest"],
         )
 
-    def test_operator_detections_wait_for_real_input(self) -> None:
+    def test_standing_private_collector_detections_are_represented(self) -> None:
         detections = self.detections(self.cockpit())
 
-        for detection_id in ("HO-DET-011", "HO-DET-012"):
+        for detection_id in ho_factory.HOXLINE_STANDING_PRIVATE_COLLECTOR_SCOPE:
             with self.subTest(detection_id=detection_id):
-                self.assertTrue(detections[detection_id]["fixture_private_runtime_path"])
-                self.assertEqual(detections[detection_id]["real_operator_receipt"], "missing")
-                self.assertEqual(detections[detection_id]["operator_evidence_package"], "ready_for_real_input")
+                self.assertEqual(detections[detection_id]["private_runtime_packet"], "verified_private_packet")
+                self.assertTrue(detections[detection_id]["scheduled_collection_included"])
+                self.assertEqual(detections[detection_id]["public_safe_status"], "NOT_PUBLIC_SAFE")
+                self.assertFalse(detections[detection_id]["ai_disposition_authority"])
 
     def test_global_governance_state_remains_private(self) -> None:
         global_state = self.cockpit()["global_state"]
@@ -79,6 +80,8 @@ class HoxlinePrivateReviewerCockpitTests(unittest.TestCase):
         self.assertEqual(global_state["lifetime_ledger_events"], 6)
         self.assertEqual(global_state["public_safe_count"], 0)
         self.assertFalse(global_state["schedule_enabled"])
+        self.assertTrue(global_state["standing_private_collector_enabled"])
+        self.assertEqual(tuple(global_state["scheduled_collection_scope"]), ho_factory.HOXLINE_STANDING_PRIVATE_COLLECTOR_SCOPE)
         self.assertEqual(global_state["remote_lab_authority_rule"], "present")
         self.assertEqual(global_state["remote_default_mode"], "read_only")
 
@@ -103,6 +106,18 @@ class HoxlinePrivateReviewerCockpitTests(unittest.TestCase):
                 os.environ.pop("GITHUB_ACTIONS", None)
             else:
                 os.environ["GITHUB_ACTIONS"] = original_env
+
+    def test_evidence_product_convergence_self_test_passes(self) -> None:
+        result = ho_factory.hoxline_evidence_to_product_convergence_self_test(ROOT)
+
+        self.assertEqual(result["status"], "pass")
+        self.assertEqual(tuple(result["scheduled_collection_scope"]), ho_factory.HOXLINE_STANDING_PRIVATE_COLLECTOR_SCOPE)
+        self.assertTrue(result["checks"]["private_reviewer_has_ho_det_010"])
+        self.assertTrue(result["checks"]["scheduled_scope_exact"])
+        self.assertTrue(result["checks"]["github_artifact_upload_absent"])
+        self.assertEqual(result["public_safe_status"], "NOT_PUBLIC_SAFE")
+        self.assertTrue(result["human_review_required"])
+        self.assertFalse(result["ai_disposition_authority"])
     def test_no_forbidden_private_keys(self) -> None:
         cockpit = self.cockpit()
         forbidden = [

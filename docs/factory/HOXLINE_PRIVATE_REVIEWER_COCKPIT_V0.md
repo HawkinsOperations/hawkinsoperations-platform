@@ -5,10 +5,7 @@ Hoxline proof state. It aggregates governed hashes, counts, packet digests, and
 bounded status fields so Raylee can inspect the current truth state in one
 command.
 
-This cockpit is not public proof, not a Lifetime Ledger append, not a schedule
-enablement, not analyst approval, and not AI disposition authority. It does not
-generate telemetry, create services, create scheduled tasks, generate
-persistence-class behavior, or close cases.
+This cockpit is not public proof, not a Lifetime Ledger append, not analyst approval, and not AI disposition authority. It does not generate telemetry, create services, create scheduled tasks, generate persistence-class behavior, enable or disable schedules, or close cases. It may report the current standing private collector scope as private reviewer state only.
 
 ## Command
 
@@ -54,15 +51,20 @@ HO-DET-001 is displayed as canonical private runtime proof only:
 The cockpit keeps `human_review_required=true`, `public_safe=false`, and
 `proof_ceiling=PRIVATE_CONTROLLED_RUNTIME_PROOF`.
 
-## HO-DET-011 and HO-DET-012
+## Standing Private Collector Scope
 
-HO-DET-011 and HO-DET-012 have fixture/private runtime path coverage, but real
-operator receipt input is still missing. The cockpit reports both as waiting on
-real operator evidence.
+The cockpit now displays the current private scheduled collector scope:
 
-The next safe action for each detection is to populate the operator evidence
-package with a Wazuh export, operator attestation, and execution ID, then run
-the package commands. Fixture examples must not be converted into live proof.
+- `HO-DET-009`
+- `HO-DET-010`
+- `HO-DET-011`
+- `HO-DET-012`
+
+These rows are represented as private runtime candidate / private packet review state. They are not public-safe proof and do not authorize a Lifetime Ledger append, website proof promotion, production wording, SOCaaS wording, customer wording, AI disposition, analyst disposition, final authorization, or case closure.
+
+HO-DET-010 is represented only with bounded metadata: source package present, controlled validation present, Windows Security EventChannel telemetry contract, private VM108-scoped signal observed, verified private packet, and standing private collector inclusion. Raw Wazuh alerts, endpoint logs, execution IDs, generated credentials, command lines, private payloads, and packet contents are outside this doc and outside the public repo.
+
+The next safe action for each private runtime candidate is private human review packet evaluation only.
 
 ## Claim Boundaries
 
