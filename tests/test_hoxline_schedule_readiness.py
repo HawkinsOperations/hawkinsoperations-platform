@@ -116,6 +116,29 @@ class HoxlineScheduleReadinessTests(unittest.TestCase):
         with self.assertRaises(ho_factory.FactoryError):
             ho_factory.hoxline_assert_no_raw_private_fields(ready)
 
+    def test_schedule_workflow_emergency_disable_short_circuits_normal_collector_steps(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "hoxline-schedule-gated-collection.yml").read_text(encoding="utf-8")
+
+        self.assertIn("permissions:\n  contents: read", workflow)
+        self.assertIn("HOXLINE_PRIVATE_ROUTE: /var/lib/hoxline/private-scheduled-collector-v0", workflow)
+        self.assertNotIn("actions/upload-artifact", workflow)
+        self.assertNotIn("--detection-id HO-DET-010", workflow)
+        for detection_id in ("HO-DET-009", "HO-DET-011", "HO-DET-012"):
+            self.assertIn(f"--detection-id {detection_id}", workflow)
+
+        self.assertIn("if: vars.HOXLINE_EMERGENCY_DISABLE == 'true'", workflow)
+        guarded_steps = (
+            "Hard disabled unless schedule gate is true",
+            "Hard disabled unless manual gates are true",
+            "Guard trusted runtime context",
+            "Run standing private collector",
+        )
+        for step_name in guarded_steps:
+            marker = f"- name: {step_name}"
+            start = workflow.index(marker)
+            block = workflow[start : workflow.find("\n      - name:", start + len(marker))]
+            self.assertIn("if: vars.HOXLINE_EMERGENCY_DISABLE != 'true'", block)
+
     def test_schedule_readiness_self_test(self) -> None:
         result = ho_factory.hoxline_schedule_readiness_self_test(ROOT)
 

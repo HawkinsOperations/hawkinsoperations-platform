@@ -49,7 +49,7 @@ jobs:
           exit 0
 
       - name: Hard disabled unless schedule gate is true
-        if: github.event_name == 'schedule' && vars.HOXLINE_CONTINUOUS_GATE_ENABLED != 'true'
+        if: vars.HOXLINE_EMERGENCY_DISABLE != 'true' && github.event_name == 'schedule' && vars.HOXLINE_CONTINUOUS_GATE_ENABLED != 'true'
         run: |
           python3 -B scripts/ho_factory.py hoxline-scheduled-private-collection \
             --repo-root "$GITHUB_WORKSPACE" \
@@ -60,7 +60,7 @@ jobs:
           exit 0
 
       - name: Hard disabled unless manual gates are true
-        if: github.event_name == 'workflow_dispatch' && (vars.HOXLINE_CONTINUOUS_GATE_ENABLED != 'true' || inputs.enable_continuous_gate != true)
+        if: vars.HOXLINE_EMERGENCY_DISABLE != 'true' && github.event_name == 'workflow_dispatch' && (vars.HOXLINE_CONTINUOUS_GATE_ENABLED != 'true' || inputs.enable_continuous_gate != true)
         run: |
           python3 -B scripts/ho_factory.py hoxline-scheduled-private-collection \
             --repo-root "$GITHUB_WORKSPACE" \
@@ -71,6 +71,7 @@ jobs:
           exit 0
 
       - name: Guard trusted runtime context
+        if: vars.HOXLINE_EMERGENCY_DISABLE != 'true'
         run: |
           python3 -B scripts/ho_factory.py hoxline-runtime-job-guard \
             --event-name workflow_dispatch \
@@ -81,6 +82,7 @@ jobs:
             --format json >/dev/null
 
       - name: Run standing private collector
+        if: vars.HOXLINE_EMERGENCY_DISABLE != 'true'
         run: |
           python3 -B scripts/ho_factory.py hoxline-scheduled-private-collection \
             --repo-root "$GITHUB_WORKSPACE" \
