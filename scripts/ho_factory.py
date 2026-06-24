@@ -6831,6 +6831,7 @@ HOXLINE_MULTI_DETECTION_CONTRACTS = {
         "event_class": "Windows_Service_Creation",
         "backend_class": "Wazuh",
         "expected_wazuh_rule_id": "910011",
+        "expected_wazuh_rule_ids": ["910011", "910012", "910013", "910014"],
         "rule_ref": "detections/successor/ho-det-011/wazuh.xml",
         "required_signal_fields": ["detection_id", "execution_id", "wazuh_rule_id", "receipt_digest", "observed_at_utc", "event_id_hash"],
         "required_candidate_fields": ["detection_id", "execution_id", "candidate_id", "candidate_hash", "detection_family", "source_system", "source_truth_status", "runtime_truth_status", "signal_truth_status", "observed_time_utc", "candidate_content_hash", "sanitized_event_fingerprint", "source_receipt_refs_hash", "signal_receipt_digest", "service_name_hash", "service_image_path_hash"],
@@ -6849,6 +6850,7 @@ HOXLINE_MULTI_DETECTION_CONTRACTS = {
         "event_class": "Scheduled_Task_Creation",
         "backend_class": "Wazuh",
         "expected_wazuh_rule_id": "910021",
+        "expected_wazuh_rule_ids": ["910021", "910022", "910023"],
         "rule_ref": "detections/successor/ho-det-012/wazuh.xml",
         "required_signal_fields": ["detection_id", "execution_id", "wazuh_rule_id", "receipt_digest", "observed_at_utc", "event_id_hash"],
         "required_candidate_fields": ["detection_id", "execution_id", "candidate_id", "candidate_hash", "detection_family", "source_system", "source_truth_status", "runtime_truth_status", "signal_truth_status", "observed_time_utc", "candidate_content_hash", "sanitized_event_fingerprint", "source_receipt_refs_hash", "signal_receipt_digest", "task_name_hash", "task_action_hash"],
@@ -8514,17 +8516,57 @@ def hoxline_load_wazuh_alert_records(alerts_path: str) -> list[dict[str, Any]]:
     stripped = text.strip()
     if not stripped:
         raise FactoryError("Hoxline operator Wazuh alerts file is empty")
-    if stripped.startswith("["):
+    if stripped.startswith("[") or stripped.startswith("{"):
         parsed = json.loads(stripped)
-        if not isinstance(parsed, list):
-            raise FactoryError("Hoxline operator Wazuh alerts JSON array invalid")
-        records = parsed
+        if isinstance(parsed, list):
+            records = parsed
+        elif isinstance(parsed, dict):
+            records = hoxline_operator_wazuh_records_from_payload(parsed)
+        else:
+            raise FactoryError("Hoxline operator Wazuh alerts JSON invalid")
     else:
         records = [json.loads(line) for line in text.splitlines() if line.strip()]
     if not all(isinstance(record, dict) for record in records):
         raise FactoryError("Hoxline operator Wazuh alert records must be objects")
+    for record in records:
+        hoxline_receipt_specific_private_field_scan(record)
     return records
 
+
+def hoxline_operator_wazuh_records_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    summary_keys = {
+        "host_searched",
+        "sources_searched",
+        "search_time_utc",
+        "match_count",
+        "unique_execution_id_count",
+        "rule_ids_observed",
+        "event_ids_observed",
+        "earliest_timestamp",
+        "latest_timestamp",
+        "sanitizer_version",
+        "matches",
+    }
+    if "matches" not in payload:
+        return [payload]
+    unexpected = sorted(set(payload) - summary_keys)
+    if unexpected:
+        raise FactoryError(f"Hoxline operator Wazuh sanitizer summary has unexpected fields: {', '.join(unexpected)}")
+    matches = payload.get("matches")
+    if not isinstance(matches, list):
+        raise FactoryError("Hoxline operator Wazuh sanitizer summary matches must be a list")
+    if not all(isinstance(record, dict) for record in matches):
+        raise FactoryError("Hoxline operator Wazuh sanitizer summary matches must be objects")
+    if payload.get("match_count") is not None:
+        try:
+            match_count = int(payload["match_count"])
+        except (TypeError, ValueError) as exc:
+            raise FactoryError("Hoxline operator Wazuh sanitizer summary match_count invalid") from exc
+        if match_count != len(matches):
+            raise FactoryError("Hoxline operator Wazuh sanitizer summary match_count mismatch")
+    if str(payload.get("sanitizer_version") or "").strip() == "":
+        raise FactoryError("Hoxline operator Wazuh sanitizer summary version missing")
+    return matches
 
 def hoxline_operator_wazuh_alert_sample(detection_id: str, *, execution_id: str | None = None) -> dict[str, Any]:
     contract = hoxline_runtime_contract(detection_id)
@@ -8574,11 +8616,11 @@ def hoxline_collect_operator_receipt_from_wazuh(
     contract = hoxline_runtime_contract(detection_id)
     records = hoxline_load_wazuh_alert_records(alerts_json)
     matches: list[dict[str, Any]] = []
-    expected_rule = str(contract["expected_wazuh_rule_id"])
+    expected_rules = {str(rule_id) for rule_id in contract.get("expected_wazuh_rule_ids", [contract["expected_wazuh_rule_id"]])}
     for record in records:
         rule_id = hoxline_find_nested_value(record, {"id", "rule_id", "wazuh_rule_id"})
         record_text = stable_json(record)
-        if execution_id in record_text and expected_rule == str(rule_id):
+        if execution_id in record_text and str(rule_id) in expected_rules:
             matches.append(record)
     if not matches:
         raise FactoryError("Hoxline operator receipt collector found no matching Wazuh receipt")

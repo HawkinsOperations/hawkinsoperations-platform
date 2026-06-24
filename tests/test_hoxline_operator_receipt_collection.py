@@ -187,6 +187,104 @@ class HoxlineOperatorReceiptCollectionTests(unittest.TestCase):
             with self.subTest(claim=claim):
                 self.assertEqual(ho_factory.hoxline_claim_authority_check(graph, promotion, claim)["decision"], "BLOCKED")
 
+    def test_collector_accepts_bounded_sanitizer_summary_wrapper(self) -> None:
+        attestation = ho_factory.hoxline_operator_attestation_sample()
+        attestation_path = self.write_json("operator-attestation", attestation)
+        execution_id = ho_factory.hoxline_sanitized_live_receipt_sample("HO-DET-012")["execution_id"]
+        record = ho_factory.hoxline_operator_wazuh_alert_sample("HO-DET-012", execution_id=execution_id)
+        summary = {
+            "host_searched": "HO-WAZUH-01",
+            "sources_searched": ["alerts.json"],
+            "search_time_utc": "2026-06-24T00:00:00Z",
+            "match_count": 1,
+            "unique_execution_id_count": 1,
+            "rule_ids_observed": ["910021"],
+            "event_ids_observed": ["106"],
+            "earliest_timestamp": record["timestamp"],
+            "latest_timestamp": record["timestamp"],
+            "sanitizer_version": "hoxline-wazuh-sanitizer-v2",
+            "matches": [record],
+        }
+        packet_path = str(Path(tempfile.gettempdir()) / "summary-wrapper-operator-packet.json")
+
+        result = ho_factory.hoxline_collect_operator_receipt_from_wazuh(
+            detection_id="HO-DET-012",
+            execution_id=execution_id,
+            alerts_json=self.write_json("summary-wrapper-alerts", summary),
+            time_window_start_utc=attestation["source_time_window_start_utc"],
+            time_window_end_utc=attestation["source_time_window_end_utc"],
+            operator_attestation_path=attestation_path,
+            output_path=packet_path,
+        )
+
+        self.assertEqual(result["status"], "pass")
+        self.assertEqual(result["receipt_count"], 1)
+
+    def test_collector_rejects_unbounded_sanitizer_summary_wrapper(self) -> None:
+        execution_id = ho_factory.hoxline_sanitized_live_receipt_sample("HO-DET-012")["execution_id"]
+        record = ho_factory.hoxline_operator_wazuh_alert_sample("HO-DET-012", execution_id=execution_id)
+        summary = {
+            "match_count": 1,
+            "sanitizer_version": "hoxline-wazuh-sanitizer-v2",
+            "matches": [record],
+            "unexpected_private_blob": "blocked",
+        }
+
+        with self.assertRaises(ho_factory.FactoryError):
+            ho_factory.hoxline_load_wazuh_alert_records(self.write_json("bad-summary-alerts", summary))
+
+    def test_attestation_author_notes_must_avoid_private_marker_wording(self) -> None:
+        attestation = ho_factory.hoxline_operator_attestation_sample()
+        attestation["operator_notes"] = "This note contains a raw marker word and must fail closed."
+        attestation["operator_attestation_hash"] = ho_factory.hoxline_operator_attestation_hash(attestation)
+
+        with self.assertRaises(ho_factory.FactoryError):
+            ho_factory.hoxline_validate_operator_attestation(attestation)
+
+        safe_attestation = ho_factory.hoxline_operator_attestation_sample()
+        safe_attestation["operator_notes"] = "Sensitive source fields omitted; public proof not promoted."
+        safe_attestation["operator_attestation_hash"] = ho_factory.hoxline_operator_attestation_hash(safe_attestation)
+        self.assertEqual(ho_factory.hoxline_validate_operator_attestation(safe_attestation)["status"], "pass")
+
+
+    def test_collector_accepts_ho_det_011_rule_family_child_rule(self) -> None:
+        attestation = ho_factory.hoxline_operator_attestation_sample()
+        attestation_path = self.write_json("operator-attestation-011-child", attestation)
+        execution_id = ho_factory.hoxline_sanitized_live_receipt_sample("HO-DET-011")["execution_id"]
+        record = ho_factory.hoxline_operator_wazuh_alert_sample("HO-DET-011", execution_id=execution_id)
+        record["rule"]["id"] = "910012"
+        packet_path = str(Path(tempfile.gettempdir()) / "ho-det-011-child-rule-packet.json")
+
+        result = ho_factory.hoxline_collect_operator_receipt_from_wazuh(
+            detection_id="HO-DET-011",
+            execution_id=execution_id,
+            alerts_json=self.write_json("ho-det-011-child-rule-alerts", record),
+            time_window_start_utc=attestation["source_time_window_start_utc"],
+            time_window_end_utc=attestation["source_time_window_end_utc"],
+            operator_attestation_path=attestation_path,
+            output_path=packet_path,
+        )
+
+        self.assertEqual(result["status"], "pass")
+        self.assertEqual(result["receipt_count"], 1)
+
+    def test_collector_rejects_unrelated_ho_det_011_rule(self) -> None:
+        attestation = ho_factory.hoxline_operator_attestation_sample()
+        attestation_path = self.write_json("operator-attestation-011-unrelated", attestation)
+        execution_id = ho_factory.hoxline_sanitized_live_receipt_sample("HO-DET-011")["execution_id"]
+        record = ho_factory.hoxline_operator_wazuh_alert_sample("HO-DET-011", execution_id=execution_id)
+        record["rule"]["id"] = "100204"
+
+        with self.assertRaises(ho_factory.FactoryError):
+            ho_factory.hoxline_collect_operator_receipt_from_wazuh(
+                detection_id="HO-DET-011",
+                execution_id=execution_id,
+                alerts_json=self.write_json("ho-det-011-unrelated-rule-alerts", record),
+                time_window_start_utc=attestation["source_time_window_start_utc"],
+                time_window_end_utc=attestation["source_time_window_end_utc"],
+                operator_attestation_path=attestation_path,
+                output_path=str(Path(tempfile.gettempdir()) / "ho-det-011-unrelated-rule-packet.json"),
+            )
     def test_self_test_passes(self) -> None:
         result = ho_factory.hoxline_operator_receipt_collection_self_test(ROOT)
 
