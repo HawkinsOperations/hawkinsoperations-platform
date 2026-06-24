@@ -10,7 +10,7 @@ The operator Wazuh receipt collector accepts bounded sanitized records only. Val
 - a JSON array of sanitized receipt objects, or
 - a sanitizer summary object with the bounded keys `host_searched`, `sources_searched`, `search_time_utc`, `match_count`, `unique_execution_id_count`, `rule_ids_observed`, `event_ids_observed`, `earliest_timestamp`, `latest_timestamp`, `sanitizer_version`, and `matches`.
 
-A sanitizer summary must have `matches` as a list of objects, `match_count` equal to the number of matches when present, and a non-empty `sanitizer_version`. Unknown wrapper fields fail closed. Receipt records still pass through the private-field scanner.
+A sanitizer summary must have `matches` as a list of objects, `match_count` equal to the number of matches when present, and a non-empty `sanitizer_version`. Unknown wrapper fields fail closed. Receipt records still pass through the private-field scanner. Detection contracts may declare a bounded Wazuh rule family, such as HO-DET-011 child rules, but unrelated manager rules remain rejected.
 
 ## Attestation Wording
 

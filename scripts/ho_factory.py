@@ -6831,6 +6831,7 @@ HOXLINE_MULTI_DETECTION_CONTRACTS = {
         "event_class": "Windows_Service_Creation",
         "backend_class": "Wazuh",
         "expected_wazuh_rule_id": "910011",
+        "expected_wazuh_rule_ids": ["910011", "910012", "910013", "910014"],
         "rule_ref": "detections/successor/ho-det-011/wazuh.xml",
         "required_signal_fields": ["detection_id", "execution_id", "wazuh_rule_id", "receipt_digest", "observed_at_utc", "event_id_hash"],
         "required_candidate_fields": ["detection_id", "execution_id", "candidate_id", "candidate_hash", "detection_family", "source_system", "source_truth_status", "runtime_truth_status", "signal_truth_status", "observed_time_utc", "candidate_content_hash", "sanitized_event_fingerprint", "source_receipt_refs_hash", "signal_receipt_digest", "service_name_hash", "service_image_path_hash"],
@@ -6849,6 +6850,7 @@ HOXLINE_MULTI_DETECTION_CONTRACTS = {
         "event_class": "Scheduled_Task_Creation",
         "backend_class": "Wazuh",
         "expected_wazuh_rule_id": "910021",
+        "expected_wazuh_rule_ids": ["910021", "910022", "910023"],
         "rule_ref": "detections/successor/ho-det-012/wazuh.xml",
         "required_signal_fields": ["detection_id", "execution_id", "wazuh_rule_id", "receipt_digest", "observed_at_utc", "event_id_hash"],
         "required_candidate_fields": ["detection_id", "execution_id", "candidate_id", "candidate_hash", "detection_family", "source_system", "source_truth_status", "runtime_truth_status", "signal_truth_status", "observed_time_utc", "candidate_content_hash", "sanitized_event_fingerprint", "source_receipt_refs_hash", "signal_receipt_digest", "task_name_hash", "task_action_hash"],
@@ -8614,11 +8616,11 @@ def hoxline_collect_operator_receipt_from_wazuh(
     contract = hoxline_runtime_contract(detection_id)
     records = hoxline_load_wazuh_alert_records(alerts_json)
     matches: list[dict[str, Any]] = []
-    expected_rule = str(contract["expected_wazuh_rule_id"])
+    expected_rules = {str(rule_id) for rule_id in contract.get("expected_wazuh_rule_ids", [contract["expected_wazuh_rule_id"]])}
     for record in records:
         rule_id = hoxline_find_nested_value(record, {"id", "rule_id", "wazuh_rule_id"})
         record_text = stable_json(record)
-        if execution_id in record_text and expected_rule == str(rule_id):
+        if execution_id in record_text and str(rule_id) in expected_rules:
             matches.append(record)
     if not matches:
         raise FactoryError("Hoxline operator receipt collector found no matching Wazuh receipt")

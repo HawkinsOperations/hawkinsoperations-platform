@@ -246,6 +246,45 @@ class HoxlineOperatorReceiptCollectionTests(unittest.TestCase):
         safe_attestation["operator_attestation_hash"] = ho_factory.hoxline_operator_attestation_hash(safe_attestation)
         self.assertEqual(ho_factory.hoxline_validate_operator_attestation(safe_attestation)["status"], "pass")
 
+
+    def test_collector_accepts_ho_det_011_rule_family_child_rule(self) -> None:
+        attestation = ho_factory.hoxline_operator_attestation_sample()
+        attestation_path = self.write_json("operator-attestation-011-child", attestation)
+        execution_id = ho_factory.hoxline_sanitized_live_receipt_sample("HO-DET-011")["execution_id"]
+        record = ho_factory.hoxline_operator_wazuh_alert_sample("HO-DET-011", execution_id=execution_id)
+        record["rule"]["id"] = "910012"
+        packet_path = str(Path(tempfile.gettempdir()) / "ho-det-011-child-rule-packet.json")
+
+        result = ho_factory.hoxline_collect_operator_receipt_from_wazuh(
+            detection_id="HO-DET-011",
+            execution_id=execution_id,
+            alerts_json=self.write_json("ho-det-011-child-rule-alerts", record),
+            time_window_start_utc=attestation["source_time_window_start_utc"],
+            time_window_end_utc=attestation["source_time_window_end_utc"],
+            operator_attestation_path=attestation_path,
+            output_path=packet_path,
+        )
+
+        self.assertEqual(result["status"], "pass")
+        self.assertEqual(result["receipt_count"], 1)
+
+    def test_collector_rejects_unrelated_ho_det_011_rule(self) -> None:
+        attestation = ho_factory.hoxline_operator_attestation_sample()
+        attestation_path = self.write_json("operator-attestation-011-unrelated", attestation)
+        execution_id = ho_factory.hoxline_sanitized_live_receipt_sample("HO-DET-011")["execution_id"]
+        record = ho_factory.hoxline_operator_wazuh_alert_sample("HO-DET-011", execution_id=execution_id)
+        record["rule"]["id"] = "100204"
+
+        with self.assertRaises(ho_factory.FactoryError):
+            ho_factory.hoxline_collect_operator_receipt_from_wazuh(
+                detection_id="HO-DET-011",
+                execution_id=execution_id,
+                alerts_json=self.write_json("ho-det-011-unrelated-rule-alerts", record),
+                time_window_start_utc=attestation["source_time_window_start_utc"],
+                time_window_end_utc=attestation["source_time_window_end_utc"],
+                operator_attestation_path=attestation_path,
+                output_path=str(Path(tempfile.gettempdir()) / "ho-det-011-unrelated-rule-packet.json"),
+            )
     def test_self_test_passes(self) -> None:
         result = ho_factory.hoxline_operator_receipt_collection_self_test(ROOT)
 
