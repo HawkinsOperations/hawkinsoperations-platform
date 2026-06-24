@@ -27,7 +27,7 @@ class HoxlineMultiDetectionRuntimeTests(unittest.TestCase):
         )
 
     def test_supported_detection_fixtures_pass(self) -> None:
-        for detection_id in ("HO-DET-001", "HO-DET-011", "HO-DET-012"):
+        for detection_id in ("HO-DET-001", "HO-DET-010", "HO-DET-011", "HO-DET-012"):
             with self.subTest(detection_id=detection_id):
                 result = self.verify(detection_id)
 
@@ -42,6 +42,10 @@ class HoxlineMultiDetectionRuntimeTests(unittest.TestCase):
             self.verify("HO-DET-999")
 
     def test_missing_required_fields_fail_closed(self) -> None:
+        missing_010 = ho_factory.hoxline_multi_detection_runtime_fixture(
+            "HO-DET-010",
+            omit_candidate_field="member_user_hash",
+        )
         missing_011 = ho_factory.hoxline_multi_detection_runtime_fixture(
             "HO-DET-011",
             omit_candidate_field="service_name_hash",
@@ -51,6 +55,8 @@ class HoxlineMultiDetectionRuntimeTests(unittest.TestCase):
             omit_candidate_field="task_name_hash",
         )
 
+        with self.assertRaises(ho_factory.FactoryError):
+            ho_factory.hoxline_validate_multi_detection_fixture_packet(missing_010)
         with self.assertRaises(ho_factory.FactoryError):
             ho_factory.hoxline_validate_multi_detection_fixture_packet(missing_011)
         with self.assertRaises(ho_factory.FactoryError):
@@ -66,17 +72,18 @@ class HoxlineMultiDetectionRuntimeTests(unittest.TestCase):
             ho_factory.hoxline_validate_multi_detection_fixture_packet(wrong_rule)
 
     def test_duplicate_and_no_new_signal_are_safe_for_each_detection(self) -> None:
-        for detection_id in ("HO-DET-001", "HO-DET-011", "HO-DET-012"):
+        for detection_id in ("HO-DET-001", "HO-DET-010", "HO-DET-011", "HO-DET-012"):
             result = self.verify(detection_id)
 
             self.assertTrue(result["checks"]["duplicate_signal_suppressed"])
             self.assertTrue(result["checks"]["no_new_signal_no_candidate"])
 
     def test_count_separation_per_detection(self) -> None:
-        results = {detection_id: self.verify(detection_id) for detection_id in ("HO-DET-001", "HO-DET-011", "HO-DET-012")}
+        results = {detection_id: self.verify(detection_id) for detection_id in ("HO-DET-001", "HO-DET-010", "HO-DET-011", "HO-DET-012")}
 
         self.assertEqual({key: value["metrics"]["runtime_candidate_count"] for key, value in results.items()}, {
             "HO-DET-001": 1,
+            "HO-DET-010": 1,
             "HO-DET-011": 1,
             "HO-DET-012": 1,
         })
@@ -95,7 +102,7 @@ class HoxlineMultiDetectionRuntimeTests(unittest.TestCase):
             "normalization_hash",
             "dedupe_key_hash",
         )
-        for detection_id in ("HO-DET-001", "HO-DET-011", "HO-DET-012"):
+        for detection_id in ("HO-DET-001", "HO-DET-010", "HO-DET-011", "HO-DET-012"):
             first = self.verify(detection_id)
             second = self.verify(detection_id)
             for field in fields:
@@ -104,6 +111,7 @@ class HoxlineMultiDetectionRuntimeTests(unittest.TestCase):
 
     def test_claim_authority_blocks_unsafe_claims_and_allows_bounded_scope(self) -> None:
         cases = {
+            "HO-DET-010": ["HO-DET-010 production SOC", "AI approved HO-DET-010"],
             "HO-DET-011": ["HO-DET-011 production SOC", "AI approved HO-DET-011"],
             "HO-DET-012": ["HO-DET-012 public-safe runtime proof", "analyst approved HO-DET-012"],
         }

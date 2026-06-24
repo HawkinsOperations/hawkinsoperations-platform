@@ -6595,8 +6595,8 @@ def hoxline_runtime_verify(execution_id: str, private_route: str) -> dict[str, A
     }
 
 
-HOXLINE_SUPPORTED_RUNTIME_DETECTIONS = ("HO-DET-001", "HO-DET-009", "HO-DET-011", "HO-DET-012")
-HOXLINE_EXECUTION_ID_RE = re.compile(r"^(HO-DET-001|HO-DET-009|HO-DET-011|HO-DET-012)-\d{8}T\d{6}Z-[A-Z0-9]{6}$")
+HOXLINE_SUPPORTED_RUNTIME_DETECTIONS = ("HO-DET-001", "HO-DET-009", "HO-DET-010", "HO-DET-011", "HO-DET-012")
+HOXLINE_EXECUTION_ID_RE = re.compile(r"^(HO-DET-001|HO-DET-009|HO-DET-010|HO-DET-011|HO-DET-012)-\d{8}T\d{6}Z-[A-Z0-9]{6}$")
 HOXLINE_SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 HOXLINE_RUNTIME_LOG_FIELDS = (
     "schema_version",
@@ -6803,7 +6803,7 @@ HOXLINE_SANITIZED_LIVE_RECEIPT_SOURCE_CLASSES = {
     "FIXTURE_DRY_RUN_RECEIPT",
     "UNTRUSTED_RECEIPT",
 }
-HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS = ("HO-DET-009", "HO-DET-011", "HO-DET-012")
+HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS = ("HO-DET-009", "HO-DET-010", "HO-DET-011", "HO-DET-012")
 HOXLINE_OPERATOR_RECEIPT_PACKET_SCHEMA_VERSION = "hoxline-operator-receipt-packet-v0"
 HOXLINE_OPERATOR_RECEIPT_SUPPORTED_SOURCE_SYSTEMS = {"Wazuh", "Wazuh alerts.json", "HO-WAZUH"}
 HOXLINE_MULTI_DETECTION_CONTRACTS = {
@@ -6843,6 +6843,25 @@ HOXLINE_MULTI_DETECTION_CONTRACTS = {
         "human_review_required": True,
         "ai_disposition_authority": False,
         "validation_result_ref": "hawkinsoperations-validation/reports/ho-det-009/validation-result.json",
+    },
+    "HO-DET-010": {
+        "detection_id": "HO-DET-010",
+        "attack_technique": "T1098",
+        "event_class": "Windows_Local_Admins_Group_Membership_Change",
+        "backend_class": "Wazuh",
+        "expected_wazuh_rule_id": "910101",
+        "expected_wazuh_rule_ids": ["910101", "910102", "910103"],
+        "rule_ref": "detections/successor/ho-det-010/wazuh.xml",
+        "required_signal_fields": ["detection_id", "execution_id", "wazuh_rule_id", "receipt_digest", "observed_at_utc", "event_id_hash"],
+        "required_candidate_fields": ["detection_id", "execution_id", "candidate_id", "candidate_hash", "detection_family", "source_system", "source_truth_status", "runtime_truth_status", "signal_truth_status", "observed_time_utc", "candidate_content_hash", "sanitized_event_fingerprint", "source_receipt_refs_hash", "signal_receipt_digest", "member_user_hash", "target_group_hash", "subject_user_hash"],
+        "normalization_key_fields": ["detection_id", "execution_id", "member_user_hash", "target_group_hash", "subject_user_hash"],
+        "dedupe_key_fields": ["detection_id", "signal_receipt_digest", "member_user_hash", "target_group_hash", "subject_user_hash"],
+        "allowed_runtime_truth_class": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "proof_ceiling": HOXLINE_PRIVATE_RUNTIME_PROOF_CEILING,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "human_review_required": True,
+        "ai_disposition_authority": False,
+        "validation_result_ref": "hawkinsoperations-validation/reports/ho-det-010/validation-result.json",
     },
     "HO-DET-011": {
         "detection_id": "HO-DET-011",
@@ -7677,6 +7696,7 @@ def hoxline_multi_detection_default_execution_id(detection_id: str) -> str:
     suffixes = {
         "HO-DET-001": "6ELQ03",
         "HO-DET-009": "MD009A",
+        "HO-DET-010": "MD010A",
         "HO-DET-011": "MD011A",
         "HO-DET-012": "MD012A",
     }
@@ -7745,6 +7765,14 @@ def hoxline_multi_detection_runtime_fixture(
             {
                 "local_user_hash": hashlib.sha256(f"{resolved_execution_id}:local-user".encode("utf-8")).hexdigest(),
                 "creator_user_hash": hashlib.sha256(f"{resolved_execution_id}:creator-user".encode("utf-8")).hexdigest(),
+            }
+        )
+    if detection_id == "HO-DET-010":
+        candidate.update(
+            {
+                "member_user_hash": hashlib.sha256(f"{resolved_execution_id}:member-user".encode("utf-8")).hexdigest(),
+                "target_group_hash": hashlib.sha256(f"{resolved_execution_id}:target-group".encode("utf-8")).hexdigest(),
+                "subject_user_hash": hashlib.sha256(f"{resolved_execution_id}:subject-user".encode("utf-8")).hexdigest(),
             }
         )
     if detection_id == "HO-DET-011":
@@ -7877,7 +7905,7 @@ def hoxline_sanitized_live_receipt_sample(
     if detection_id not in HOXLINE_SANITIZED_LIVE_RECEIPT_DETECTIONS:
         hoxline_runtime_contract(detection_id)
     contract = hoxline_runtime_contract(detection_id)
-    suffixes = {"HO-DET-009": "LR009A", "HO-DET-011": "LR011A", "HO-DET-012": "LR012A"}
+    suffixes = {"HO-DET-009": "LR009A", "HO-DET-010": "LR010A", "HO-DET-011": "LR011A", "HO-DET-012": "LR012A"}
     resolved_execution_id = execution_id or f"{detection_id}-20260621T084000Z-{suffixes[detection_id]}"
     observed_at = hoxline_timestamp_from_execution_id(resolved_execution_id)
     is_live = receipt_source_class == "OPERATOR_SUPPLIED_SANITIZED_LIVE_RECEIPT"
@@ -7893,6 +7921,14 @@ def hoxline_sanitized_live_receipt_sample(
             {
                 "local_user_hash": canonical_sha256({"execution_id": resolved_execution_id, "field": "local_user"}),
                 "creator_user_hash": canonical_sha256({"execution_id": resolved_execution_id, "field": "creator_user"}),
+            }
+        )
+    if detection_id == "HO-DET-010":
+        sanitized_hashes.update(
+            {
+                "member_user_hash": canonical_sha256({"execution_id": resolved_execution_id, "field": "member_user"}),
+                "target_group_hash": canonical_sha256({"execution_id": resolved_execution_id, "field": "target_group"}),
+                "subject_user_hash": canonical_sha256({"execution_id": resolved_execution_id, "field": "subject_user"}),
             }
         )
     if detection_id == "HO-DET-011":
@@ -8247,6 +8283,7 @@ def hoxline_sanitized_live_receipt_intake_self_test(repo_root: Path) -> dict[str
         raise FactoryError(f"Hoxline sanitized live receipt negative test did not fail closed: {label}")
 
     receipts = {
+        "HO-DET-010": hoxline_sanitized_live_receipt_sample("HO-DET-010"),
         "HO-DET-011": hoxline_sanitized_live_receipt_sample("HO-DET-011"),
         "HO-DET-012": hoxline_sanitized_live_receipt_sample("HO-DET-012"),
     }
@@ -8275,6 +8312,7 @@ def hoxline_sanitized_live_receipt_intake_self_test(repo_root: Path) -> dict[str
     graph_012 = hoxline_build_evidence_graph(hoxline_replay_from_sanitized_receipt(receipts["HO-DET-012"]))
     promotion_012 = hoxline_promotion_state_from_graph(graph_012)
     checks = {
+        "valid_operator_receipt_accepted_010": hoxline_validate_sanitized_live_receipt(receipts["HO-DET-010"])["live_receipt_accepted"] is True,
         "valid_operator_receipt_accepted_011": hoxline_validate_sanitized_live_receipt(receipts["HO-DET-011"])["live_receipt_accepted"] is True,
         "valid_operator_receipt_accepted_012": hoxline_validate_sanitized_live_receipt(receipts["HO-DET-012"])["live_receipt_accepted"] is True,
         "fixture_receipt_non_live": fixture_result["fixture_receipt"] is True and fixture_result["live_receipt_accepted"] is False,
@@ -8286,6 +8324,7 @@ def hoxline_sanitized_live_receipt_intake_self_test(repo_root: Path) -> dict[str
         "unsupported_detection_blocked": expect_error("unsupported_detection", lambda: hoxline_validate_sanitized_live_receipt(unsupported)),
         "fixture_digest_blocked_for_live": expect_error("fixture_digest", lambda: hoxline_validate_sanitized_live_receipt(fixture_digest)),
         "receipt_hash_deterministic": receipts["HO-DET-011"]["receipt_hash"] == hoxline_sanitized_receipt_hash(receipts["HO-DET-011"]),
+        "receipt_to_runtime_010": results["HO-DET-010"]["status"] == "pass",
         "receipt_to_runtime_011": results["HO-DET-011"]["status"] == "pass",
         "receipt_to_runtime_012": results["HO-DET-012"]["status"] == "pass",
         "live_claim_allowed_011": hoxline_claim_authority_check(graph_011, promotion_011, hoxline_bounded_sanitized_live_receipt_claim("HO-DET-011"))["decision"] == "ALLOWED_WITH_SCOPE",
@@ -8620,6 +8659,8 @@ def hoxline_operator_wazuh_alert_sample(detection_id: str, *, execution_id: str 
     }
     if detection_id == "HO-DET-009":
         record["hoxline"].update({"local_user": "operator-supplied-local-user-hash-source", "creator_user": "operator-supplied-creator-user-hash-source"})
+    elif detection_id == "HO-DET-010":
+        record["hoxline"].update({"member_user": "operator-supplied-member-hash-source", "target_group": "operator-supplied-group-hash-source", "subject_user": "operator-supplied-subject-hash-source"})
     elif detection_id == "HO-DET-011":
         record["hoxline"].update({"service_name": "operator-supplied-service-hash-source", "service_image_path": "operator-supplied-image-hash-source"})
     elif detection_id == "HO-DET-012":
@@ -8675,6 +8716,14 @@ def hoxline_collect_operator_receipt_from_wazuh(
             {
                 "local_user_hash": {"local_user", "target_user", "targetusername", "target_user_name"},
                 "creator_user_hash": {"creator_user", "subject_user", "subjectusername", "subject_user_name"},
+            }
+        )
+    if detection_id == "HO-DET-010":
+        field_names.update(
+            {
+                "member_user_hash": {"member_user", "membername", "member_sid", "membersid"},
+                "target_group_hash": {"target_group", "targetusername", "groupname", "target_sid"},
+                "subject_user_hash": {"subject_user", "subjectusername", "creator_user"},
             }
         )
     if detection_id == "HO-DET-011":
@@ -8893,6 +8942,7 @@ def hoxline_operator_receipt_collection_self_test(repo_root: Path) -> dict[str, 
     graph_011 = hoxline_build_evidence_graph(hoxline_replay_from_sanitized_receipt(packets["HO-DET-011"]["receipts"][0]))
     promotion_011 = hoxline_promotion_state_from_graph(graph_011)
     checks = {
+        "valid_operator_packet_010": hoxline_validate_operator_receipt_packet(packets["HO-DET-010"])["status"] == "pass",
         "valid_operator_packet_011": hoxline_validate_operator_receipt_packet(packets["HO-DET-011"])["status"] == "pass",
         "valid_operator_packet_012": hoxline_validate_operator_receipt_packet(packets["HO-DET-012"])["status"] == "pass",
         "fixture_packet_not_live": expect_error("fixture_packet", lambda: hoxline_validate_operator_receipt_packet(fixture_packet)),
@@ -8931,6 +8981,7 @@ def hoxline_operator_receipt_collection_self_test(repo_root: Path) -> dict[str, 
             ),
         ),
         "hoxline_generated_attestation_blocks": expect_error("generated_attestation", lambda: hoxline_validate_operator_attestation(generated_attestation)),
+        "runtime_from_operator_packet_010": runtime_results["HO-DET-010"]["status"] == "pass",
         "runtime_from_operator_packet_011": runtime_results["HO-DET-011"]["status"] == "pass",
         "runtime_from_operator_packet_012": runtime_results["HO-DET-012"]["status"] == "pass",
         "generated_live_proof_claim_blocked": hoxline_claim_authority_check(graph_011, promotion_011, "Hoxline generated live proof for HO-DET-011")["decision"] == "BLOCKED",
@@ -9097,6 +9148,12 @@ def hoxline_multi_detection_runtime_self_test(repo_root: Path) -> dict[str, Any]
             return True
         raise FactoryError(f"Hoxline multi-detection negative test did not fail closed: {label}")
 
+    missing_010 = expect_error(
+        "ho-det-010-missing-required-field",
+        lambda: hoxline_validate_multi_detection_fixture_packet(
+            hoxline_multi_detection_runtime_fixture("HO-DET-010", omit_candidate_field="member_user_hash")
+        ),
+    )
     missing_011 = expect_error(
         "ho-det-011-missing-required-field",
         lambda: hoxline_validate_multi_detection_fixture_packet(
@@ -9140,7 +9197,7 @@ def hoxline_multi_detection_runtime_self_test(repo_root: Path) -> dict[str, Any]
         "duplicate_signal_suppressed_all": all(result["checks"]["duplicate_signal_suppressed"] for result in results.values()),
         "no_new_signal_no_candidate_all": all(result["checks"]["no_new_signal_no_candidate"] for result in results.values()),
         "candidate_count_not_ledger_count": all(result["metrics"]["runtime_candidate_count"] != result["metrics"]["lifetime_ledger_case_count"] for result in results.values()),
-        "runtime_candidate_count_per_detection": {key: value["metrics"]["runtime_candidate_count"] for key, value in results.items()} == {"HO-DET-001": 1, "HO-DET-009": 1, "HO-DET-011": 1, "HO-DET-012": 1},
+        "runtime_candidate_count_per_detection": {key: value["metrics"]["runtime_candidate_count"] for key, value in results.items()} == {"HO-DET-001": 1, "HO-DET-009": 1, "HO-DET-010": 1, "HO-DET-011": 1, "HO-DET-012": 1},
         "ho_det_011_production_blocked": hoxline_claim_authority_check(graph_011, promotion_011, "HO-DET-011 production SOC")["decision"] == "BLOCKED",
         "ho_det_012_public_safe_blocked": hoxline_claim_authority_check(graph_012, promotion_012, "HO-DET-012 public-safe runtime proof")["decision"] == "BLOCKED",
         "ho_det_011_ai_approved_blocked": hoxline_claim_authority_check(graph_011, promotion_011, "AI approved HO-DET-011")["decision"] == "BLOCKED",
