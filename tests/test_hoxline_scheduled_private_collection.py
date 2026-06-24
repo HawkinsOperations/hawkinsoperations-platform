@@ -24,7 +24,7 @@ class HoxlineScheduledPrivateCollectionTests(unittest.TestCase):
             "repo_root": ROOT,
             "route_root": tmp / "route",
             "state_path": tmp / "state" / "collector.sqlite",
-            "detection_ids": ["HO-DET-009", "HO-DET-011", "HO-DET-012"],
+            "detection_ids": ["HO-DET-009", "HO-DET-010", "HO-DET-011", "HO-DET-012"],
             "event_name": "workflow_dispatch",
             "enable_input": True,
             "repo_var_enabled": True,
@@ -33,8 +33,8 @@ class HoxlineScheduledPrivateCollectionTests(unittest.TestCase):
             "fixture": True,
             "seed_receipts": [],
             "max_runtime_seconds": 720,
-            "max_candidates": 3,
-            "max_new_signals": 3,
+            "max_candidates": 4,
+            "max_new_signals": 4,
             "max_duplicate_suppressions": 20,
             "max_retries": 2,
             "max_dead_letters": 3,
@@ -73,11 +73,11 @@ class HoxlineScheduledPrivateCollectionTests(unittest.TestCase):
             second = self.run_collector(tmp)
 
         self.assertEqual(first["terminal_outcome"], "NEW_SIGNAL_CANDIDATE_CREATED")
-        self.assertEqual(first["candidate_count"], 3)
+        self.assertEqual(first["candidate_count"], 4)
         self.assertTrue(first["checkpoint_advanced"])
         self.assertEqual(second["terminal_outcome"], "DUPLICATE_SIGNAL_SUPPRESSED")
         self.assertEqual(second["candidate_count"], 0)
-        self.assertEqual(second["duplicate_suppression_count"], 3)
+        self.assertEqual(second["duplicate_suppression_count"], 4)
 
     def test_unknown_agent_blocks_and_dead_letters(self) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -115,10 +115,12 @@ class HoxlineScheduledPrivateCollectionTests(unittest.TestCase):
         self.assertEqual(result["terminal_outcome"], "BLOCKED_UNKNOWN_RULE_FAMILY")
         self.assertEqual(result["candidate_count"], 0)
 
-    def test_ho_det_010_excluded_until_clean_runtime_packet(self) -> None:
+    def test_ho_det_010_included_after_clean_runtime_packet(self) -> None:
         with tempfile.TemporaryDirectory() as d:
-            with self.assertRaises(ho_factory.FactoryError):
-                self.run_collector(Path(d), detection_ids=["HO-DET-010"])
+            result = self.run_collector(Path(d), detection_ids=["HO-DET-010"])
+
+        self.assertEqual(result["terminal_outcome"], "NEW_SIGNAL_CANDIDATE_CREATED")
+        self.assertEqual(result["candidate_count"], 1)
 
 
 if __name__ == "__main__":

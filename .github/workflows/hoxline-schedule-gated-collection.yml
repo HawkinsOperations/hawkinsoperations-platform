@@ -89,6 +89,7 @@ jobs:
             --private-route "$HOXLINE_PRIVATE_ROUTE" \
             --state-path "$HOXLINE_COLLECTOR_STATE" \
             --detection-id HO-DET-009 \
+            --detection-id HO-DET-010 \
             --detection-id HO-DET-011 \
             --detection-id HO-DET-012 \
             --event-name "$GITHUB_EVENT_NAME" \
@@ -96,8 +97,8 @@ jobs:
             --repo-var-enabled \
             --trusted-runner \
             --max-runtime-seconds 720 \
-            --max-candidates 3 \
-            --max-new-signals 3 \
+            --max-candidates 4 \
+            --max-new-signals 4 \
             --max-duplicate-suppressions 20 \
             --max-retries 2 \
             --max-dead-letters 3 \
