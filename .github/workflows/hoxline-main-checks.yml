@@ -36,6 +36,16 @@ jobs:
           repository: HawkinsOperations/hawkinsoperations-proof
           path: hawkinsoperations-proof
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HawkinsOperations/hoxline
+          path: hoxline
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: HawkinsOperations/hawkinsoperations-website
+          path: hawkinsoperations-website
+          persist-credentials: false
 
       - name: Place sibling sources for source-backed tests
         run: |
@@ -43,6 +53,8 @@ jobs:
           ln -s "$GITHUB_WORKSPACE/hawkinsoperations-detections" "$GITHUB_WORKSPACE/../hawkinsoperations-detections"
           ln -s "$GITHUB_WORKSPACE/hawkinsoperations-validation" "$GITHUB_WORKSPACE/../hawkinsoperations-validation"
           ln -s "$GITHUB_WORKSPACE/hawkinsoperations-proof" "$GITHUB_WORKSPACE/../hawkinsoperations-proof"
+          ln -s "$GITHUB_WORKSPACE/hoxline" "$GITHUB_WORKSPACE/../hoxline"
+          ln -s "$GITHUB_WORKSPACE/hawkinsoperations-website" "$GITHUB_WORKSPACE/../hawkinsoperations-website"
 
       - name: Source checks
         run: |
