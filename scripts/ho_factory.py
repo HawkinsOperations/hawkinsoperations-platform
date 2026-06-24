@@ -8514,17 +8514,57 @@ def hoxline_load_wazuh_alert_records(alerts_path: str) -> list[dict[str, Any]]:
     stripped = text.strip()
     if not stripped:
         raise FactoryError("Hoxline operator Wazuh alerts file is empty")
-    if stripped.startswith("["):
+    if stripped.startswith("[") or stripped.startswith("{"):
         parsed = json.loads(stripped)
-        if not isinstance(parsed, list):
-            raise FactoryError("Hoxline operator Wazuh alerts JSON array invalid")
-        records = parsed
+        if isinstance(parsed, list):
+            records = parsed
+        elif isinstance(parsed, dict):
+            records = hoxline_operator_wazuh_records_from_payload(parsed)
+        else:
+            raise FactoryError("Hoxline operator Wazuh alerts JSON invalid")
     else:
         records = [json.loads(line) for line in text.splitlines() if line.strip()]
     if not all(isinstance(record, dict) for record in records):
         raise FactoryError("Hoxline operator Wazuh alert records must be objects")
+    for record in records:
+        hoxline_receipt_specific_private_field_scan(record)
     return records
 
+
+def hoxline_operator_wazuh_records_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    summary_keys = {
+        "host_searched",
+        "sources_searched",
+        "search_time_utc",
+        "match_count",
+        "unique_execution_id_count",
+        "rule_ids_observed",
+        "event_ids_observed",
+        "earliest_timestamp",
+        "latest_timestamp",
+        "sanitizer_version",
+        "matches",
+    }
+    if "matches" not in payload:
+        return [payload]
+    unexpected = sorted(set(payload) - summary_keys)
+    if unexpected:
+        raise FactoryError(f"Hoxline operator Wazuh sanitizer summary has unexpected fields: {', '.join(unexpected)}")
+    matches = payload.get("matches")
+    if not isinstance(matches, list):
+        raise FactoryError("Hoxline operator Wazuh sanitizer summary matches must be a list")
+    if not all(isinstance(record, dict) for record in matches):
+        raise FactoryError("Hoxline operator Wazuh sanitizer summary matches must be objects")
+    if payload.get("match_count") is not None:
+        try:
+            match_count = int(payload["match_count"])
+        except (TypeError, ValueError) as exc:
+            raise FactoryError("Hoxline operator Wazuh sanitizer summary match_count invalid") from exc
+        if match_count != len(matches):
+            raise FactoryError("Hoxline operator Wazuh sanitizer summary match_count mismatch")
+    if str(payload.get("sanitizer_version") or "").strip() == "":
+        raise FactoryError("Hoxline operator Wazuh sanitizer summary version missing")
+    return matches
 
 def hoxline_operator_wazuh_alert_sample(detection_id: str, *, execution_id: str | None = None) -> dict[str, Any]:
     contract = hoxline_runtime_contract(detection_id)
