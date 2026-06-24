@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -81,6 +82,27 @@ class HoxlinePrivateReviewerCockpitTests(unittest.TestCase):
         self.assertEqual(global_state["remote_lab_authority_rule"], "present")
         self.assertEqual(global_state["remote_default_mode"], "read_only")
 
+    def test_remote_lab_authority_ci_fallback_is_bounded(self) -> None:
+        original_path = ho_factory.HOXLINE_AGENTS_RULES
+        original_env = os.environ.get("GITHUB_ACTIONS")
+        try:
+            ho_factory.HOXLINE_AGENTS_RULES = ROOT / "missing-agents-rules.md"
+            os.environ.pop("GITHUB_ACTIONS", None)
+            with self.assertRaises(ho_factory.FactoryError):
+                ho_factory.hoxline_remote_lab_authority_state()
+
+            os.environ["GITHUB_ACTIONS"] = "true"
+            state = ho_factory.hoxline_remote_lab_authority_state()
+
+            self.assertEqual(state["remote_lab_authority_rule"], "present")
+            self.assertEqual(state["remote_default_mode"], "read_only")
+            self.assertEqual(state["rule_source"], "github_actions_ci_fallback")
+        finally:
+            ho_factory.HOXLINE_AGENTS_RULES = original_path
+            if original_env is None:
+                os.environ.pop("GITHUB_ACTIONS", None)
+            else:
+                os.environ["GITHUB_ACTIONS"] = original_env
     def test_no_forbidden_private_keys(self) -> None:
         cockpit = self.cockpit()
         forbidden = [
