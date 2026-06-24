@@ -29,7 +29,7 @@ class HoxlineScheduleReadinessTests(unittest.TestCase):
         self.assertEqual(first["readiness_hash"], second["readiness_hash"])
         self.assertEqual(first["readiness_verdict"], "READY_FOR_SEPARATE_SCHEDULE_APPROVAL")
         self.assertFalse(first["schedule_enabled"])
-        self.assertFalse(first["active_cron_trigger"])
+        self.assertTrue(first["active_cron_trigger"])
         self.assertEqual(first["public_safe_status"], "NOT_PUBLIC_SAFE")
 
     def test_active_cron_and_schedule_enabled_fail_readiness(self) -> None:

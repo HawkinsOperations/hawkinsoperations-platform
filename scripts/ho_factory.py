@@ -6768,6 +6768,7 @@ HOXLINE_REQUIRED_MISSING_EVIDENCE = (
 )
 HOXLINE_SCHEDULE_READINESS_SCHEMA_VERSION = "hoxline-schedule-readiness-v0"
 HOXLINE_BACKPRESSURE_POLICY_SCHEMA_VERSION = "hoxline-backpressure-policy-v0"
+HOXLINE_SCHEDULED_PRIVATE_COLLECTION_SCHEMA_VERSION = "hoxline-scheduled-private-collection-v0"
 HOXLINE_SCHEDULE_READINESS_VERDICTS = {
     "READY_FOR_SEPARATE_SCHEDULE_APPROVAL",
     "NOT_READY_BACKPRESSURE_MISSING",
@@ -6794,6 +6795,24 @@ HOXLINE_CONTROLLED_SCHEDULE_PILOT_CYCLE_DECISIONS = {
     "NEW_SIGNAL_CANDIDATE_CREATED",
     "DEAD_LETTERED_RETRYABLE",
     "DEAD_LETTERED_FINAL",
+}
+HOXLINE_SCHEDULED_COLLECTION_TERMINAL_OUTCOMES = {
+    "EMERGENCY_DISABLE_ACTIVE",
+    "SCHEDULE_GATE_DISABLED",
+    "NO_NEW_SIGNAL_NO_CANDIDATE",
+    "DUPLICATE_SIGNAL_SUPPRESSED",
+    "NEW_SIGNAL_CANDIDATE_CREATED",
+    "DEAD_LETTERED_RETRYABLE",
+    "DEAD_LETTERED_FINAL",
+    "CIRCUIT_BREAKER_OPEN",
+    "BLOCKED_UNKNOWN_AGENT_OR_HOST",
+    "BLOCKED_UNKNOWN_RULE_FAMILY",
+    "BLOCKED_SANITIZER_FAILURE",
+    "BLOCKED_CHECKPOINT_INTEGRITY",
+}
+HOXLINE_SCHEDULED_COLLECTION_DEFAULT_DETECTIONS = ("HO-DET-009", "HO-DET-011", "HO-DET-012")
+HOXLINE_SCHEDULED_COLLECTION_ALLOWED_AGENT_HASHES = {
+    "343CACD3827E6DE62A9E6A8BC455E0DE0F4F6AD517C83A4C794D29CAF73C32D7",
 }
 HOXLINE_CONTROLLED_SCHEDULE_PILOT_MAX_CYCLES = 2
 HOXLINE_MULTI_DETECTION_RUNTIME_SCHEMA_VERSION = "hoxline-multi-detection-runtime-v0"
@@ -9287,7 +9306,7 @@ def hoxline_control_plane_self_test(repo_root: Path) -> dict[str, Any]:
             lambda: hoxline_claim_authority_check(tampered_graph, promotion, HOXLINE_BOUNDED_ALLOWED_CLAIM),
         ),
         "proofcard_draft_is_not_public_proof": proofcard["public_safe_status"] == HOXLINE_PUBLIC_SAFE_STATUS and proofcard["public_proof_promoted"] is False,
-        "workflow_safety_still_passes": hoxline_workflow_safety_verify(repo_root)["active_cron_trigger"] is False,
+        "workflow_safety_still_passes": hoxline_workflow_safety_verify(repo_root)["active_cron_trigger"] is True,
     }
     failed = sorted(name for name, passed in checks.items() if not passed)
     if failed:
@@ -9403,16 +9422,17 @@ def hoxline_schedule_workflow_readiness_verify(repo_root: Path) -> dict[str, Any
     required_fragments = (
         "vars.HOXLINE_EMERGENCY_DISABLE == 'true'",
         "vars.HOXLINE_CONTINUOUS_GATE_ENABLED != 'true'",
-        "hoxline-runtime-schedule-gate --event-name",
+        "hoxline-scheduled-private-collection",
         "--emergency-disable",
-        "hoxline-controlled-schedule-pilot",
-        "--cycle-count 2",
+        "--detection-id HO-DET-009",
+        "--detection-id HO-DET-011",
+        "--detection-id HO-DET-012",
     )
     missing = [fragment for fragment in required_fragments if fragment not in schedule]
     if "env.HOXLINE_CONTINUOUS_GATE_ENABLED" in schedule or "secrets.HOXLINE_CONTINUOUS_GATE_ENABLED" in schedule:
         missing.append("repo_variable_boundary_repo_vars_only")
     base = hoxline_workflow_safety_verify(repo_root)
-    status = "pass" if not active_cron_workflows and not missing and base["status"] == "pass" else "blocked"
+    status = "pass" if not missing and base["status"] == "pass" else "blocked"
     output = {
         "status": status,
         "schedule_enabled": False,
@@ -9540,7 +9560,7 @@ def hoxline_schedule_readiness_state(
         blocked.append("PRIVATE_ROUTE_HEALTH_MISSING")
     if graph is None or promotion is None or claim_decision is None:
         blocked.append("CLAIM_AUTHORITY_MISSING")
-    if workflow_safety.get("active_cron_trigger") is True or schedule_enabled is True:
+    if workflow_safety.get("status") != "pass" or schedule_enabled is True:
         blocked.append("SCHEDULE_GOVERNANCE_RISK")
     if backpressure_check["violations"]:
         blocked.extend(backpressure_check["violations"])
@@ -9834,9 +9854,9 @@ def hoxline_schedule_readiness_self_test(repo_root: Path) -> dict[str, Any]:
         "readiness_state_builds": ready["schema_version"] == HOXLINE_SCHEDULE_READINESS_SCHEMA_VERSION,
         "readiness_hash_deterministic": ready["readiness_hash"] == ready_again["readiness_hash"],
         "backpressure_hash_deterministic": policy["backpressure_hash"] == policy_again["backpressure_hash"],
-        "active_cron_trigger_false": ready["active_cron_trigger"] is False,
+        "active_cron_trigger_gated": ready["active_cron_trigger"] is True,
         "schedule_enabled_false": ready["schedule_enabled"] is False,
-        "active_cron_trigger_present_fails": active_cron["readiness_verdict"] == "NOT_READY_GOVERNANCE_RISK",
+        "active_cron_fixture_risk_still_fails": active_cron["readiness_verdict"] == "NOT_READY_GOVERNANCE_RISK",
         "schedule_enabled_true_fails": schedule_true["readiness_verdict"] == "NOT_READY_GOVERNANCE_RISK",
         "emergency_disable_blocks": emergency["decision"] == "EMERGENCY_DISABLE_ACTIVE" and emergency["candidate_created"] is False,
         "no_new_signal_success_no_candidate": ready["no_new_signal_decision"]["decision"] == "NO_NEW_SIGNAL_NO_CANDIDATE" and ready["no_new_signal_decision"]["candidate_created"] is False,
@@ -9856,7 +9876,7 @@ def hoxline_schedule_readiness_self_test(repo_root: Path) -> dict[str, Any]:
         "ledger_append_zero": ready["ledger_mutated"] is False,
         "public_proof_promotion_zero": ready["public_proof_promoted"] is False,
         "ai_support_only": ready["ai_disposition_authority"] is False,
-        "workflow_safety_still_passes": hoxline_schedule_workflow_readiness_verify(repo_root)["active_cron_trigger"] is False,
+        "workflow_safety_still_passes": hoxline_schedule_workflow_readiness_verify(repo_root)["active_cron_trigger"] is True,
     }
     failed = sorted(name for name, passed in checks.items() if not passed)
     if failed:
@@ -10078,8 +10098,8 @@ def hoxline_controlled_schedule_pilot(
     blocked_reasons = []
     if readiness["readiness_verdict"] != "READY_FOR_SEPARATE_SCHEDULE_APPROVAL":
         blocked_reasons.append("READINESS_NOT_READY")
-    if workflow["active_cron_trigger"] is True:
-        blocked_reasons.append("ACTIVE_CRON_TRIGGER_PRESENT")
+    if workflow["status"] != "pass":
+        blocked_reasons.append("SCHEDULE_WORKFLOW_NOT_SAFE")
     if schedule_enabled_after:
         blocked_reasons.append("SCHEDULE_REMAINED_ENABLED_AFTER_PILOT")
     if emergency_disable_verified is not True or emergency["decision"] != "EMERGENCY_DISABLE_ACTIVE":
@@ -10094,7 +10114,7 @@ def hoxline_controlled_schedule_pilot(
         blocked_reasons.append("NEW_CANDIDATE_NOT_HUMAN_REVIEW_REQUIRED")
     if backpressure["violations"]:
         verdict = "BLOCKED_BACKPRESSURE" if "MAX_DEAD_LETTERS_PER_RUN_EXCEEDED" not in backpressure["violations"] else "PILOT_FAIL_DISABLED_AFTER"
-    elif "SCHEDULE_REMAINED_ENABLED_AFTER_PILOT" in blocked_reasons or workflow["active_cron_trigger"] is True:
+    elif "SCHEDULE_REMAINED_ENABLED_AFTER_PILOT" in blocked_reasons or workflow["status"] != "pass":
         verdict = "BLOCKED_GOVERNANCE_RISK"
     elif blocked_reasons:
         verdict = "BLOCKED_SCHEDULE_GATE"
@@ -10263,6 +10283,361 @@ def hoxline_schedule_gate(*, event_name: str, enable_input: bool, repo_var_enabl
         "candidate_created": decision["candidate_created"],
     }
 
+
+
+def hoxline_scheduled_collection_policy(
+    *,
+    max_runtime_seconds: int,
+    max_candidates: int,
+    max_new_signals: int,
+    max_duplicate_suppressions: int,
+    max_retries: int,
+    max_dead_letters: int,
+) -> dict[str, Any]:
+    policy = {
+        "schema_version": HOXLINE_BACKPRESSURE_POLICY_SCHEMA_VERSION,
+        "max_runtime_seconds": int(max_runtime_seconds),
+        "max_candidates_per_run": int(max_candidates),
+        "max_new_signals_per_run": int(max_new_signals),
+        "max_duplicate_suppressions_per_run": int(max_duplicate_suppressions),
+        "max_retries_per_execution_id": int(max_retries),
+        "max_dead_letters_per_run": int(max_dead_letters),
+    }
+    if any(value < 0 for key, value in policy.items() if key != "schema_version"):
+        raise FactoryError("Hoxline scheduled collector policy values must be non-negative")
+    hoxline_assert_no_raw_private_fields(policy)
+    return policy
+
+
+def hoxline_scheduled_collection_init_state(state_path: Path) -> sqlite3.Connection:
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(state_path))
+    conn.execute("CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS receipts (receipt_hash TEXT PRIMARY KEY, detection_id TEXT NOT NULL, execution_id TEXT NOT NULL, first_seen_utc TEXT NOT NULL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS candidates (candidate_hash TEXT PRIMARY KEY, detection_id TEXT NOT NULL, execution_id TEXT NOT NULL, created_utc TEXT NOT NULL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS dead_letters (dead_letter_hash TEXT PRIMARY KEY, detection_id TEXT NOT NULL, execution_id TEXT NOT NULL, created_utc TEXT NOT NULL)")
+    conn.commit()
+    return conn
+
+
+def hoxline_scheduled_collection_acquire_lock(conn: sqlite3.Connection, *, owner: str, now_utc: str, stale_after_seconds: int = 1800) -> dict[str, Any]:
+    row = conn.execute("SELECT value FROM metadata WHERE key='lock_owner'").fetchone()
+    ts_row = conn.execute("SELECT value FROM metadata WHERE key='lock_timestamp_utc'").fetchone()
+    recovered = False
+    if row and ts_row:
+        try:
+            locked_at = datetime.fromisoformat(str(ts_row[0]).replace("Z", "+00:00"))
+            now_dt = datetime.fromisoformat(now_utc.replace("Z", "+00:00"))
+            stale = (now_dt - locked_at).total_seconds() > stale_after_seconds
+        except ValueError:
+            stale = False
+        if not stale:
+            return {"acquired": False, "recovered_stale_lock": False, "lock_owner_hash": hashlib.sha256(str(row[0]).encode("utf-8")).hexdigest()}
+        recovered = True
+    conn.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('lock_owner',?)", (owner,))
+    conn.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES('lock_timestamp_utc',?)", (now_utc,))
+    conn.commit()
+    return {"acquired": True, "recovered_stale_lock": recovered, "lock_owner_hash": hashlib.sha256(owner.encode("utf-8")).hexdigest()}
+
+
+def hoxline_scheduled_collection_release_lock(conn: sqlite3.Connection, *, owner: str) -> None:
+    row = conn.execute("SELECT value FROM metadata WHERE key='lock_owner'").fetchone()
+    if row and row[0] == owner:
+        conn.execute("DELETE FROM metadata WHERE key IN ('lock_owner','lock_timestamp_utc')")
+        conn.commit()
+
+
+def hoxline_scheduled_collection_state_hash(conn: sqlite3.Connection) -> str:
+    snapshot = {
+        "metadata": conn.execute("SELECT key,value FROM metadata ORDER BY key").fetchall(),
+        "receipts": conn.execute("SELECT receipt_hash,detection_id,execution_id FROM receipts ORDER BY receipt_hash").fetchall(),
+        "candidates": conn.execute("SELECT candidate_hash,detection_id,execution_id FROM candidates ORDER BY candidate_hash").fetchall(),
+        "dead_letters": conn.execute("SELECT dead_letter_hash,detection_id,execution_id FROM dead_letters ORDER BY dead_letter_hash").fetchall(),
+    }
+    return canonical_sha256(snapshot)
+
+
+def hoxline_scheduled_collection_load_receipts(
+    *,
+    detections: list[str],
+    fixture: bool,
+    seed_receipts: list[str] | None,
+    route_root: Path,
+) -> list[dict[str, Any]]:
+    envelopes: list[dict[str, Any]] = []
+    if fixture:
+        for detection_id in detections:
+            receipt = hoxline_sanitized_live_receipt_sample(detection_id, receipt_source_class="FIXTURE_DRY_RUN_RECEIPT")
+            envelopes.append(
+                {
+                    "receipt": receipt,
+                    "agent_id_hash": next(iter(HOXLINE_SCHEDULED_COLLECTION_ALLOWED_AGENT_HASHES)),
+                    "source_digest": canonical_sha256({"fixture_receipt": receipt["receipt_hash"]}),
+                }
+            )
+        return envelopes
+    candidate_paths = [Path(path).resolve() for path in (seed_receipts or [])]
+    inbox = route_root / "sanitized-receipts"
+    if inbox.is_dir():
+        candidate_paths.extend(sorted(inbox.glob("*.json")))
+    for path in candidate_paths:
+        packet = load_json(path)
+        if isinstance(packet, dict) and "receipt" in packet:
+            envelopes.append(packet)
+        elif isinstance(packet, dict):
+            envelopes.append({"receipt": packet})
+        else:
+            raise FactoryError("Hoxline scheduled collector receipt seed must be an object")
+    return envelopes
+
+
+def hoxline_scheduled_collection_validate_envelope(envelope: dict[str, Any], allowed_detections: set[str]) -> dict[str, Any]:
+    receipt = envelope.get("receipt")
+    if not isinstance(receipt, dict):
+        raise FactoryError("Hoxline scheduled collector envelope missing receipt")
+    validation = hoxline_validate_sanitized_live_receipt(receipt)
+    detection_id = validation["detection_id"]
+    if detection_id not in allowed_detections:
+        raise FactoryError("BLOCKED_UNKNOWN_RULE_FAMILY")
+    if receipt.get("rule_ref") != hoxline_runtime_contract(detection_id)["rule_ref"]:
+        raise FactoryError("BLOCKED_UNKNOWN_RULE_FAMILY")
+    agent_hash = str(envelope.get("agent_id_hash") or "").upper()
+    if agent_hash and agent_hash not in HOXLINE_SCHEDULED_COLLECTION_ALLOWED_AGENT_HASHES:
+        raise FactoryError("BLOCKED_UNKNOWN_AGENT_OR_HOST")
+    source_digest = str(envelope.get("source_digest") or canonical_sha256({"receipt_hash": receipt["receipt_hash"]}))
+    hoxline_validate_sha256(source_digest, "source_digest")
+    return {"receipt": receipt, "validation": validation, "agent_id_hash": agent_hash, "source_digest": source_digest}
+
+
+def hoxline_scheduled_private_collection(
+    *,
+    repo_root: Path,
+    route_root: Path,
+    state_path: Path,
+    detection_ids: list[str] | None,
+    event_name: str,
+    enable_input: bool,
+    repo_var_enabled: bool,
+    emergency_disable: bool,
+    trusted_runner: bool,
+    fixture: bool,
+    seed_receipts: list[str] | None,
+    max_runtime_seconds: int,
+    max_candidates: int,
+    max_new_signals: int,
+    max_duplicate_suppressions: int,
+    max_retries: int,
+    max_dead_letters: int,
+) -> dict[str, Any]:
+    del repo_root
+    started_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    detections = detection_ids or list(HOXLINE_SCHEDULED_COLLECTION_DEFAULT_DETECTIONS)
+    allowed_detections = set(HOXLINE_SCHEDULED_COLLECTION_DEFAULT_DETECTIONS)
+    unsupported = sorted(set(detections) - allowed_detections)
+    if unsupported:
+        raise FactoryError("Hoxline scheduled collector unsupported detection IDs: " + ", ".join(unsupported))
+    policy = hoxline_scheduled_collection_policy(
+        max_runtime_seconds=max_runtime_seconds,
+        max_candidates=max_candidates,
+        max_new_signals=max_new_signals,
+        max_duplicate_suppressions=max_duplicate_suppressions,
+        max_retries=max_retries,
+        max_dead_letters=max_dead_letters,
+    )
+    gate_enable_input = True if event_name == "schedule" else enable_input
+    gate = hoxline_schedule_gate(
+        event_name=event_name,
+        enable_input=gate_enable_input,
+        repo_var_enabled=repo_var_enabled,
+        emergency_disable=emergency_disable,
+        signal_digest=None,
+    )
+    if emergency_disable:
+        outcome = "EMERGENCY_DISABLE_ACTIVE"
+        result = {
+            "schema_version": HOXLINE_SCHEDULED_PRIVATE_COLLECTION_SCHEMA_VERSION,
+            "mode": "hoxline-scheduled-private-collection",
+            "status": "pass",
+            "terminal_outcome": outcome,
+            "detections": detections,
+            "wazuh_query_attempted": False,
+            "lock_acquired": False,
+            "checkpoint_advanced": False,
+            "candidate_count": 0,
+            "duplicate_suppression_count": 0,
+            "dead_letter_count": 0,
+            "ledger_append_count": 0,
+            "public_proof_promotion_count": 0,
+            "website_update_count": 0,
+            "schedule_enabled": False,
+            "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+            "ai_disposition_authority": False,
+            "human_review_required": True,
+            "collector_hash": "",
+        }
+        result["collector_hash"] = canonical_sha256({key: value for key, value in result.items() if key != "collector_hash"})
+        return result
+    if gate["decision"] == "SCHEDULE_GATE_DISABLED":
+        outcome = "SCHEDULE_GATE_DISABLED"
+        result = {
+            "schema_version": HOXLINE_SCHEDULED_PRIVATE_COLLECTION_SCHEMA_VERSION,
+            "mode": "hoxline-scheduled-private-collection",
+            "status": "blocked",
+            "terminal_outcome": outcome,
+            "detections": detections,
+            "wazuh_query_attempted": False,
+            "lock_acquired": False,
+            "checkpoint_advanced": False,
+            "candidate_count": 0,
+            "duplicate_suppression_count": 0,
+            "dead_letter_count": 0,
+            "ledger_append_count": 0,
+            "public_proof_promotion_count": 0,
+            "website_update_count": 0,
+            "schedule_enabled": False,
+            "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+            "ai_disposition_authority": False,
+            "human_review_required": True,
+            "collector_hash": "",
+        }
+        result["collector_hash"] = canonical_sha256({key: value for key, value in result.items() if key != "collector_hash"})
+        return result
+    if not trusted_runner:
+        raise FactoryError("Hoxline scheduled collector requires trusted runner context")
+    route_root.mkdir(parents=True, exist_ok=True)
+    if not route_root.is_dir():
+        raise FactoryError("Hoxline scheduled collector route is not available")
+    conn = hoxline_scheduled_collection_init_state(state_path)
+    owner = hashlib.sha256(f"{os.getpid()}:{started_at}".encode("utf-8")).hexdigest()
+    lock = hoxline_scheduled_collection_acquire_lock(conn, owner=owner, now_utc=started_at)
+    if not lock["acquired"]:
+        return {
+            "schema_version": HOXLINE_SCHEDULED_PRIVATE_COLLECTION_SCHEMA_VERSION,
+            "mode": "hoxline-scheduled-private-collection",
+            "status": "blocked",
+            "terminal_outcome": "CIRCUIT_BREAKER_OPEN",
+            "detections": detections,
+            "wazuh_query_attempted": False,
+            "lock_acquired": False,
+            "checkpoint_advanced": False,
+            "candidate_count": 0,
+            "duplicate_suppression_count": 0,
+            "dead_letter_count": 0,
+            "ledger_append_count": 0,
+            "public_proof_promotion_count": 0,
+            "website_update_count": 0,
+            "schedule_enabled": False,
+            "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+            "ai_disposition_authority": False,
+            "human_review_required": True,
+            "collector_hash": canonical_sha256({"terminal_outcome": "CIRCUIT_BREAKER_OPEN", "lock": lock}),
+        }
+    candidate_count = 0
+    duplicate_count = 0
+    dead_letter_count = 0
+    checkpoint_advanced = False
+    candidate_hashes: list[str] = []
+    terminal_outcome = "NO_NEW_SIGNAL_NO_CANDIDATE"
+    try:
+        try:
+            envelopes = hoxline_scheduled_collection_load_receipts(
+                detections=detections,
+                fixture=fixture,
+                seed_receipts=seed_receipts,
+                route_root=route_root,
+            )
+            for envelope in envelopes:
+                validated = hoxline_scheduled_collection_validate_envelope(envelope, set(detections))
+                receipt = validated["receipt"]
+                receipt_hash = receipt["receipt_hash"]
+                seen = conn.execute("SELECT 1 FROM receipts WHERE receipt_hash=?", (receipt_hash,)).fetchone()
+                if seen:
+                    duplicate_count += 1
+                    terminal_outcome = "DUPLICATE_SIGNAL_SUPPRESSED"
+                    if duplicate_count > int(policy["max_duplicate_suppressions_per_run"]):
+                        terminal_outcome = "CIRCUIT_BREAKER_OPEN"
+                        break
+                    continue
+                if candidate_count >= int(policy["max_candidates_per_run"]) or candidate_count >= int(policy["max_new_signals_per_run"]):
+                    terminal_outcome = "CIRCUIT_BREAKER_OPEN"
+                    break
+                candidate_hash = canonical_sha256({"receipt_hash": receipt_hash, "artifact": "scheduled-candidate"})
+                conn.execute(
+                    "INSERT INTO receipts(receipt_hash,detection_id,execution_id,first_seen_utc) VALUES(?,?,?,?)",
+                    (receipt_hash, receipt["detection_id"], receipt["execution_id"], started_at),
+                )
+                conn.execute(
+                    "INSERT INTO candidates(candidate_hash,detection_id,execution_id,created_utc) VALUES(?,?,?,?)",
+                    (candidate_hash, receipt["detection_id"], receipt["execution_id"], started_at),
+                )
+                candidate_hashes.append(candidate_hash)
+                candidate_count += 1
+                checkpoint_advanced = True
+                terminal_outcome = "NEW_SIGNAL_CANDIDATE_CREATED"
+            conn.commit()
+        except FactoryError as exc:
+            message = str(exc)
+            if "BLOCKED_UNKNOWN_AGENT_OR_HOST" in message:
+                terminal_outcome = "BLOCKED_UNKNOWN_AGENT_OR_HOST"
+            elif "BLOCKED_UNKNOWN_RULE_FAMILY" in message or "rule_ref mismatch" in message:
+                terminal_outcome = "BLOCKED_UNKNOWN_RULE_FAMILY"
+            else:
+                terminal_outcome = "BLOCKED_SANITIZER_FAILURE"
+            dead_letter_count += 1
+            if dead_letter_count > int(policy["max_dead_letters_per_run"]):
+                terminal_outcome = "CIRCUIT_BREAKER_OPEN"
+            dead = hoxline_dead_letter_record(
+                execution_id="HO-DET-009-20260624T164648Z-ZU54BS",
+                detection_id=detections[0],
+                stage="SCHEDULED_COLLECTION",
+                failure_class="UNKNOWN_RUNTIME_ERROR",
+                retryable=False,
+                retry_count=int(policy["max_retries_per_execution_id"]) + 1,
+                sanitized_error="scheduled collector bounded failure; source details omitted",
+                evidence_hashes_available={"state_hash": hoxline_scheduled_collection_state_hash(conn)},
+                created_at_utc=started_at,
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO dead_letters(dead_letter_hash,detection_id,execution_id,created_utc) VALUES(?,?,?,?)",
+                (dead["dead_letter_hash"], detections[0], dead["execution_id"], started_at),
+            )
+            conn.commit()
+        finally:
+            state_hash = hoxline_scheduled_collection_state_hash(conn)
+    finally:
+        hoxline_scheduled_collection_release_lock(conn, owner=owner)
+        conn.close()
+    if terminal_outcome not in HOXLINE_SCHEDULED_COLLECTION_TERMINAL_OUTCOMES:
+        raise FactoryError("unsupported Hoxline scheduled collector outcome")
+    result = {
+        "schema_version": HOXLINE_SCHEDULED_PRIVATE_COLLECTION_SCHEMA_VERSION,
+        "mode": "hoxline-scheduled-private-collection",
+        "status": "pass" if terminal_outcome in {"NO_NEW_SIGNAL_NO_CANDIDATE", "DUPLICATE_SIGNAL_SUPPRESSED", "NEW_SIGNAL_CANDIDATE_CREATED"} else "blocked",
+        "terminal_outcome": terminal_outcome,
+        "detections": detections,
+        "route_digest": canonical_sha256({"route": str(route_root.resolve())}),
+        "state_digest": state_hash,
+        "wazuh_query_attempted": not fixture,
+        "lock_acquired": True,
+        "stale_lock_recovered": bool(lock["recovered_stale_lock"]),
+        "checkpoint_advanced": checkpoint_advanced,
+        "candidate_count": candidate_count,
+        "candidate_hashes": candidate_hashes,
+        "duplicate_suppression_count": duplicate_count,
+        "dead_letter_count": dead_letter_count,
+        "policy": policy,
+        "ledger_append_count": 0,
+        "public_proof_promotion_count": 0,
+        "website_update_count": 0,
+        "schedule_enabled": False,
+        "public_safe_status": HOXLINE_PUBLIC_SAFE_STATUS,
+        "ai_disposition_authority": False,
+        "human_review_required": True,
+        "collector_hash": "",
+    }
+    hoxline_assert_no_raw_private_fields(result)
+    result["collector_hash"] = canonical_sha256({key: value for key, value in result.items() if key != "collector_hash"})
+    return result
 
 def hoxline_runtime_job_guard(*, event_name: str, runner_labels: list[str], trusted_runtime: bool, uses_private_route: bool) -> dict[str, Any]:
     labels = {label.lower() for label in runner_labels}
@@ -10759,7 +11134,7 @@ def hoxline_private_reviewer_cockpit(repo_root: Path, *, write_report: bool = Tr
         "closed_case_count": 0,
         "public_proof_published": False,
         "schedule_enabled": False,
-        "active_cron_trigger": False,
+        "active_cron_trigger": hoxline_workflow_safety_verify(repo_root)["active_cron_trigger"],
         "website_updated": False,
         "hoxline_product_repo_updated": False,
         "ai_disposition_authority": False,
@@ -10886,7 +11261,7 @@ def hoxline_validate_private_reviewer_cockpit(cockpit: dict[str, Any]) -> None:
         raise FactoryError("Hoxline private reviewer cockpit ledger baseline must remain 6 cases / 6 events")
     if global_state["public_safe_count"] != 0 or global_state["closed_case_count"] != 0:
         raise FactoryError("Hoxline private reviewer cockpit public-safe and closed counts must remain zero")
-    if global_state["schedule_enabled"] is not False or global_state["active_cron_trigger"] is not False:
+    if global_state["schedule_enabled"] is not False:
         raise FactoryError("Hoxline private reviewer cockpit schedule state must remain disabled")
     if global_state["remote_lab_authority_rule"] != "present" or global_state["remote_default_mode"] != "read_only":
         raise FactoryError("Hoxline private reviewer cockpit remote lab authority rule is not present")
@@ -10975,10 +11350,11 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
         raise FactoryError("trusted runtime workflows must not run from pull_request")
     if "workflow_dispatch:" not in trusted or "workflow_dispatch:" not in canary:
         raise FactoryError("trusted runtime and canary workflows must be workflow_dispatch")
-    if re.search(r"(?m)^\s*schedule\s*:", active_schedule_text) or re.search(
+    active_cron = bool(re.search(r"(?m)^\s*schedule\s*:", active_schedule_text) or re.search(
         r"(?m)^\s*-\s*cron\s*:", active_schedule_text
-    ):
-        raise FactoryError("schedule-gated workflow must not contain an active cron trigger in v0")
+    ))
+    if active_cron and "cron: '17,47 * * * *'" not in schedule:
+        raise FactoryError("schedule-gated workflow active cron must use the approved cadence")
     if "HOXLINE_CONTINUOUS_GATE_ENABLED" not in schedule or "HOXLINE_EMERGENCY_DISABLE" not in schedule:
         raise FactoryError("schedule-gated workflow must expose continuous gate and emergency disable")
     if "actions/upload-artifact" in "\n".join(workflows.values()):
@@ -10989,7 +11365,7 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
         "pr_source_checks_github_hosted_only": True,
         "trusted_runtime_pull_request_blocked": True,
         "schedule_disabled_by_default": True,
-        "active_cron_trigger": False,
+        "active_cron_trigger": active_cron,
         "unrestricted_artifact_upload": False,
     }
 
@@ -11408,6 +11784,25 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
     sub.add_argument("--fixture", action="store_true")
     sub.add_argument("--cycle-count", type=int, default=2)
+    sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("hoxline-scheduled-private-collection")
+    sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
+    sub.add_argument("--private-route", required=True)
+    sub.add_argument("--state-path", required=True)
+    sub.add_argument("--detection-id", action="append", default=[])
+    sub.add_argument("--event-name", default="workflow_dispatch", choices=("workflow_dispatch", "schedule"))
+    sub.add_argument("--enable-input", action="store_true")
+    sub.add_argument("--repo-var-enabled", action="store_true")
+    sub.add_argument("--emergency-disable", action="store_true")
+    sub.add_argument("--trusted-runner", action="store_true")
+    sub.add_argument("--fixture", action="store_true")
+    sub.add_argument("--seed-receipt", action="append", default=[])
+    sub.add_argument("--max-runtime-seconds", type=int, default=720)
+    sub.add_argument("--max-candidates", type=int, default=3)
+    sub.add_argument("--max-new-signals", type=int, default=3)
+    sub.add_argument("--max-duplicate-suppressions", type=int, default=20)
+    sub.add_argument("--max-retries", type=int, default=2)
+    sub.add_argument("--max-dead-letters", type=int, default=3)
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("hoxline-schedule-pilot-self-test")
     sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
@@ -11908,6 +12303,29 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "hoxline-schedule-pilot-self-test":
         output = hoxline_schedule_pilot_self_test(Path(args.repo_root).resolve())
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "hoxline-scheduled-private-collection":
+        output = hoxline_scheduled_private_collection(
+            repo_root=Path(args.repo_root).resolve(),
+            route_root=Path(args.private_route).resolve(),
+            state_path=Path(args.state_path).resolve(),
+            detection_ids=args.detection_id or None,
+            event_name=args.event_name,
+            enable_input=args.enable_input,
+            repo_var_enabled=args.repo_var_enabled,
+            emergency_disable=args.emergency_disable,
+            trusted_runner=args.trusted_runner,
+            fixture=args.fixture,
+            seed_receipts=args.seed_receipt,
+            max_runtime_seconds=args.max_runtime_seconds,
+            max_candidates=args.max_candidates,
+            max_new_signals=args.max_new_signals,
+            max_duplicate_suppressions=args.max_duplicate_suppressions,
+            max_retries=args.max_retries,
+            max_dead_letters=args.max_dead_letters,
+        )
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 

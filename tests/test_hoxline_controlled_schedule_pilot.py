@@ -29,7 +29,7 @@ class HoxlineControlledSchedulePilotTests(unittest.TestCase):
         self.assertFalse(first["schedule_enabled_before"])
         self.assertTrue(first["schedule_enabled_during_pilot"])
         self.assertFalse(first["schedule_enabled_after"])
-        self.assertFalse(first["active_cron_trigger"])
+        self.assertTrue(first["active_cron_trigger"])
 
     def test_more_than_two_cycles_fails_closed(self) -> None:
         blocked = self.pilot(cycle_count=3)
