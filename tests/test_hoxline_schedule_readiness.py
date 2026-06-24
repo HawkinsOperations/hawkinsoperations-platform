@@ -122,8 +122,7 @@ class HoxlineScheduleReadinessTests(unittest.TestCase):
         self.assertIn("permissions:\n  contents: read", workflow)
         self.assertIn("HOXLINE_PRIVATE_ROUTE: /var/lib/hoxline/private-scheduled-collector-v0", workflow)
         self.assertNotIn("actions/upload-artifact", workflow)
-        self.assertNotIn("--detection-id HO-DET-010", workflow)
-        for detection_id in ("HO-DET-009", "HO-DET-011", "HO-DET-012"):
+        for detection_id in ("HO-DET-009", "HO-DET-010", "HO-DET-011", "HO-DET-012"):
             self.assertIn(f"--detection-id {detection_id}", workflow)
 
         self.assertIn("if: vars.HOXLINE_EMERGENCY_DISABLE == 'true'", workflow)
