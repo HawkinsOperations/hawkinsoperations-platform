@@ -30,7 +30,7 @@
     },
     "detections": {
       "type": "array",
-      "minItems": 3,
+      "minItems": 5,
       "items": {
         "type": "object",
         "required": [
@@ -43,7 +43,7 @@
         ],
         "properties": {
           "detection_id": {
-            "enum": ["HO-DET-001", "HO-DET-011", "HO-DET-012"]
+            "enum": ["HO-DET-001", "HO-DET-009", "HO-DET-010", "HO-DET-011", "HO-DET-012"]
           },
           "human_review_required": {
             "const": true
@@ -75,6 +75,9 @@
         "closed_case_count",
         "schedule_enabled",
         "active_cron_trigger",
+        "standing_private_collector_enabled",
+        "scheduled_collection_scope",
+        "scheduled_collection_scope_status",
         "remote_lab_authority_rule",
         "remote_default_mode"
       ],
@@ -95,7 +98,24 @@
           "const": false
         },
         "active_cron_trigger": {
-          "const": false
+          "type": "boolean"
+        },
+        "standing_private_collector_enabled": {
+          "const": true
+        },
+        "scheduled_collection_scope": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "HO-DET-009" },
+            { "const": "HO-DET-010" },
+            { "const": "HO-DET-011" },
+            { "const": "HO-DET-012" }
+          ],
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "scheduled_collection_scope_status": {
+          "const": "PRIVATE_STANDING_COLLECTOR_ACTIVE"
         },
         "remote_lab_authority_rule": {
           "const": "present"
@@ -118,7 +138,7 @@
     },
     "next_actions": {
       "type": "array",
-      "minItems": 3
+      "minItems": 5
     },
     "report_hash": {
       "type": "string",
