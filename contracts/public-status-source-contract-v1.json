@@ -3,7 +3,7 @@
   "version": "public_status_source_contract_v1",
   "owner_repo": "hawkinsoperations-platform",
   "consumer": "hawkinsoperations-website",
-  "generated_at": "2026-06-16T22:06:47.5510594-05:00",
+  "generated_at": "2026-07-22T18:02:33.8431932-05:00",
   "freshness_window_days": 14,
   "platform_role": {
     "source_contract": true,
@@ -72,6 +72,7 @@
     "validation_activity_ledger": "../hawkinsoperations-validation/activity/detection-activity-ledger-v1.json",
     "proof_lifetime_summary": "../hawkinsoperations-proof/proof/records/lifetime-case-ledger-v1-public-summary.json",
     "proof_reviewer_map": "../hawkinsoperations-proof/proof/indexes/reviewer-proof-map.json",
+    "proof_current_status_index": "../hawkinsoperations-proof/proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml",
     "detections_promotion_matrix": "../hawkinsoperations-detections/detections/DETECTION_PROMOTION_MATRIX.yml",
     "website_generated_status_consumer": "../hawkinsoperations-website/UNKNOWN_SOURCE_NOT_CAPTURED",
     "hoxline_v1_source_manifest": "../hoxline/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json",
@@ -210,13 +211,17 @@
     },
     "proof_record_count": {
       "owner_repo": "hawkinsoperations-proof",
-      "source_path": "contracts/reviewer-metrics-pipeline-v1-state.json",
-      "upstream_source_path": "../hawkinsoperations-proof/proof/indexes/reviewer-proof-map.json",
-      "source_json_pointer": "/metrics/proof_record_count",
-      "current_value": 8,
+      "source_path": "../hawkinsoperations-proof/proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml",
+      "source_json_pointer": "/current_authority/derived_counts/proof_record_count",
+      "source_revision": "042a918ad4a8473cd5abcfd575072fc094639682",
+      "source_fingerprint_sha256": "a8c24bd78bd20f318d4dfb5a930ea44bc108305bcc18b23db6ff2fc11e81a52d",
+      "derivation_method": "count non-null unique proof_record_path values",
+      "historical_snapshot": false,
+      "current_authority": true,
+      "current_value": 11,
       "render_allowed": true,
       "source_status": "SOURCE_CAPTURED",
-      "freshness_policy": "Refresh from proof-owned source route; stale render must not imply proof promotion."
+      "freshness_policy": "Derive from non-null unique proof_record_path values in the proof-owned current index; historical reviewer summaries must not override this current value."
     },
     "blocked_claim_count": {
       "owner_repo": "hawkinsoperations-proof",

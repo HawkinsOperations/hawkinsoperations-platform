@@ -75,6 +75,40 @@ class PublicStatusSourceContractTests(unittest.TestCase):
         with self.assertRaises(verifier.VerificationError):
             self.verify_contract_copy(contract)
 
+    def test_rejects_forged_current_proof_count(self) -> None:
+        contract = self.load_contract()
+        contract["public_fields"]["proof_record_count"]["current_value"] = 99
+
+        with self.assertRaises(verifier.VerificationError):
+            self.verify_contract_copy(contract)
+
+    def test_rejects_historical_proof_summary_as_current_source(self) -> None:
+        contract = self.load_contract()
+        contract["public_fields"]["proof_record_count"]["source_path"] = (
+            "../hawkinsoperations-proof/proof/records/reviewer-metrics-pipeline-v1-summary.json"
+        )
+
+        with self.assertRaises(verifier.VerificationError):
+            self.verify_contract_copy(contract)
+
+    def test_rejects_forged_source_revision(self) -> None:
+        contract = self.load_contract()
+        contract["public_fields"]["proof_record_count"]["source_revision"] = "f" * 40
+        with self.assertRaisesRegex(verifier.VerificationError, "source_revision must equal"):
+            self.verify_contract_copy(contract)
+
+    def test_rejects_forged_source_fingerprint(self) -> None:
+        contract = self.load_contract()
+        contract["public_fields"]["proof_record_count"]["source_fingerprint_sha256"] = "0" * 64
+        with self.assertRaisesRegex(verifier.VerificationError, "fingerprint"):
+            self.verify_contract_copy(contract)
+
+    def test_rejects_future_generated_at(self) -> None:
+        contract = self.load_contract()
+        contract["generated_at"] = "2999-01-01T00:00:00Z"
+        with self.assertRaisesRegex(verifier.VerificationError, "future"):
+            self.verify_contract_copy(contract)
+
 
 if __name__ == "__main__":
     unittest.main()

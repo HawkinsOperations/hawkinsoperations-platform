@@ -4,15 +4,26 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
+import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - cross-repo value check is unavailable without PyYAML.
+    yaml = None
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "contracts" / "public-status-source-contract-v1.json"
+PROOF_CURRENT_STATUS_INDEX = ROOT.parent / "hawkinsoperations-proof" / "proof" / "indexes" / "DETECTION_PROOF_STATUS_INDEX.yml"
+PROOF_REPO = ROOT.parent / "hawkinsoperations-proof"
+PROOF_INDEX_GIT_PATH = "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml"
 UNKNOWN = "UNKNOWN_SOURCE_NOT_CAPTURED"
 HOXLINE_SOURCE_MANIFEST_PATH = "../hoxline/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json"
 ALLOWED_SOURCE_STATUSES = {
@@ -158,6 +169,7 @@ REQUIRED_CANDIDATE_PROMOTION_BLOCKERS = {
 }
 
 REQUIRED_SOURCE_PATH_KEYS = {
+    "proof_current_status_index",
     "hoxline_v1_source_manifest",
     "hoxline_gauntlet_run_v1",
     "hoxline_gauntlet_run_v1_overclaim",
@@ -399,6 +411,8 @@ def verify_public_safe_candidate_reviews(contract: dict[str, Any]) -> None:
 
 
 def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
+    if yaml is None:
+        fail("PyYAML is required; proof-owned count parity cannot be skipped")
     contract = load_json(path)
     scan_denied_text(contract)
     verify_no_promotional_claims(contract)
@@ -414,6 +428,22 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
         fail("owner_repo must be hawkinsoperations-platform")
     if contract.get("consumer") != "hawkinsoperations-website":
         fail("consumer must be hawkinsoperations-website")
+    generated_at = contract.get("generated_at")
+    freshness_window_days = contract.get("freshness_window_days")
+    try:
+        generated_time = datetime.fromisoformat(str(generated_at).replace("Z", "+00:00"))
+    except ValueError:
+        fail("generated_at must be a parseable UTC timestamp")
+    if generated_time.tzinfo is None:
+        fail("generated_at must include a timezone")
+    now = datetime.now(timezone.utc)
+    generated_time = generated_time.astimezone(timezone.utc)
+    if generated_time > now:
+        fail("generated_at must not be in the future")
+    if not isinstance(freshness_window_days, (int, float)) or freshness_window_days <= 0:
+        fail("freshness_window_days must be a positive number")
+    if (now - generated_time).total_seconds() > freshness_window_days * 86400:
+        fail("public status source contract is stale")
 
     platform_role = contract.get("platform_role")
     if not isinstance(platform_role, dict):
@@ -522,6 +552,54 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
         fail("public_safe_count field must remain 0")
     if public_fields["public_safe_state"].get("current_value") != "NOT_PUBLIC_SAFE":
         fail("public_safe_state field must remain NOT_PUBLIC_SAFE")
+    proof_count = public_fields["proof_record_count"]
+    if proof_count.get("source_path") != "../hawkinsoperations-proof/proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml":
+        fail("proof_record_count must source from the proof-owned current status index")
+    if proof_count.get("source_json_pointer") != "/current_authority/derived_counts/proof_record_count":
+        fail("proof_record_count must use the proof-owned derived count pointer")
+    if re.fullmatch(r"[0-9a-f]{40}", str(proof_count.get("source_revision", ""))) is None:
+        fail("proof_record_count must record a full proof source revision")
+    source_revision = proof_count["source_revision"]
+    head_result = subprocess.run(
+        ["git", "-C", str(PROOF_REPO), "rev-parse", "HEAD"],
+        capture_output=True,
+        check=False,
+    )
+    if head_result.returncode != 0:
+        fail("proof_record_count source repository HEAD is unresolved")
+    proof_head = head_result.stdout.decode("ascii", errors="replace").strip()
+    if source_revision != proof_head:
+        fail("proof_record_count source_revision must equal the current proof repository HEAD")
+    blob_result = subprocess.run(
+        ["git", "-C", str(PROOF_REPO), "show", f"{source_revision}:{PROOF_INDEX_GIT_PATH}"],
+        capture_output=True,
+        check=False,
+    )
+    if blob_result.returncode != 0:
+        fail("proof_record_count source revision does not contain the declared proof index")
+    source_fingerprint = hashlib.sha256(blob_result.stdout).hexdigest()
+    if proof_count.get("source_fingerprint_sha256") != source_fingerprint:
+        fail("proof_record_count source fingerprint does not match the stated revision")
+    if proof_count.get("derivation_method") != "count non-null unique proof_record_path values":
+        fail("proof_record_count must declare its deterministic derivation method")
+    if proof_count.get("historical_snapshot") is not False or proof_count.get("current_authority") is not True:
+        fail("proof_record_count must be classified as current authority, not historical")
+    if not isinstance(proof_count.get("current_value"), int) or proof_count["current_value"] < 0:
+        fail("proof_record_count current_value must be a non-negative integer")
+    proof_index = yaml.safe_load(blob_result.stdout.decode("utf-8"))
+    proof_entries = proof_index.get("entries") if isinstance(proof_index, dict) else None
+    if not isinstance(proof_entries, list):
+        fail("proof-owned current status index entries must be a list")
+    record_paths = [
+        entry.get("proof_record_path")
+        for entry in proof_entries
+        if isinstance(entry, dict) and entry.get("proof_record_path") is not None
+    ]
+    normalized_record_paths = {str(Path(value)).replace("\\", "/").casefold() for value in record_paths}
+    if len(record_paths) != len(normalized_record_paths):
+        fail("proof-owned current status index contains duplicate proof_record_path ownership")
+    if proof_count.get("current_value") != len(record_paths):
+        fail("proof_record_count must match the current proof-owned derived count")
     if public_fields["proof_ceiling"].get("current_value") != "SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY":
         fail("proof_ceiling field must remain SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY")
 
@@ -533,6 +611,8 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
         fail(f"source_paths missing Hoxline/bridge routes: {sorted(missing_source_path_keys)}")
     if source_paths.get("hoxline_v1_source_manifest") != HOXLINE_SOURCE_MANIFEST_PATH:
         fail("source_paths.hoxline_v1_source_manifest must point to the Hoxline v1 source manifest")
+    if source_paths.get("proof_current_status_index") != "../hawkinsoperations-proof/proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml":
+        fail("source_paths.proof_current_status_index must point to the proof-owned current index")
     for key, value in source_paths.items():
         if not isinstance(value, str) or not value:
             fail(f"source path {key} must be a string")
