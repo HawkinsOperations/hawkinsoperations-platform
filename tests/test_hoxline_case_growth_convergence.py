@@ -87,7 +87,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             "metrics": {
                 "proof_records": {
                     "value": 1,
-                    "source_repo": "hawkinsoperations-proof",
+                    "source_repo": "HawkinsOperations/hawkinsoperations-proof",
                     "source_path": "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml",
                 }
             },

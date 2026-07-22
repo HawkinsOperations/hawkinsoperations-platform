@@ -11892,8 +11892,8 @@ def hoxline_case_growth_convergence_verify(
     if website_metric.get("value") != proof_counts["proof_record_count"]:
         issue("WEBSITE_PROOF_COUNT_DRIFT", "hawkinsoperations-website", "public/data/public-status.json#/metrics/proof_records", proof_counts["proof_record_count"], website_metric.get("value"), "Regenerate the website status plane from the proof-owned current index.")
     website_source_repo = str(website_metric.get("source_repo", ""))
-    if website_source_repo != "hawkinsoperations-proof":
-        issue("WEBSITE_PROOF_OWNER_INVALID", "hawkinsoperations-website", "public/data/public-status.json#/metrics/proof_records/source_repo", "hawkinsoperations-proof", website_source_repo, "Restore proof ownership metadata; website remains a consumer only.")
+    if website_source_repo != "HawkinsOperations/hawkinsoperations-proof":
+        issue("WEBSITE_PROOF_OWNER_INVALID", "hawkinsoperations-website", "public/data/public-status.json#/metrics/proof_records/source_repo", "HawkinsOperations/hawkinsoperations-proof", website_source_repo, "Restore the exact proof-owner identifier; website remains a consumer only.")
     if website_metric.get("source_path") != "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml":
         issue("WEBSITE_PROOF_SOURCE_INVALID", "hawkinsoperations-website", "public/data/public-status.json#/metrics/proof_records/source_path", "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml", website_metric.get("source_path"), "Regenerate from the current proof index instead of a historical summary.")
     generated_at = hoxline_case_growth_parse_time(website_status.get("generated_at") if isinstance(website_status, dict) else None)
