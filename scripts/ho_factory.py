@@ -600,7 +600,7 @@ LIFETIME_DETECTION_COVERAGE = (
 
 CASE_LEDGER_TRUTH_CLASSES = (
     "FORWARD_GOVERNED_CASE",
-    "SYNTHETIC_TEST_CASE",
+    "CONTROLLED_TEST_CASE",
     "RECOVERED_HISTORICAL_IMPORT",
     "PRIVATE_RUNTIME_EVIDENCE",
     "PUBLIC_PROOF_CANDIDATE",
@@ -1528,7 +1528,7 @@ def build_sample_case_event(repo_root: Path) -> dict[str, Any]:
         "ledger_version": CASE_LEDGER_VERSION,
         "case_id": packet["case_id"],
         "detection_id": packet["detection_id"],
-        "truth_class": "SYNTHETIC_TEST_CASE",
+        "truth_class": "CONTROLLED_TEST_CASE",
         "case_status": "HUMAN_REVIEW_REQUIRED",
         "proof_ceiling": packet["proof_level"],
         "public_safe_status": packet["public_safe_status"],
@@ -1697,7 +1697,7 @@ def lifetime_ledger_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
           COALESCE(SUM(proof_blocked), 0),
           COALESCE(SUM(public_safe), 0),
           COALESCE(SUM(case_closed), 0),
-          COALESCE(SUM(CASE WHEN truth_class = 'SYNTHETIC_TEST_CASE' THEN 1 ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN truth_class = 'CONTROLLED_TEST_CASE' THEN 1 ELSE 0 END), 0),
           COALESCE(SUM(CASE WHEN truth_class = 'PRIVATE_RUNTIME_EVIDENCE' THEN 1 ELSE 0 END), 0),
           COALESCE(SUM(CASE WHEN truth_class = 'PUBLIC_PROOF_CANDIDATE' THEN 1 ELSE 0 END), 0)
         FROM case_events
@@ -2102,7 +2102,7 @@ def build_lifetime_manual_fire_event(candidate: dict[str, Any]) -> dict[str, Any
         "fired_at": candidate.get("fired_at"),
         "observed_time_utc": candidate.get("observed_time_utc"),
         "ingested_at": None,
-        "truth_class": "SYNTHETIC_TEST_CASE",
+        "truth_class": "CONTROLLED_TEST_CASE",
         "case_status": "HUMAN_REVIEW_REQUIRED",
         "triage_status": "PENDING_HUMAN_REVIEW",
         "disposition_status": "NO_DISPOSITION",
@@ -2154,7 +2154,7 @@ def lifetime_metrics_after_candidate(before: dict[str, Any], event: dict[str, An
     after["gpu_triaged_count"] = int(after["gpu_triaged_count"]) + int(bool(event["gpu_triage_used"]))
     after["ai_support_only_count"] = int(after["ai_support_only_count"]) + 1
     after["proof_blocked_count"] = int(after["proof_blocked_count"]) + 1
-    if event["truth_class"] == "SYNTHETIC_TEST_CASE":
+    if event["truth_class"] == "CONTROLLED_TEST_CASE":
         after["validation_only_count"] = int(after["validation_only_count"]) + 1
     return after
 
@@ -3041,7 +3041,7 @@ def build_lifetime_correction_event(parent: dict[str, Any], correction_reason: s
         "fired_at": None,
         "observed_time_utc": None,
         "ingested_at": None,
-        "truth_class": "SYNTHETIC_TEST_CASE",
+        "truth_class": "CONTROLLED_TEST_CASE",
         "case_status": "HUMAN_REVIEW_REQUIRED",
         "triage_status": "PENDING_HUMAN_REVIEW",
         "disposition_status": "NO_DISPOSITION",
@@ -3125,7 +3125,7 @@ def lifetime_metrics_after_correction(before: dict[str, Any], event: dict[str, A
     after["proof_blocked_count"] = int(after["proof_blocked_count"]) + 1
     after["correction_event_count"] = int(after["correction_event_count"]) + 1
     after["superseding_event_count"] = int(after["superseding_event_count"]) + 1
-    if event["truth_class"] == "SYNTHETIC_TEST_CASE":
+    if event["truth_class"] == "CONTROLLED_TEST_CASE":
         after["validation_only_count"] = int(after["validation_only_count"]) + 1
     return after
 
