@@ -11938,6 +11938,37 @@ def hoxline_case_growth_is_direct_parent(repo_path: Path, commit_sha: str, head_
     return result.returncode == 0 and result.stdout.strip().casefold() == commit_sha.casefold()
 
 
+def hoxline_case_growth_is_ancestor(
+    repo_path: Path, ancestor_sha: str, descendant_sha: str
+) -> bool:
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_path),
+            "merge-base",
+            "--is-ancestor",
+            ancestor_sha,
+            descendant_sha,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def hoxline_case_growth_tree_sha(repo_path: Path, revision: str) -> str | None:
+    result = subprocess.run(
+        ["git", "-C", str(repo_path), "rev-parse", f"{revision}^{{tree}}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    value = result.stdout.strip().casefold()
+    return value if result.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", value) else None
+
+
 def hoxline_case_growth_source_revisions(snapshot: dict[str, Any]) -> dict[str, dict[str, Any]]:
     raw = snapshot.get("source_revisions")
     normalized: dict[str, dict[str, Any]] = {}
@@ -12294,16 +12325,64 @@ def hoxline_case_growth_convergence_verify(
                         revision=state["head"],
                     )
                 else:
-                    issue(
-                        "SOURCE_MANIFEST_HEAD_OBSERVATION_STALE_CONTENT_CURRENT",
-                        repo_name,
-                        "contracts/hoxline-case-growth-source-manifest-v1.json",
-                        state["head"],
-                        manifest_revision,
-                        f"Refresh the observed {repo_name} manifest revision after merge; content identity remains current.",
-                        revision=state["head"],
-                        historical=True,
+                    current_is_historical_ancestor = hoxline_case_growth_is_ancestor(
+                        repo_path, state["head"], manifest_revision
                     )
+                    reviewed_is_ancestor = hoxline_case_growth_is_ancestor(
+                        repo_path, manifest_revision, state["head"]
+                    )
+                    current_tree = hoxline_case_growth_tree_sha(
+                        repo_path, state["head"]
+                    )
+                    reviewed_tree = hoxline_case_growth_tree_sha(
+                        repo_path, manifest_revision
+                    )
+                    tree_is_reviewed_equivalent = (
+                        current_tree is not None
+                        and reviewed_tree is not None
+                        and current_tree == reviewed_tree
+                    )
+                    observation_relationship_valid = (
+                        not current_is_historical_ancestor
+                        and (reviewed_is_ancestor or tree_is_reviewed_equivalent)
+                    )
+                    if not observation_relationship_valid:
+                        manifest_content_matches_current = False
+                        issue(
+                            "SOURCE_MANIFEST_OBSERVATION_RELATIONSHIP_INVALID",
+                            repo_name,
+                            "contracts/hoxline-case-growth-source-manifest-v1.json",
+                            (
+                                "checked current revision descended from the reviewed "
+                                "revision or carrying its exact reviewed repository tree"
+                            ),
+                            {
+                                "current_head": state["head"],
+                                "reviewed_revision": manifest_revision,
+                                "current_is_historical_ancestor": (
+                                    current_is_historical_ancestor
+                                ),
+                                "reviewed_is_ancestor": reviewed_is_ancestor,
+                                "current_tree": current_tree,
+                                "reviewed_tree": reviewed_tree,
+                            },
+                            (
+                                f"Check out the intended current {repo_name} revision; "
+                                "an older same-blob ancestor is historical, not current authority."
+                            ),
+                            revision=state["head"],
+                        )
+                    else:
+                        issue(
+                            "SOURCE_MANIFEST_HEAD_OBSERVATION_STALE_CONTENT_CURRENT",
+                            repo_name,
+                            "contracts/hoxline-case-growth-source-manifest-v1.json",
+                            state["head"],
+                            manifest_revision,
+                            f"Refresh the observed {repo_name} manifest revision after merge; content identity remains current.",
+                            revision=state["head"],
+                            historical=True,
+                        )
         elif manifest_revision == state["head"]:
             manifest_content_matches_current = True
         if not branch and not manifest_content_matches_current:

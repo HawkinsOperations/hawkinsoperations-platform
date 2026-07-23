@@ -207,10 +207,14 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         head: str | None = None,
         blob_overrides: dict[tuple[str, str], str] | None = None,
         missing_commits: set[str] | None = None,
+        ancestor_pairs: set[tuple[str, str]] | None = None,
+        tree_overrides: dict[str, str | None] | None = None,
     ) -> dict:
         resolved_head = head or self.sha
         selected_blob_overrides = blob_overrides or {}
         selected_missing_commits = missing_commits or set()
+        selected_ancestor_pairs = ancestor_pairs or set()
+        selected_tree_overrides = tree_overrides or {}
 
         def git_blob(repo_path: Path, revision: str, relative_path: str) -> tuple[str, bytes]:
             blob_sha = selected_blob_overrides.get(
@@ -237,6 +241,18 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             ho_factory,
             "hoxline_case_growth_git_blob",
             side_effect=git_blob,
+        ), mock.patch.object(
+            ho_factory,
+            "hoxline_case_growth_is_ancestor",
+            side_effect=lambda _repo_path, ancestor, descendant: (
+                (ancestor, descendant) in selected_ancestor_pairs
+            ),
+        ), mock.patch.object(
+            ho_factory,
+            "hoxline_case_growth_tree_sha",
+            side_effect=lambda _repo_path, revision: selected_tree_overrides.get(
+                revision, "e" * 40
+            ),
         ):
             return ho_factory.hoxline_case_growth_convergence_verify(
                 self.org_root, now=datetime(2026, 7, 22, 18, tzinfo=timezone.utc)
@@ -304,6 +320,57 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             "DETACHED_SOURCE_NOT_MANIFEST_SELECTED",
             {item["code"] for item in result["contradictions"]},
         )
+
+    def test_historical_same_blob_ancestor_cannot_masquerade_as_current(self) -> None:
+        historical_head = "c" * 40
+        self.source_manifest["repositories"]["hawkinsoperations-platform"][
+            "reviewed_revision"
+        ] = self.sha
+        self.write_sources()
+        result = self.verify(
+            branch="",
+            head=historical_head,
+            ancestor_pairs={(historical_head, self.sha)},
+        )
+        codes = {item["code"] for item in result["contradictions"]}
+        self.assertIn("SOURCE_MANIFEST_OBSERVATION_RELATIONSHIP_INVALID", codes)
+        self.assertIn("DETACHED_SOURCE_NOT_MANIFEST_SELECTED", codes)
+
+    def test_rewritten_same_blob_requires_exact_reviewed_repository_tree(self) -> None:
+        rewritten_head = "d" * 40
+        self.source_manifest["repositories"]["hawkinsoperations-platform"][
+            "reviewed_revision"
+        ] = self.sha
+        self.write_sources()
+        result = self.verify(
+            branch="",
+            head=rewritten_head,
+            tree_overrides={
+                rewritten_head: "c" * 40,
+                self.sha: "e" * 40,
+            },
+        )
+        self.assertIn(
+            "SOURCE_MANIFEST_OBSERVATION_RELATIONSHIP_INVALID",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_reviewed_ancestor_of_current_same_blob_merge_passes(self) -> None:
+        merge_head = "d" * 40
+        self.source_manifest["repositories"]["hawkinsoperations-platform"][
+            "reviewed_revision"
+        ] = self.sha
+        self.write_sources()
+        result = self.verify(
+            branch="",
+            head=merge_head,
+            ancestor_pairs={(self.sha, merge_head)},
+            tree_overrides={
+                merge_head: "c" * 40,
+                self.sha: "e" * 40,
+            },
+        )
+        self.assertEqual("pass", result["status"])
 
     def test_arbitrary_same_blob_observation_not_selected_by_manifest_fails_closed(self) -> None:
         self.snapshot["source_revisions"]["hawkinsoperations-proof"]["source_commit_sha"] = "c" * 40
