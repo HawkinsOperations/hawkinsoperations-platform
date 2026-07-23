@@ -880,6 +880,40 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.assertGreaterEqual(workflow.count("check=True"), 2)
         self.assertNotIn("git grep", workflow)
 
+    def test_platform_source_manifest_matches_reviewed_command_center_matrix(
+        self,
+    ) -> None:
+        source_manifest = json.loads(
+            (
+                ROOT
+                / "contracts"
+                / "hoxline-case-growth-source-manifest-v1.json"
+            ).read_text(encoding="utf-8")
+        )
+        command_center_manifest_path = (
+            ROOT.parent
+            / ".github"
+            / "governance"
+            / "CONVERGENCE_SOURCE_MANIFEST.json"
+        )
+        if not command_center_manifest_path.is_file():
+            self.skipTest("command-center sibling checkout is unavailable")
+        command_center_manifest = json.loads(
+            command_center_manifest_path.read_text(encoding="utf-8")
+        )
+        reviewed = {
+            entry["repository"]: entry
+            for entry in command_center_manifest["repositories"]
+        }
+        for repository, entry in source_manifest["repositories"].items():
+            if repository in {".github", "hawkinsoperations-platform"}:
+                continue
+            self.assertEqual(
+                reviewed[repository]["revision"],
+                entry["revision"],
+                f"{repository} must use the reviewed immutable revision",
+            )
+
     def test_source_workflow_vocabulary_guard_rejects_nfkc_utf16_and_git_errors(
         self,
     ) -> None:
