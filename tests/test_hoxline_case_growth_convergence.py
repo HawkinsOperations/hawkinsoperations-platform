@@ -181,6 +181,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                         "repository": repo,
                         "canonical_repository": f"HawkinsOperations/{repo}",
                         "revision": self.sha,
+                        "authority_content_revision": self.sha,
                         "reviewed_tree_sha": "e" * 40,
                     }
                 )

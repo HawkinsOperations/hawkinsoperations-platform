@@ -11900,6 +11900,7 @@ def hoxline_case_growth_review_manifest(org_root: Path) -> dict[str, dict[str, A
                 "repository",
                 "canonical_repository",
                 "revision",
+                "authority_content_revision",
                 "reviewed_tree_sha",
             }:
                 raise FactoryError(
@@ -11908,6 +11909,13 @@ def hoxline_case_growth_review_manifest(org_root: Path) -> dict[str, dict[str, A
             if re.fullmatch(r"[0-9a-f]{40}", str(entry.get("revision", ""))) is None:
                 raise FactoryError(
                     f"command-center reviewed revision must be immutable: {repo_name}"
+                )
+            if re.fullmatch(
+                r"[0-9a-f]{40}",
+                str(entry.get("authority_content_revision", "")),
+            ) is None:
+                raise FactoryError(
+                    f"command-center authority content revision must be immutable: {repo_name}"
                 )
             if re.fullmatch(
                 r"[0-9a-f]{40}", str(entry.get("reviewed_tree_sha", ""))
@@ -12306,6 +12314,11 @@ def hoxline_case_growth_convergence_verify(
             if repo_name == ".github"
             else review_manifest_entry.get("reviewed_tree_sha")
         )
+        manifest_content_revision = (
+            state["head"]
+            if repo_name == ".github"
+            else review_manifest_entry.get("authority_content_revision")
+        )
         if (
             manifest_entry.get("revision_source")
             == "checked_platform_observation"
@@ -12401,6 +12414,9 @@ def hoxline_case_growth_convergence_verify(
                 "authoritative_content_fingerprint": current_semantic_fingerprint,
                 "manifest_selected_reviewed_revision": manifest_revision,
                 "manifest_selected_reviewed_tree": manifest_reviewed_tree,
+                "manifest_selected_authority_content_revision": (
+                    manifest_content_revision
+                ),
                 "current_event_observation_revision": current_observation_revision,
             }
         )
@@ -12628,6 +12644,10 @@ def hoxline_case_growth_convergence_verify(
             r"[0-9a-fA-F]{40}", manifest_revision
         ):
             selected_observations.add(manifest_revision)
+        if isinstance(manifest_content_revision, str) and re.fullmatch(
+            r"[0-9a-fA-F]{40}", manifest_content_revision
+        ):
+            selected_observations.add(manifest_content_revision)
         stated_is_reviewed_identity = False
         stated_relationship: dict[str, Any] | None = None
         if stated_sha not in selected_observations:
@@ -12638,9 +12658,9 @@ def hoxline_case_growth_convergence_verify(
                 repo_path, stated_sha, state["head"]
             )
             manifest_is_ancestor_of_stated = (
-                isinstance(manifest_revision, str)
+                isinstance(manifest_content_revision, str)
                 and hoxline_case_growth_is_ancestor(
-                    repo_path, manifest_revision, stated_sha
+                    repo_path, manifest_content_revision, stated_sha
                 )
             )
             current_tree = hoxline_case_growth_tree_sha(repo_path, state["head"])
@@ -12656,11 +12676,11 @@ def hoxline_case_growth_convergence_verify(
             )
             generated_pair_parent_selects_stated = (
                 repo_name == "hoxline"
-                and isinstance(manifest_revision, str)
+                and isinstance(manifest_content_revision, str)
                 and hoxline_case_growth_is_direct_parent(
                     repo_path,
                     stated_sha,
-                    manifest_revision,
+                    manifest_content_revision,
                 )
             )
             reviewed_lineage_selects_stated = (
