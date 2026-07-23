@@ -151,7 +151,7 @@ jobs:
               ".7z", ".avif", ".avi", ".bz2", ".dll", ".dylib", ".eot", ".exe", ".gif",
               ".gz", ".ico", ".jpeg", ".jpg", ".mov", ".mp3", ".mp4", ".pdf",
               ".png", ".pyc", ".so", ".tar", ".tgz", ".ttf", ".wasm", ".webp",
-              ".woff", ".woff2", ".xz", ".zip",
+              ".sqlite", ".woff", ".woff2", ".xz", ".zip",
           })
           paths = subprocess.run(
               ["git", "ls-files", "-z"],

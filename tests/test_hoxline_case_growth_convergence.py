@@ -37,7 +37,9 @@ def run_workflow_vocabulary_guard(workflow_path: Path, files: dict[str, bytes]):
         root = Path(temp)
         subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
         for relative, content in files.items():
-            (root / relative).write_bytes(content)
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
         subprocess.run(["git", "add", "--", *files], cwd=root, check=True)
         return subprocess.run(
             [sys.executable, "-c", source],
@@ -913,6 +915,30 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                 text=True,
             )
         self.assertNotEqual(0, operational.returncode)
+
+    def test_source_workflow_vocabulary_guard_classifies_sqlite_as_binary(
+        self,
+    ) -> None:
+        workflow_path = ROOT / ".github/workflows/hoxline-source-checks.yml"
+        sqlite = run_workflow_vocabulary_guard(
+            workflow_path,
+            {
+                "evidence/autosoc-case-ledger-v0.sqlite": (
+                    b"SQLite format 3\x00\x10\x00\x01\x01"
+                ),
+            },
+        )
+        self.assertEqual(0, sqlite.returncode, sqlite.stderr + sqlite.stdout)
+
+        unknown_binary = run_workflow_vocabulary_guard(
+            workflow_path,
+            {"evidence/unclassified-ledger.payload": b"binary\x00content"},
+        )
+        self.assertNotEqual(0, unknown_binary.returncode)
+        self.assertIn(
+            "tracked non-binary content contains NUL",
+            unknown_binary.stderr + unknown_binary.stdout,
+        )
 
     def test_controlled_test_truth_class_replaces_retired_factory_token(self) -> None:
         factory = SCRIPT_PATH.read_text(encoding="utf-8")
