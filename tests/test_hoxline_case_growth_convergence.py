@@ -543,6 +543,43 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             )
         self.assertEqual("pass", result["status"])
 
+    def test_command_center_content_survives_squash_identity(self) -> None:
+        content_commit = "c" * 40
+        rewritten_head = "d" * 40
+        self.snapshot["source_revisions"][".github"]["source_commit_sha"] = (
+            content_commit
+        )
+        self.snapshot["source_revisions"][".github"][
+            "source_observed_head_sha"
+        ] = content_commit
+        for entry in self.review_manifest["repositories"]:
+            if entry["repository"] == ".github":
+                entry["authority_content_revision"] = content_commit
+        self.write_sources()
+        with mock.patch.dict(
+            ho_factory.os.environ,
+            {"HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA": rewritten_head},
+            clear=True,
+        ):
+            result = self.verify(
+                branch="",
+                head=rewritten_head,
+                tree_overrides={
+                    content_commit: "c" * 40,
+                    self.sha: "e" * 40,
+                    rewritten_head: "e" * 40,
+                },
+            )
+        self.assertEqual("pass", result["status"])
+        self.assertNotIn(
+            "SOURCE_AUTHORITY_CONTENT_RELATIONSHIP_INVALID",
+            {
+                item["code"]
+                for item in result["contradictions"]
+                if item.get("repo") == ".github"
+            },
+        )
+
     def test_rewritten_tree_rejects_content_outside_reviewed_lineage(self) -> None:
         content_commit = "c" * 40
         rewritten_head = "d" * 40
