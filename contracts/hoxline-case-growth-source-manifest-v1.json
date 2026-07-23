@@ -7,7 +7,7 @@
   "repositories": {
     ".github": {
       "repository": "HawkinsOperations/.github",
-      "revision": "fee75e7a88c0b623590786e02f69d4297a0e10b4"
+      "revision": "b0b0bf187163edc80fa042e72c8ccd8436677a1d"
     },
     "hawkinsoperations-detections": {
       "repository": "HawkinsOperations/hawkinsoperations-detections",
@@ -19,15 +19,15 @@
     },
     "hawkinsoperations-proof": {
       "repository": "HawkinsOperations/hawkinsoperations-proof",
-      "revision": "8ff2c1a2f1762e7635fe24194617f110275c2f0c"
+      "revision": "c60882552571c1664549d3e594c6994dc27dce63"
     },
     "hawkinsoperations-website": {
       "repository": "HawkinsOperations/hawkinsoperations-website",
-      "revision": "3c8202b730836074e20c4fa1e3601741a02ee616"
+      "revision": "7709c7aec560ad0195ca171c093e4f8468301796"
     },
     "hoxline": {
       "repository": "HawkinsOperations/hoxline",
-      "revision": "500c47bbd14db671c95ab823aae9ba20ab56a783"
+      "revision": "352cc0b66fbd78cb1d522934a4262c4ec6c231a4"
     },
     "hawkinsoperations-platform": {
       "repository": "HawkinsOperations/hawkinsoperations-platform",
