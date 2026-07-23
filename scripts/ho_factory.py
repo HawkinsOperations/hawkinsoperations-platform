@@ -12753,6 +12753,14 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
             "Hoxline source checks omit mandatory platform gates: "
             + ", ".join(missing_commands)
         )
+    explicit_workflow_root = (
+        'hoxline-workflow-safety-verify --repo-root '
+        '"$GITHUB_WORKSPACE/source-set/hawkinsoperations-platform"'
+    )
+    if explicit_workflow_root not in source:
+        raise FactoryError(
+            "Hoxline workflow safety must inspect the explicit checked platform repository root"
+        )
     if "lifetime-ledger-" in source:
         raise FactoryError("Ledger jobs must remain independent from mandatory convergence checks")
     governance = workflows.get("governance-gate.yml", "")

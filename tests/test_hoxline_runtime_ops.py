@@ -137,6 +137,21 @@ class HoxlineRuntimeOpsTests(unittest.TestCase):
         with self.assertRaisesRegex(ho_factory.FactoryError, "immutable SHA"):
             ho_factory.hoxline_workflow_safety_verify(Path(temp_dir.name))
 
+    def test_workflow_safety_rejects_ambiguous_process_working_directory(self) -> None:
+        temp_dir = self.mutated_workflow_root(
+            "hoxline-source-checks.yml",
+            lambda text: text.replace(
+                '"$GITHUB_WORKSPACE/source-set/hawkinsoperations-platform"',
+                '"$PWD"',
+                1,
+            ),
+        )
+        with self.assertRaisesRegex(
+            ho_factory.FactoryError,
+            "explicit checked platform repository root",
+        ):
+            ho_factory.hoxline_workflow_safety_verify(Path(temp_dir.name))
+
     def test_canary_from_sanitized_receipts_builds_replay_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             route = Path(tmp) / "private-route"

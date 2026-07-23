@@ -182,7 +182,7 @@ jobs:
       - name: Workflow safety checks
         working-directory: source-set/hawkinsoperations-platform
         run: |
-          python -B scripts/ho_factory.py hoxline-workflow-safety-verify --repo-root "$PWD" --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-workflow-safety-verify --repo-root "$GITHUB_WORKSPACE/source-set/hawkinsoperations-platform" --format json >/dev/null
 
       - name: Python unit tests
         working-directory: source-set/hawkinsoperations-platform
