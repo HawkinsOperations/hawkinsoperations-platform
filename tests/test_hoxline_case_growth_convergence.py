@@ -638,6 +638,33 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             )
         self.assertEqual("pass", result["status"])
 
+    def test_command_center_self_content_survives_rewritten_event_tree(
+        self,
+    ) -> None:
+        content_commit = "c" * 40
+        rewritten_head = "d" * 40
+        self.snapshot["source_revisions"][".github"][
+            "source_commit_sha"
+        ] = content_commit
+        self.snapshot["source_revisions"][".github"][
+            "source_observed_head_sha"
+        ] = content_commit
+        self.review_manifest["repositories"][0][
+            "authority_content_revision"
+        ] = content_commit
+        self.write_sources()
+        result = self.verify(
+            branch="feature/test",
+            head=rewritten_head,
+            ancestor_pairs={(self.sha, rewritten_head)},
+            tree_overrides={
+                content_commit: "c" * 40,
+                self.sha: "e" * 40,
+                rewritten_head: "e" * 40,
+            },
+        )
+        self.assertEqual("pass", result["status"])
+
     def test_command_center_self_future_content_revision_is_rejected(self) -> None:
         historical_head = "c" * 40
         self.write_sources()

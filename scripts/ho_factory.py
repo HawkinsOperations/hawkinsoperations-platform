@@ -12529,7 +12529,10 @@ def hoxline_case_growth_convergence_verify(
                 manifest_content_revision != state["head"]
                 and not current_is_content_ancestor
                 and not content_is_current_ancestor
-                and content_is_reviewed_ancestor
+                and (
+                    repo_name == ".github"
+                    or content_is_reviewed_ancestor
+                )
                 and current_is_exact_reviewed_tree
             )
             content_relationship_valid = (
