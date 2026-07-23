@@ -971,7 +971,9 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         sqlite = run_workflow_vocabulary_guard(
             workflow_path,
             {
-                "evidence/autosoc-case-ledger-v0.sqlite": valid_sqlite_blob(),
+                "evidence/autosoc-case-ledger-v0.sqlite": (
+                    ROOT / "evidence" / "autosoc-case-ledger-v0.sqlite"
+                ).read_bytes(),
             },
         )
         self.assertEqual(0, sqlite.returncode, sqlite.stderr + sqlite.stdout)
@@ -1014,8 +1016,21 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         )
         self.assertNotEqual(0, magic_prefix_masquerade.returncode)
         self.assertIn(
-            "tracked SQLite content is not a valid database",
+            "tracked SQLite blob identity is not approved",
             magic_prefix_masquerade.stderr + magic_prefix_masquerade.stdout,
+        )
+
+        valid_database_replacement = run_workflow_vocabulary_guard(
+            workflow_path,
+            {
+                "evidence/autosoc-case-ledger-v0.sqlite": valid_sqlite_blob(),
+            },
+        )
+        self.assertNotEqual(0, valid_database_replacement.returncode)
+        self.assertIn(
+            "tracked SQLite blob identity is not approved",
+            valid_database_replacement.stderr
+            + valid_database_replacement.stdout,
         )
 
         unapproved_sqlite = run_workflow_vocabulary_guard(

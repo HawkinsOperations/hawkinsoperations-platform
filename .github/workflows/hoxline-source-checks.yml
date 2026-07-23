@@ -143,14 +143,17 @@ jobs:
         run: |
           python - <<'PY'
           import subprocess
+          import hashlib
           import sqlite3
           import unicodedata
           from pathlib import Path, PurePosixPath
 
           retired = "".join(("syn", "thetic"))
-          immutable_sqlite_paths = frozenset({
-              "evidence/autosoc-case-ledger-v0.sqlite",
-          })
+          immutable_sqlite_blobs = {
+              "evidence/autosoc-case-ledger-v0.sqlite": (
+                  "5b2107512570dc5a2e1377b62ea1a689c9056c3f"
+              ),
+          }
           binary_extensions = frozenset({
               ".7z", ".avif", ".avi", ".bz2", ".dll", ".dylib", ".eot", ".exe", ".gif",
               ".gz", ".ico", ".jpeg", ".jpg", ".mov", ".mp3", ".mp4", ".pdf",
@@ -173,12 +176,21 @@ jobs:
               ).stdout
               suffix = PurePosixPath(relative).suffix.casefold()
               if suffix == ".sqlite":
-                  if relative not in immutable_sqlite_paths:
+                  expected_blob = immutable_sqlite_blobs.get(relative)
+                  if expected_blob is None:
                       findings.append(f"unapproved tracked SQLite path: {relative}")
                       continue
                   if not blob.startswith(b"SQLite format 3\0"):
                       findings.append(
                           f"tracked SQLite content has invalid file signature: {relative}"
+                      )
+                      continue
+                  actual_blob = hashlib.sha1(
+                      f"blob {len(blob)}\0".encode("ascii") + blob
+                  ).hexdigest()
+                  if actual_blob != expected_blob:
+                      findings.append(
+                          f"tracked SQLite blob identity is not approved: {relative}"
                       )
                       continue
                   if Path(relative).read_bytes() != blob:
