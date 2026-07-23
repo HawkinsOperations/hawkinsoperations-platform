@@ -1151,6 +1151,44 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             ),
         )
 
+    def test_exact_public_safe_source_owner_pointer_is_bounded(self) -> None:
+        bounded = {
+            "public_safe_policy": {
+                "public_safe_source_required": "hawkinsoperations-proof"
+            }
+        }
+        self.assertEqual(
+            [],
+            ho_factory.hoxline_case_growth_authority_violations(bounded),
+        )
+        for hostile in ("PUBLIC_SAFE", True):
+            with self.subTest(hostile=hostile):
+                attack = {
+                    "public_safe_policy": {
+                        "public_safe_source_required": hostile
+                    }
+                }
+                self.assertTrue(
+                    ho_factory.hoxline_case_growth_authority_violations(attack)
+                )
+
+    def test_negative_metadata_paths_do_not_exempt_structured_laundering(self) -> None:
+        attacks = (
+            {"freshness_policy": {"production_live": True}},
+            {"blocked_claims": [{"ai_authority": {"enabled": True}}]},
+            {
+                "no_proof_promotion_statement": {
+                    "public_safe_status": "PUBLIC_SAFE"
+                }
+            },
+        )
+
+        for attack in attacks:
+            with self.subTest(attack=attack):
+                self.assertTrue(
+                    ho_factory.hoxline_case_growth_authority_violations(attack)
+                )
+
     def test_nested_authority_string_laundering_fails_closed(self) -> None:
         self.website["extensions"] = {
             "opaque": [{"note": "customer deployed and production ready"}]
@@ -1211,6 +1249,17 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         for prose in (
             "does not prove customer deployed",
             "missing production ready",
+            (
+                "This does not prove runtime-active status, signal-observed "
+                "status, production-ready status, public-safe status, "
+                "AI-approved status, or analyst-approved status."
+            ),
+            (
+                "Render only bounded metadata; never treat rendering as proof, "
+                "runtime truth, public-safe status, final authorization, or "
+                "case closure."
+            ),
+            "Café résumé – reviewer note.",
         ):
             with self.subTest(prose=prose):
                 self.website["extensions"] = {"opaque": [{"note": prose}]}
@@ -1224,6 +1273,19 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
     def test_negation_cannot_launder_later_adversative_promotion(self) -> None:
         attacks = (
             "does not prove customer deployed, but public safe",
+            "does not prove runtime, customer deployment is active",
+            "does not prove runtime, AI authority is enabled",
+            "does not prove runtime, analyst approval granted",
+            "does not prove runtime, public safe is confirmed",
+            "does not prove runtime, final authorization received",
+            "does not prove runtime, case closure approved",
+            "does not prove runtime and customer deployment is active",
+            "does not prove runtime plus public safe is confirmed",
+            "does not prove runtime though case closure is approved",
+            "public\u200b safe is confirmed",
+            "case\u200b closure approved",
+            "AI\u200b authority is enabled",
+            "runtime\u200b is active",
             "pending documentation, production is live",
             "unsupported note — customer environment deployed",
             "future issue: signal was observed",
