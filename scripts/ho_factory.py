@@ -11510,6 +11510,22 @@ HOXLINE_CASE_GROWTH_AUTHORITY_PATHS = {
     "hoxline": "src/hoxline/case_growth/collector.py",
 }
 
+HOXLINE_CASE_GROWTH_OBSERVATION_PROJECTION_PATHS = {
+    ".github": frozenset({"governance/CONVERGENCE_SOURCE_MANIFEST.json"}),
+    "hawkinsoperations-website": frozenset(
+        {
+            "public/data/public-status.json",
+            "src/data/generated/public-status.generated.ts",
+        }
+    ),
+    "hoxline": frozenset(
+        {
+            "examples/case-growth/current-case-growth-index.json",
+            "examples/case-growth/current-case-growth-index.md",
+        }
+    ),
+}
+
 HOXLINE_CANONICAL_ORIGINS = {
     name: f"github.com/HawkinsOperations/{name}".casefold() for name in HOXLINE_CASE_GROWTH_REPOS
 }
@@ -12389,6 +12405,33 @@ def hoxline_case_growth_tree_sha(repo_path: Path, revision: str) -> str | None:
     return value if result.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", value) else None
 
 
+def hoxline_case_growth_changed_paths(
+    repo_path: Path, older_revision: str, newer_revision: str
+) -> frozenset[str] | None:
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_path),
+            "diff",
+            "--name-only",
+            "--no-renames",
+            older_revision,
+            newer_revision,
+            "--",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    paths = [line.strip().replace("\\", "/") for line in result.stdout.splitlines()]
+    if any(not path or path.startswith("/") or ".." in path.split("/") for path in paths):
+        return None
+    return frozenset(paths)
+
+
 def hoxline_case_growth_source_revisions(snapshot: dict[str, Any]) -> dict[str, dict[str, Any]]:
     raw = snapshot.get("source_revisions")
     normalized: dict[str, dict[str, Any]] = {}
@@ -13195,15 +13238,37 @@ def hoxline_case_growth_convergence_verify(
                     manifest_revision,
                 )
             )
+            projection_paths = HOXLINE_CASE_GROWTH_OBSERVATION_PROJECTION_PATHS.get(
+                repo_name
+            )
+            observed_projection_paths = (
+                hoxline_case_growth_changed_paths(
+                    repo_path, stated_sha, state["head"]
+                )
+                if projection_paths is not None
+                else None
+            )
+            reviewed_tree_projection_selects_stated = (
+                projection_paths is not None
+                and observed_projection_paths == projection_paths
+                and current_tree is not None
+                and current_tree == manifest_reviewed_tree
+                and manifest_is_ancestor_of_stated
+            )
             reviewed_lineage_selects_stated = (
                 manifest_is_ancestor_of_stated
                 or manifest_tree_selects_stated
                 or generated_pair_parent_selects_stated
+                or reviewed_tree_projection_selects_stated
             )
             stated_is_reviewed_identity = (
                 not current_is_historical_ancestor
                 and reviewed_lineage_selects_stated
-                and (stated_is_ancestor or tree_is_reviewed_equivalent)
+                and (
+                    stated_is_ancestor
+                    or tree_is_reviewed_equivalent
+                    or reviewed_tree_projection_selects_stated
+                )
             )
             stated_relationship = {
                 "current_head": state["head"],
@@ -13219,6 +13284,14 @@ def hoxline_case_growth_convergence_verify(
                 "manifest_tree_selects_stated": manifest_tree_selects_stated,
                 "generated_pair_parent_selects_stated": (
                     generated_pair_parent_selects_stated
+                ),
+                "reviewed_tree_projection_selects_stated": (
+                    reviewed_tree_projection_selects_stated
+                ),
+                "observed_projection_paths": (
+                    None
+                    if observed_projection_paths is None
+                    else sorted(observed_projection_paths)
                 ),
                 "reviewed_lineage_selects_stated": (
                     reviewed_lineage_selects_stated

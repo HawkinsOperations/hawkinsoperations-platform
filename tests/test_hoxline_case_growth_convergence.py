@@ -279,6 +279,8 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         ancestor_pairs: set[tuple[str, str]] | None = None,
         direct_parent_pairs: set[tuple[str, str]] | None = None,
         tree_overrides: dict[str, str | None] | None = None,
+        changed_paths_overrides: dict[tuple[str, str, str], set[str] | None]
+        | None = None,
     ) -> dict:
         resolved_head = head or self.sha
         selected_blob_overrides = blob_overrides or {}
@@ -286,6 +288,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         selected_ancestor_pairs = ancestor_pairs or set()
         selected_direct_parent_pairs = direct_parent_pairs or set()
         selected_tree_overrides = tree_overrides or {}
+        selected_changed_paths_overrides = changed_paths_overrides or {}
 
         def git_blob(repo_path: Path, revision: str, relative_path: str) -> tuple[str, bytes]:
             blob_sha = selected_blob_overrides.get(
@@ -329,6 +332,21 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             "hoxline_case_growth_tree_sha",
             side_effect=lambda _repo_path, revision: selected_tree_overrides.get(
                 revision, "e" * 40
+            ),
+        ), mock.patch.object(
+            ho_factory,
+            "hoxline_case_growth_changed_paths",
+            side_effect=lambda repo_path, older, newer: (
+                None
+                if selected_changed_paths_overrides.get(
+                    (repo_path.name, older, newer), set()
+                )
+                is None
+                else frozenset(
+                    selected_changed_paths_overrides.get(
+                        (repo_path.name, older, newer), set()
+                    )
+                )
             ),
         ):
             return ho_factory.hoxline_case_growth_convergence_verify(
@@ -932,6 +950,141 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         )
         self.assertEqual("pass", result["status"])
         self.assertNotIn(
+            "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_rewritten_head_accepts_exact_reviewed_consumer_projection(self) -> None:
+        stated_sha = "c" * 40
+        rewritten_head = "d" * 40
+        reviewed_tree = "f" * 40
+        self.snapshot["source_revisions"]["hoxline"][
+            "current_observed_head_sha"
+        ] = stated_sha
+        for entry in self.review_manifest["repositories"]:
+            if "reviewed_tree_sha" in entry:
+                entry["reviewed_tree_sha"] = reviewed_tree
+        self.write_sources()
+        result = self.verify(
+            head=rewritten_head,
+            ancestor_pairs={
+                (self.sha, stated_sha),
+                (self.sha, rewritten_head),
+            },
+            tree_overrides={
+                stated_sha: "1" * 40,
+                rewritten_head: reviewed_tree,
+                self.sha: reviewed_tree,
+            },
+            changed_paths_overrides={
+                ("hoxline", stated_sha, rewritten_head): {
+                    "examples/case-growth/current-case-growth-index.json",
+                    "examples/case-growth/current-case-growth-index.md",
+                }
+            },
+        )
+        self.assertEqual("pass", result["status"], result)
+        self.assertNotIn(
+            "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_rewritten_head_rejects_foreign_exact_path_projection(self) -> None:
+        stated_sha = "c" * 40
+        rewritten_head = "d" * 40
+        reviewed_tree = "f" * 40
+        self.snapshot["source_revisions"]["hoxline"][
+            "current_observed_head_sha"
+        ] = stated_sha
+        for entry in self.review_manifest["repositories"]:
+            if "reviewed_tree_sha" in entry:
+                entry["reviewed_tree_sha"] = reviewed_tree
+        self.write_sources()
+        result = self.verify(
+            head=rewritten_head,
+            ancestor_pairs={(self.sha, rewritten_head)},
+            tree_overrides={
+                stated_sha: "1" * 40,
+                rewritten_head: reviewed_tree,
+                self.sha: reviewed_tree,
+            },
+            changed_paths_overrides={
+                ("hoxline", stated_sha, rewritten_head): {
+                    "examples/case-growth/current-case-growth-index.json",
+                    "examples/case-growth/current-case-growth-index.md",
+                }
+            },
+        )
+        self.assertIn(
+            "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_rewritten_command_center_accepts_exact_manifest_projection(self) -> None:
+        stated_sha = "c" * 40
+        rewritten_head = "d" * 40
+        reviewed_tree = "f" * 40
+        self.snapshot["source_revisions"][".github"][
+            "current_observed_head_sha"
+        ] = stated_sha
+        for entry in self.review_manifest["repositories"]:
+            if "reviewed_tree_sha" in entry:
+                entry["reviewed_tree_sha"] = reviewed_tree
+        self.write_sources()
+        result = self.verify(
+            head=rewritten_head,
+            ancestor_pairs={
+                (self.sha, stated_sha),
+                (self.sha, rewritten_head),
+            },
+            tree_overrides={
+                stated_sha: "1" * 40,
+                rewritten_head: reviewed_tree,
+                self.sha: reviewed_tree,
+            },
+            changed_paths_overrides={
+                (".github", stated_sha, rewritten_head): {
+                    "governance/CONVERGENCE_SOURCE_MANIFEST.json",
+                }
+            },
+        )
+        self.assertEqual("pass", result["status"], result)
+        self.assertNotIn(
+            "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_rewritten_head_rejects_projection_with_extra_path(self) -> None:
+        stated_sha = "c" * 40
+        rewritten_head = "d" * 40
+        reviewed_tree = "f" * 40
+        self.snapshot["source_revisions"]["hoxline"][
+            "current_observed_head_sha"
+        ] = stated_sha
+        for entry in self.review_manifest["repositories"]:
+            if "reviewed_tree_sha" in entry:
+                entry["reviewed_tree_sha"] = reviewed_tree
+        self.write_sources()
+        result = self.verify(
+            head=rewritten_head,
+            ancestor_pairs={
+                (self.sha, stated_sha),
+                (self.sha, rewritten_head),
+            },
+            tree_overrides={
+                stated_sha: "1" * 40,
+                rewritten_head: reviewed_tree,
+                self.sha: reviewed_tree,
+            },
+            changed_paths_overrides={
+                ("hoxline", stated_sha, rewritten_head): {
+                    "examples/case-growth/current-case-growth-index.json",
+                    "examples/case-growth/current-case-growth-index.md",
+                    "src/hoxline/case_growth/collector.py",
+                }
+            },
+        )
+        self.assertIn(
             "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
             {item["code"] for item in result["contradictions"]},
         )
