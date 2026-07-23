@@ -41,6 +41,10 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             self.org_root
             / "hawkinsoperations-platform/contracts/hoxline-case-growth-source-manifest-v1.json"
         )
+        self.review_manifest_path = (
+            self.org_root
+            / ".github/governance/CONVERGENCE_SOURCE_MANIFEST.json"
+        )
         self.authority_paths = {
             repo: self.org_root / repo / relative_path
             for repo, relative_path in ho_factory.HOXLINE_CASE_GROWTH_AUTHORITY_PATHS.items()
@@ -53,6 +57,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             self.website_path,
             self.contract_path,
             self.source_manifest_path,
+            self.review_manifest_path,
             *self.authority_paths.values(),
         ):
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -160,6 +165,39 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                 "hoxline_is_cross_domain_authority": False,
             },
         }
+        self.review_manifest = {
+            "schema": "hawkinsoperations-convergence-source-manifest-v1",
+            "manifest_id": "HAWKINSOPERATIONS_SEVEN_SOURCE_PR_HEAD_MATRIX_V1",
+            "repositories": [
+                (
+                    {
+                        "repository": repo,
+                        "canonical_repository": f"HawkinsOperations/{repo}",
+                        "revision_source": "github_event_sha",
+                        "tree_source": "github_event_tree",
+                    }
+                    if repo == ".github"
+                    else {
+                        "repository": repo,
+                        "canonical_repository": f"HawkinsOperations/{repo}",
+                        "revision": self.sha,
+                        "reviewed_tree_sha": "e" * 40,
+                    }
+                )
+                for repo in ho_factory.HOXLINE_CASE_GROWTH_REPOS
+            ],
+            "constraints": {
+                "exact_repository_count": 7,
+                "read_only": True,
+                "default_branch_fallback": False,
+                "require_detached_exact_revision": True,
+                "record_checked_revisions": True,
+                "consumer_outputs_are_not_authority": True,
+                "proof_ceiling": (
+                    "CONTROLLED_REPO_CONVERGENCE_AND_LOCAL_FIXTURE_REVIEW_ONLY"
+                ),
+            },
+        }
         self.write_sources()
 
     def write_sources(self) -> None:
@@ -178,6 +216,9 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.contract_path.write_text(json.dumps(self.contract), encoding="utf-8")
         self.source_manifest_path.write_text(
             json.dumps(self.source_manifest), encoding="utf-8"
+        )
+        self.review_manifest_path.write_text(
+            json.dumps(self.review_manifest), encoding="utf-8"
         )
         revisions = self.snapshot["source_revisions"]
         revision_map = (
@@ -298,9 +339,11 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
 
     def test_manifest_selected_stale_head_with_same_authority_blob_is_bounded(self) -> None:
         self.snapshot["source_revisions"]["hawkinsoperations-proof"]["source_commit_sha"] = "b" * 40
-        self.source_manifest["repositories"]["hawkinsoperations-proof"]["revision"] = "b" * 40
+        for entry in self.review_manifest["repositories"]:
+            if entry["repository"] == "hawkinsoperations-proof":
+                entry["revision"] = "b" * 40
         self.write_sources()
-        result = self.verify()
+        result = self.verify(ancestor_pairs={("b" * 40, self.sha)})
         self.assertEqual(result["status"], "pass")
         self.assertIn(
             "SOURCE_HEAD_OBSERVATION_STALE_CONTENT_CURRENT",
@@ -391,10 +434,108 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             )
         self.assertEqual("pass", result["status"])
 
+    def test_platform_snapshot_reviewed_ancestor_of_current_is_accepted(self) -> None:
+        merge_head = "d" * 40
+        self.write_sources()
+        with mock.patch.dict(
+            ho_factory.os.environ,
+            {"HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA": merge_head},
+            clear=True,
+        ):
+            result = self.verify(
+                branch="",
+                head=merge_head,
+                ancestor_pairs={(self.sha, merge_head)},
+            )
+        self.assertEqual("pass", result["status"])
+
+    def test_platform_snapshot_exact_tree_survives_rewritten_identity(self) -> None:
+        rewritten_head = "d" * 40
+        self.write_sources()
+        with mock.patch.dict(
+            ho_factory.os.environ,
+            {"HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA": rewritten_head},
+            clear=True,
+        ):
+            result = self.verify(
+                branch="",
+                head=rewritten_head,
+                tree_overrides={
+                    rewritten_head: "e" * 40,
+                    self.sha: "e" * 40,
+                },
+            )
+        self.assertEqual("pass", result["status"])
+
+    def test_platform_snapshot_current_ancestor_of_reviewed_is_rejected(self) -> None:
+        historical_head = "c" * 40
+        self.write_sources()
+        with mock.patch.dict(
+            ho_factory.os.environ,
+            {"HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA": historical_head},
+            clear=True,
+        ):
+            result = self.verify(
+                branch="",
+                head=historical_head,
+                ancestor_pairs={(historical_head, self.sha)},
+            )
+        codes = {item["code"] for item in result["contradictions"]}
+        self.assertIn("SOURCE_MANIFEST_OBSERVATION_RELATIONSHIP_INVALID", codes)
+        self.assertIn("SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED", codes)
+
+    def test_platform_snapshot_unrelated_detached_revision_is_rejected(self) -> None:
+        rewritten_head = "d" * 40
+        unrelated_review = "f" * 40
+        self.snapshot["source_revisions"]["hawkinsoperations-platform"][
+            "source_commit_sha"
+        ] = unrelated_review
+        self.write_sources()
+        with mock.patch.dict(
+            ho_factory.os.environ,
+            {"HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA": rewritten_head},
+            clear=True,
+        ):
+            result = self.verify(
+                branch="",
+                head=rewritten_head,
+                tree_overrides={
+                    rewritten_head: "e" * 40,
+                    self.sha: "e" * 40,
+                    unrelated_review: "c" * 40,
+                },
+            )
+        self.assertIn(
+            "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_command_center_reviewed_tree_mismatch_fails_closed(self) -> None:
+        for entry in self.review_manifest["repositories"]:
+            if entry["repository"] == "hawkinsoperations-platform":
+                entry["reviewed_tree_sha"] = "c" * 40
+        self.write_sources()
+        result = self.verify()
+        self.assertIn(
+            "SOURCE_REVIEW_MANIFEST_TREE_MISMATCH",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_missing_command_center_review_manifest_fails_closed(self) -> None:
+        self.review_manifest_path.unlink()
+        result = self.verify()
+        self.assertIn(
+            "MALFORMED_SOURCE",
+            {item["code"] for item in result["contradictions"]},
+        )
+
     def test_arbitrary_same_blob_observation_not_selected_by_manifest_fails_closed(self) -> None:
         self.snapshot["source_revisions"]["hawkinsoperations-proof"]["source_commit_sha"] = "c" * 40
         self.write_sources()
-        result = self.verify()
+        result = self.verify(
+            ancestor_pairs={("c" * 40, self.sha)},
+            tree_overrides={"c" * 40: "d" * 40},
+        )
         self.assertIn(
             "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
             {item["code"] for item in result["contradictions"]},
@@ -410,7 +551,11 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             {"HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA": "d" * 40},
             clear=True,
         ):
-            result = self.verify(branch="", head="d" * 40)
+            result = self.verify(
+                branch="",
+                head="d" * 40,
+                tree_overrides={"c" * 40: "b" * 40},
+            )
         self.assertIn(
             "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
             {item["code"] for item in result["contradictions"]},

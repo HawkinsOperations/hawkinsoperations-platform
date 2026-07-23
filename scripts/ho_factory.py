@@ -11823,6 +11823,106 @@ def hoxline_case_growth_source_manifest(org_root: Path) -> dict[str, Any]:
     return manifest
 
 
+def hoxline_case_growth_review_manifest(org_root: Path) -> dict[str, dict[str, Any]]:
+    manifest_path = (
+        org_root
+        / ".github"
+        / "governance"
+        / "CONVERGENCE_SOURCE_MANIFEST.json"
+    )
+    manifest = hoxline_case_growth_load_json(manifest_path)
+    if set(manifest) != {"schema", "manifest_id", "repositories", "constraints"}:
+        raise FactoryError(
+            "command-center source manifest must use the exact v1 shape without extensions"
+        )
+    if (
+        manifest.get("schema")
+        != "hawkinsoperations-convergence-source-manifest-v1"
+        or manifest.get("manifest_id")
+        != "HAWKINSOPERATIONS_SEVEN_SOURCE_PR_HEAD_MATRIX_V1"
+    ):
+        raise FactoryError("command-center source manifest identity is invalid")
+    constraints = manifest.get("constraints")
+    expected_constraints = {
+        "exact_repository_count": 7,
+        "read_only": True,
+        "default_branch_fallback": False,
+        "require_detached_exact_revision": True,
+        "record_checked_revisions": True,
+        "consumer_outputs_are_not_authority": True,
+        "proof_ceiling": (
+            "CONTROLLED_REPO_CONVERGENCE_AND_LOCAL_FIXTURE_REVIEW_ONLY"
+        ),
+    }
+    if constraints != expected_constraints:
+        raise FactoryError(
+            "command-center source manifest constraints must equal the fail-closed v1 contract"
+        )
+    raw_entries = manifest.get("repositories")
+    if not isinstance(raw_entries, list):
+        raise FactoryError(
+            "command-center source manifest repositories must be a list"
+        )
+    entries: dict[str, dict[str, Any]] = {}
+    for entry in raw_entries:
+        if not isinstance(entry, dict):
+            raise FactoryError(
+                "command-center source manifest repository entries must be objects"
+            )
+        repo_name = entry.get("repository")
+        if not isinstance(repo_name, str) or repo_name not in HOXLINE_CASE_GROWTH_REPOS:
+            raise FactoryError(
+                f"command-center source manifest repository is invalid: {repo_name}"
+            )
+        if repo_name in entries:
+            raise FactoryError(
+                f"command-center source manifest duplicates repository: {repo_name}"
+            )
+        if entry.get("canonical_repository") != f"HawkinsOperations/{repo_name}":
+            raise FactoryError(
+                f"command-center source manifest owner mismatch: {repo_name}"
+            )
+        if repo_name == ".github":
+            if set(entry) != {
+                "repository",
+                "canonical_repository",
+                "revision_source",
+                "tree_source",
+            } or (
+                entry.get("revision_source") != "github_event_sha"
+                or entry.get("tree_source") != "github_event_tree"
+            ):
+                raise FactoryError(
+                    "command-center self entry must use the checked event revision and tree"
+                )
+        else:
+            if set(entry) != {
+                "repository",
+                "canonical_repository",
+                "revision",
+                "reviewed_tree_sha",
+            }:
+                raise FactoryError(
+                    f"command-center source manifest entry has an unsupported shape: {repo_name}"
+                )
+            if re.fullmatch(r"[0-9a-f]{40}", str(entry.get("revision", ""))) is None:
+                raise FactoryError(
+                    f"command-center reviewed revision must be immutable: {repo_name}"
+                )
+            if re.fullmatch(
+                r"[0-9a-f]{40}", str(entry.get("reviewed_tree_sha", ""))
+            ) is None:
+                raise FactoryError(
+                    f"command-center reviewed tree must be immutable: {repo_name}"
+                )
+        entries[repo_name] = entry
+    if set(entries) != set(HOXLINE_CASE_GROWTH_REPOS):
+        raise FactoryError(
+            "command-center source manifest must name exactly the seven HawkinsOperations repositories"
+        )
+    return entries
+
+
 def hoxline_case_growth_authority_violations(
     value: Any,
     path: tuple[str, ...] = (),
@@ -12098,6 +12198,7 @@ def hoxline_case_growth_convergence_verify(
 
     try:
         source_manifest = hoxline_case_growth_source_manifest(org_root)
+        review_manifest_entries = hoxline_case_growth_review_manifest(org_root)
         snapshot = hoxline_case_growth_load_json(paths["hoxline_snapshot"])
         proof_index = hoxline_case_growth_load_yaml(paths["proof_index"])
         detection_matrix = hoxline_case_growth_load_yaml(paths["detection_matrix"])
@@ -12114,6 +12215,7 @@ def hoxline_case_growth_convergence_verify(
             "Repair the malformed source in its owner repository and rerun this read-only verifier.",
         )
         snapshot = proof_index = detection_matrix = validation_registry = website_status = platform_contract = {}
+        review_manifest_entries = {}
     manifest_entries = (
         source_manifest.get("repositories", {})
         if isinstance(source_manifest, dict)
@@ -12183,6 +12285,7 @@ def hoxline_case_growth_convergence_verify(
         sources[repo_name] = state
         branch = str(state.get("branch", ""))
         manifest_entry = manifest_entries.get(repo_name, {})
+        review_manifest_entry = review_manifest_entries.get(repo_name, {})
         current_observation_revision = (
             (
                 os.environ.get("HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA")
@@ -12194,8 +12297,14 @@ def hoxline_case_growth_convergence_verify(
             else None
         )
         manifest_revision = (
-            manifest_entry.get("revision")
-            or current_observation_revision
+            state["head"]
+            if repo_name == ".github"
+            else review_manifest_entry.get("revision")
+        )
+        manifest_reviewed_tree = (
+            hoxline_case_growth_tree_sha(repo_path, state["head"])
+            if repo_name == ".github"
+            else review_manifest_entry.get("reviewed_tree_sha")
         )
         if (
             manifest_entry.get("revision_source")
@@ -12291,6 +12400,7 @@ def hoxline_case_growth_convergence_verify(
                 "authoritative_git_blob_sha": current_blob_sha,
                 "authoritative_content_fingerprint": current_semantic_fingerprint,
                 "manifest_selected_reviewed_revision": manifest_revision,
+                "manifest_selected_reviewed_tree": manifest_reviewed_tree,
                 "current_event_observation_revision": current_observation_revision,
             }
         )
@@ -12303,7 +12413,7 @@ def hoxline_case_growth_convergence_verify(
                 issue(
                     "SOURCE_MANIFEST_REVISION_UNREACHABLE",
                     repo_name,
-                    "contracts/hoxline-case-growth-source-manifest-v1.json",
+                    "governance/CONVERGENCE_SOURCE_MANIFEST.json",
                     "reachable immutable revision in canonical repository",
                     manifest_revision,
                     f"Refresh the source manifest with a reviewed reachable {repo_name} revision.",
@@ -12352,6 +12462,24 @@ def hoxline_case_growth_convergence_verify(
                     reviewed_tree = hoxline_case_growth_tree_sha(
                         repo_path, manifest_revision
                     )
+                    reviewed_tree_is_manifest_selected = (
+                        reviewed_tree is not None
+                        and reviewed_tree == manifest_reviewed_tree
+                    )
+                    if not reviewed_tree_is_manifest_selected:
+                        manifest_content_matches_current = False
+                        issue(
+                            "SOURCE_REVIEW_MANIFEST_TREE_MISMATCH",
+                            repo_name,
+                            "governance/CONVERGENCE_SOURCE_MANIFEST.json",
+                            manifest_reviewed_tree,
+                            reviewed_tree,
+                            (
+                                f"Refresh the command-center manifest only after reviewing "
+                                f"the exact {repo_name} PR-head tree."
+                            ),
+                            revision=state["head"],
+                        )
                     tree_is_reviewed_equivalent = (
                         current_tree is not None
                         and reviewed_tree is not None
@@ -12359,6 +12487,7 @@ def hoxline_case_growth_convergence_verify(
                     )
                     observation_relationship_valid = (
                         not current_is_historical_ancestor
+                        and reviewed_tree_is_manifest_selected
                         and (reviewed_is_ancestor or tree_is_reviewed_equivalent)
                     )
                     if not observation_relationship_valid:
@@ -12366,7 +12495,7 @@ def hoxline_case_growth_convergence_verify(
                         issue(
                             "SOURCE_MANIFEST_OBSERVATION_RELATIONSHIP_INVALID",
                             repo_name,
-                            "contracts/hoxline-case-growth-source-manifest-v1.json",
+                            "governance/CONVERGENCE_SOURCE_MANIFEST.json",
                             (
                                 "checked current revision descended from the reviewed "
                                 "revision or carrying its exact reviewed repository tree"
@@ -12380,6 +12509,7 @@ def hoxline_case_growth_convergence_verify(
                                 "reviewed_is_ancestor": reviewed_is_ancestor,
                                 "current_tree": current_tree,
                                 "reviewed_tree": reviewed_tree,
+                                "manifest_reviewed_tree": manifest_reviewed_tree,
                             },
                             (
                                 f"Check out the intended current {repo_name} revision; "
@@ -12391,7 +12521,7 @@ def hoxline_case_growth_convergence_verify(
                         issue(
                             "SOURCE_MANIFEST_HEAD_OBSERVATION_STALE_CONTENT_CURRENT",
                             repo_name,
-                            "contracts/hoxline-case-growth-source-manifest-v1.json",
+                            "governance/CONVERGENCE_SOURCE_MANIFEST.json",
                             state["head"],
                             manifest_revision,
                             f"Refresh the observed {repo_name} manifest revision after merge; content identity remains current.",
@@ -12399,8 +12529,36 @@ def hoxline_case_growth_convergence_verify(
                             historical=True,
                         )
         elif manifest_revision == state["head"]:
-            manifest_content_matches_current = True
-        if not branch and not manifest_content_matches_current:
+            current_tree = hoxline_case_growth_tree_sha(repo_path, state["head"])
+            manifest_content_matches_current = (
+                current_tree is not None
+                and current_tree == manifest_reviewed_tree
+            )
+            if not manifest_content_matches_current:
+                issue(
+                    "SOURCE_REVIEW_MANIFEST_TREE_MISMATCH",
+                    repo_name,
+                    "governance/CONVERGENCE_SOURCE_MANIFEST.json",
+                    manifest_reviewed_tree,
+                    current_tree,
+                    (
+                        f"Refresh the command-center manifest only after reviewing "
+                        f"the exact {repo_name} PR-head tree."
+                    ),
+                    revision=state["head"],
+                )
+        detached_platform_observation_mismatch = (
+            repo_name == "hawkinsoperations-platform"
+            and not branch
+            and current_observation_revision != state["head"]
+        )
+        if (
+            not branch
+            and (
+                not manifest_content_matches_current
+                or detached_platform_observation_mismatch
+            )
+        ):
             issue(
                 "DETACHED_SOURCE_NOT_MANIFEST_SELECTED",
                 repo_name,
@@ -12470,17 +12628,75 @@ def hoxline_case_growth_convergence_verify(
             r"[0-9a-fA-F]{40}", manifest_revision
         ):
             selected_observations.add(manifest_revision)
+        stated_is_reviewed_identity = False
+        stated_relationship: dict[str, Any] | None = None
         if stated_sha not in selected_observations:
+            current_is_historical_ancestor = hoxline_case_growth_is_ancestor(
+                repo_path, state["head"], stated_sha
+            )
+            stated_is_ancestor = hoxline_case_growth_is_ancestor(
+                repo_path, stated_sha, state["head"]
+            )
+            manifest_is_ancestor_of_stated = (
+                isinstance(manifest_revision, str)
+                and hoxline_case_growth_is_ancestor(
+                    repo_path, manifest_revision, stated_sha
+                )
+            )
+            current_tree = hoxline_case_growth_tree_sha(repo_path, state["head"])
+            stated_tree = hoxline_case_growth_tree_sha(repo_path, stated_sha)
+            tree_is_reviewed_equivalent = (
+                current_tree is not None
+                and stated_tree is not None
+                and current_tree == stated_tree
+            )
+            manifest_tree_selects_stated = (
+                stated_tree is not None
+                and stated_tree == manifest_reviewed_tree
+            )
+            reviewed_lineage_selects_stated = (
+                repo_name == ".github"
+                or manifest_is_ancestor_of_stated
+                or manifest_tree_selects_stated
+            )
+            stated_is_reviewed_identity = (
+                not current_is_historical_ancestor
+                and reviewed_lineage_selects_stated
+                and (stated_is_ancestor or tree_is_reviewed_equivalent)
+            )
+            stated_relationship = {
+                "current_head": state["head"],
+                "stated_reviewed_revision": stated_sha,
+                "current_is_historical_ancestor": current_is_historical_ancestor,
+                "stated_is_ancestor": stated_is_ancestor,
+                "manifest_is_ancestor_of_stated": (
+                    manifest_is_ancestor_of_stated
+                ),
+                "current_tree": current_tree,
+                "stated_tree": stated_tree,
+                "tree_is_reviewed_equivalent": tree_is_reviewed_equivalent,
+                "manifest_tree_selects_stated": manifest_tree_selects_stated,
+                "reviewed_lineage_selects_stated": (
+                    reviewed_lineage_selects_stated
+                ),
+            }
+        if (
+            stated_sha not in selected_observations
+            and not stated_is_reviewed_identity
+        ):
             issue(
                 "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
                 repo_name,
                 f"source_revisions/{repo_name}",
                 sorted(selected_observations),
-                stated_sha,
+                stated_relationship or stated_sha,
                 (
-                    f"Record either the checked {repo_name} current head or the exact "
-                    "separately reviewed immutable source-manifest revision; arbitrary "
-                    "same-blob ancestors are not current authority observations."
+                    f"Record either the checked {repo_name} current head, the exact "
+                    "command-center-reviewed immutable revision, or a snapshot-reviewed "
+                    "revision inside the manifest-selected lineage that is an ancestor "
+                    "of current or has the exact reviewed full-tree identity. A current "
+                    "ancestor of the reviewed revision is historical, and an arbitrary "
+                    "same-blob ancestor outside the selected lineage is rejected."
                 ),
                 revision=state["head"],
             )
