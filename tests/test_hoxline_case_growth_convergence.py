@@ -99,6 +99,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                 repo: {
                     "source_commit_sha": self.sha,
                     "source_observed_head_sha": self.sha,
+                    "current_observed_head_sha": self.sha,
                     "source_observation_kind": "reviewed_immutable_commit",
                     "source_path": ho_factory.HOXLINE_CASE_GROWTH_AUTHORITY_PATHS[repo],
                     "source_git_blob_sha": "b" * 40,
@@ -348,10 +349,64 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         }
         result = self.verify()
         self.assertEqual(result["status"], "pass")
+        self.assertEqual([], result["drift"])
         self.assertTrue(result["read_only"])
         self.assertFalse(result["ledger_mutated"])
         self.assertFalse(result["public_proof_promoted"])
         self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+    def test_unreachable_current_observation_fails_closed(self) -> None:
+        forged_observation = "f" * 40
+        self.snapshot["source_revisions"]["hawkinsoperations-proof"][
+            "current_observed_head_sha"
+        ] = forged_observation
+        self.write_sources()
+        result = self.verify(missing_commits={forged_observation})
+        self.assertIn(
+            "SOURCE_REVISION_UNRESOLVED",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_missing_current_observation_fails_closed(self) -> None:
+        del self.snapshot["source_revisions"]["hawkinsoperations-proof"][
+            "current_observed_head_sha"
+        ]
+        self.write_sources()
+        result = self.verify()
+        self.assertIn(
+            "SOURCE_REVISION_INVALID",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_malformed_current_observation_fails_closed(self) -> None:
+        self.snapshot["source_revisions"]["hawkinsoperations-proof"][
+            "current_observed_head_sha"
+        ] = "not-a-commit"
+        self.write_sources()
+        result = self.verify()
+        self.assertIn(
+            "SOURCE_REVISION_INVALID",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_current_observation_content_mismatch_fails_closed(self) -> None:
+        reviewed_observation = "f" * 40
+        self.snapshot["source_revisions"]["hawkinsoperations-proof"][
+            "current_observed_head_sha"
+        ] = reviewed_observation
+        for entry in self.review_manifest["repositories"]:
+            if entry["repository"] == "hawkinsoperations-proof":
+                entry["revision"] = reviewed_observation
+        self.write_sources()
+        result = self.verify(
+            blob_overrides={
+                ("hawkinsoperations-proof", reviewed_observation): "c" * 40,
+            },
+        )
+        self.assertIn(
+            "SOURCE_OBSERVATION_CONTENT_MISMATCH",
+            {item["code"] for item in result["contradictions"]},
+        )
 
     def test_convergence_has_no_filesystem_mutation_primitive(self) -> None:
         with mock.patch.object(
@@ -373,7 +428,9 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.assertFalse(result["public_proof_promoted"])
 
     def test_manifest_selected_stale_head_with_same_authority_blob_is_bounded(self) -> None:
-        self.snapshot["source_revisions"]["hawkinsoperations-proof"]["source_commit_sha"] = "b" * 40
+        self.snapshot["source_revisions"]["hawkinsoperations-proof"][
+            "current_observed_head_sha"
+        ] = "b" * 40
         for entry in self.review_manifest["repositories"]:
             if entry["repository"] == "hawkinsoperations-proof":
                 entry["revision"] = "b" * 40
@@ -388,10 +445,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
     def test_detached_rewritten_tip_with_manifest_selected_same_blob_passes(self) -> None:
         rewritten_head = "d" * 40
         self.snapshot["source_revisions"]["hawkinsoperations-platform"][
-            "source_commit_sha"
-        ] = rewritten_head
-        self.snapshot["source_revisions"]["hawkinsoperations-platform"][
-            "source_observed_head_sha"
+            "current_observed_head_sha"
         ] = rewritten_head
         self.write_sources()
         with mock.patch.dict(
@@ -447,10 +501,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
     def test_reviewed_ancestor_of_current_same_blob_merge_passes(self) -> None:
         merge_head = "d" * 40
         self.snapshot["source_revisions"]["hawkinsoperations-platform"][
-            "source_commit_sha"
-        ] = merge_head
-        self.snapshot["source_revisions"]["hawkinsoperations-platform"][
-            "source_observed_head_sha"
+            "current_observed_head_sha"
         ] = merge_head
         self.write_sources()
         with mock.patch.dict(
@@ -522,6 +573,9 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.snapshot["source_revisions"]["hawkinsoperations-platform"][
             "source_observed_head_sha"
         ] = content_commit
+        self.snapshot["source_revisions"]["hawkinsoperations-platform"][
+            "current_observed_head_sha"
+        ] = rewritten_head
         for entry in self.review_manifest["repositories"]:
             if entry["repository"] == "hawkinsoperations-platform":
                 entry["authority_content_revision"] = content_commit
@@ -552,6 +606,9 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.snapshot["source_revisions"][".github"][
             "source_observed_head_sha"
         ] = content_commit
+        self.snapshot["source_revisions"][".github"][
+            "current_observed_head_sha"
+        ] = rewritten_head
         for entry in self.review_manifest["repositories"]:
             if entry["repository"] == ".github":
                 entry["authority_content_revision"] = content_commit
@@ -589,6 +646,9 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.snapshot["source_revisions"]["hawkinsoperations-platform"][
             "source_observed_head_sha"
         ] = content_commit
+        self.snapshot["source_revisions"]["hawkinsoperations-platform"][
+            "current_observed_head_sha"
+        ] = rewritten_head
         for entry in self.review_manifest["repositories"]:
             if entry["repository"] == "hawkinsoperations-platform":
                 entry["authority_content_revision"] = content_commit
@@ -633,7 +693,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         rewritten_head = "d" * 40
         unrelated_review = "f" * 40
         self.snapshot["source_revisions"]["hawkinsoperations-platform"][
-            "source_commit_sha"
+            "current_observed_head_sha"
         ] = unrelated_review
         self.write_sources()
         with mock.patch.dict(
@@ -711,6 +771,9 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.snapshot["source_revisions"][".github"][
             "source_observed_head_sha"
         ] = content_commit
+        self.snapshot["source_revisions"][".github"][
+            "current_observed_head_sha"
+        ] = rewritten_head
         self.review_manifest["repositories"][0][
             "authority_content_revision"
         ] = content_commit
@@ -738,6 +801,9 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.snapshot["source_revisions"][".github"][
             "source_observed_head_sha"
         ] = content_commit
+        self.snapshot["source_revisions"][".github"][
+            "current_observed_head_sha"
+        ] = rewritten_head
         self.review_manifest["repositories"][0][
             "authority_content_revision"
         ] = content_commit
@@ -842,7 +908,9 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.assertNotIn(retired, controller)
 
     def test_arbitrary_same_blob_observation_not_selected_by_manifest_fails_closed(self) -> None:
-        self.snapshot["source_revisions"]["hawkinsoperations-proof"]["source_commit_sha"] = "c" * 40
+        self.snapshot["source_revisions"]["hawkinsoperations-proof"][
+            "current_observed_head_sha"
+        ] = "c" * 40
         self.write_sources()
         result = self.verify(
             ancestor_pairs={("c" * 40, self.sha)},
@@ -856,7 +924,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
     def test_hoxline_generated_pair_selects_its_exact_content_parent(self) -> None:
         content_commit = "c" * 40
         self.snapshot["source_revisions"]["hoxline"][
-            "source_commit_sha"
+            "current_observed_head_sha"
         ] = content_commit
         self.write_sources()
         result = self.verify(
@@ -870,7 +938,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
 
     def test_detached_arbitrary_third_same_blob_observation_fails_closed(self) -> None:
         self.snapshot["source_revisions"]["hawkinsoperations-proof"][
-            "source_commit_sha"
+            "current_observed_head_sha"
         ] = "c" * 40
         self.write_sources()
         with mock.patch.dict(
@@ -891,7 +959,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
     def test_detached_foreign_or_unreachable_observation_fails_closed(self) -> None:
         foreign_sha = "f" * 40
         self.snapshot["source_revisions"]["hawkinsoperations-proof"][
-            "source_commit_sha"
+            "current_observed_head_sha"
         ] = foreign_sha
         self.write_sources()
         with mock.patch.dict(

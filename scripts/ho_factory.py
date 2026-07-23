@@ -13092,15 +13092,51 @@ def hoxline_case_growth_convergence_verify(
                 f"Regenerate the {repo_name} semantic fingerprint from canonical authoritative content.",
                 revision=state["head"],
             )
-        stated_sha = revision.get("source_commit_sha") or revision.get("commit_sha") or revision.get("source_revision")
+        content_sha = (
+            revision.get("source_commit_sha")
+            or revision.get("commit_sha")
+            or revision.get("source_revision")
+        )
+        if (
+            not isinstance(content_sha, str)
+            or re.fullmatch(r"[0-9a-fA-F]{40}", content_sha) is None
+        ):
+            issue(
+                "SOURCE_CONTENT_REVISION_INVALID",
+                "hoxline",
+                f"source_revisions/{repo_name}/source_commit_sha",
+                "40-character immutable authority-content revision",
+                content_sha,
+                (
+                    f"Regenerate the snapshot with the manifest-selected {repo_name} "
+                    "authority-content revision."
+                ),
+                revision=state["head"],
+            )
+            continue
+        if content_sha != manifest_content_revision:
+            issue(
+                "SOURCE_CONTENT_REVISION_NOT_MANIFEST_SELECTED",
+                repo_name,
+                f"source_revisions/{repo_name}/source_commit_sha",
+                manifest_content_revision,
+                content_sha,
+                (
+                    f"Record the separately reviewed {repo_name} authority-content "
+                    "revision; a live-head observation cannot replace content identity."
+                ),
+                revision=state["head"],
+            )
+            continue
+        stated_sha = revision.get("current_observed_head_sha")
         if not isinstance(stated_sha, str) or re.fullmatch(r"[0-9a-fA-F]{40}", stated_sha) is None:
             issue(
                 "SOURCE_REVISION_INVALID",
                 "hoxline",
-                f"source_revisions/{repo_name}",
-                "40-character commit SHA",
+                f"source_revisions/{repo_name}/current_observed_head_sha",
+                "40-character current-head observation SHA",
                 stated_sha,
-                f"Regenerate the snapshot with the resolved {repo_name} commit SHA.",
+                f"Regenerate the snapshot with the resolved {repo_name} current-head observation.",
                 revision=state["head"],
             )
             continue
@@ -13109,10 +13145,10 @@ def hoxline_case_growth_convergence_verify(
             issue(
                 "SOURCE_REVISION_UNRESOLVED",
                 repo_name,
-                f"source_revisions/{repo_name}",
+                f"source_revisions/{repo_name}/current_observed_head_sha",
                 "commit reachable in the declared repository",
                 stated_sha,
-                f"Record a reachable {repo_name} source commit selected by the source manifest and regenerate the snapshot.",
+                f"Record a reachable {repo_name} current-head observation selected by the source manifest and regenerate the snapshot.",
                 revision=state["head"],
             )
             continue
@@ -13121,10 +13157,6 @@ def hoxline_case_growth_convergence_verify(
             r"[0-9a-fA-F]{40}", manifest_revision
         ):
             selected_observations.add(manifest_revision)
-        if isinstance(manifest_content_revision, str) and re.fullmatch(
-            r"[0-9a-fA-F]{40}", manifest_content_revision
-        ):
-            selected_observations.add(manifest_content_revision)
         stated_is_reviewed_identity = False
         stated_relationship: dict[str, Any] | None = None
         if stated_sha not in selected_observations:
@@ -13136,8 +13168,11 @@ def hoxline_case_growth_convergence_verify(
             )
             manifest_is_ancestor_of_stated = (
                 isinstance(manifest_content_revision, str)
-                and hoxline_case_growth_is_ancestor(
-                    repo_path, manifest_content_revision, stated_sha
+                and (
+                    manifest_content_revision == stated_sha
+                    or hoxline_case_growth_is_ancestor(
+                        repo_path, manifest_content_revision, stated_sha
+                    )
                 )
             )
             current_tree = hoxline_case_growth_tree_sha(repo_path, state["head"])
@@ -13153,11 +13188,11 @@ def hoxline_case_growth_convergence_verify(
             )
             generated_pair_parent_selects_stated = (
                 repo_name == "hoxline"
-                and isinstance(manifest_content_revision, str)
+                and isinstance(manifest_revision, str)
                 and hoxline_case_growth_is_direct_parent(
                     repo_path,
                     stated_sha,
-                    manifest_content_revision,
+                    manifest_revision,
                 )
             )
             reviewed_lineage_selects_stated = (
@@ -13196,7 +13231,7 @@ def hoxline_case_growth_convergence_verify(
             issue(
                 "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
                 repo_name,
-                f"source_revisions/{repo_name}",
+                f"source_revisions/{repo_name}/current_observed_head_sha",
                 sorted(selected_observations),
                 stated_relationship or stated_sha,
                 (
@@ -13226,7 +13261,7 @@ def hoxline_case_growth_convergence_verify(
             issue(
                 "SOURCE_HEAD_OBSERVATION_STALE_CONTENT_CURRENT",
                 repo_name,
-                f"source_revisions/{repo_name}",
+                f"source_revisions/{repo_name}/current_observed_head_sha",
                 state["head"],
                 stated_sha,
                 f"Refresh the observed {repo_name} head when the reviewer artifact is next regenerated; authoritative content remains current by blob identity.",
