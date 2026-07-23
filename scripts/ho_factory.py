@@ -16,6 +16,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11642,25 +11643,24 @@ HOXLINE_NEGATIVE_AUTHORITY_PATHS = {
 def hoxline_case_growth_string_promotions(value: str) -> list[str]:
     """Return unambiguously promotional phrases using clause-local negation."""
     phrase_patterns = {
-        "runtime active": r"\bruntime[\s_-]+active\b",
-        "signal observed": r"\bsignal[\s_-]+observed\b",
-        "public safe": r"\bpublic\s+safe\b",
-        "public-safe approval": r"\bpublic[\s_-]+safe[\s_-]+(?:approved|proof|status)\b",
-        "production ready": r"\bproduction[\s_-]+(?:ready|readiness|deployment|status)\b",
-        "customer deployed": r"\bcustomer[\s_-]+(?:deployed|deployment|validated)\b",
-        "SOCaaS deployed": r"\bsocaas[\s_-]+(?:deployed|deployment)\b",
-        "AI authority": r"\bai[\s_-]+(?:approved|authority)\b",
-        "analyst authority": r"\banalyst[\s_-]+(?:approved|authority)\b",
-        "final authorization": r"\bfinal(?:[\s_-]+human)?[\s_-]+authorization\b",
-        "case closure": r"\bcase[\s_-]+(?:closed|closure)\b",
+        "runtime active": r"\bruntime\b.{0,24}\b(?:active|live)\b",
+        "signal observed": r"\bsignal\b.{0,24}\b(?:active|observed)\b",
+        "public safe": r"\bpublic[\s_-]*safe\b.{0,32}\b(?:approved|confirmed|established|release|runtime\s+proof)\b|\bpublic\s+safe\b",
+        "production ready": r"\bproduction\b.{0,32}\b(?:active|confirmed|deployed|deployment|live|ready|readiness|status)\b",
+        "customer deployed": r"\b(?:customer|socaas)\b.{0,48}\bdeploy(?:ed|ment|ing)?\b|\bdeploy(?:ed|ment|ing)?\b.{0,48}\b(?:customer|socaas)\b",
+        "AI authority": r"\bai\b.{0,40}\b(?:approval|authority|disposition)\b.{0,24}\b(?:approved|enabled|granted)\b|\bai\b.{0,40}\b(?:approved|authorized)\b.{0,24}\b(?:case|decision|disposition)\b|\bai[\s_-]+authority\b",
+        "analyst authority": r"\banalyst\b.{0,40}\b(?:approval|authority|disposition)\b.{0,24}\b(?:approved|enabled|granted)\b|\banalyst\b.{0,40}\b(?:approved|authorized)\b.{0,24}\b(?:case|decision|disposition)\b|\banalyst[\s_-]+authority\b",
+        "final authorization": r"\bfinal\s+authori[sz]ation\b.{0,32}\b(?:approved|complete|granted|received)\b|\bfinal(?:[\s_-]+human)?[\s_-]+authorization\b",
+        "case closure": r"\bcase\s+closure\b.{0,32}\b(?:approved|complete|granted|received)\b|\bcase\b.{0,16}\b(?:is|was)?\s*closed\b",
         "website as proof": r"\bwebsite(?:[\s_-]+rendering)?[\s_-]+(?:as|is)[\s_-]+proof\b",
         "green CI as approval": r"\bgreen[\s_-]+ci[\s_-]+(?:as|is)[\s_-]+approval\b",
     }
     clause_negation = re.compile(
         r"(?:"
-        r"\b(?:not|never|no|without|missing|blocked)\b"
+        r"\b(?:not|never|no|without|missing|blocked|future|pending|unsupported)\b"
         r"|\b(?:does|do|must|is|are|was|were|can|cannot|could|should|will|would)\s+not\b"
         r"|\bnot\s+(?:authorized|approved|promoted)\b"
+        r"|\brequires?\s+separate\b|\bremain(?:s)?\s+(?:a\s+)?separate\b"
         r")",
         flags=re.IGNORECASE,
     )
@@ -11669,7 +11669,7 @@ def hoxline_case_growth_string_promotions(value: str) -> list[str]:
     # "but" must not launder a later promotion in the same sentence.
     clauses = re.split(
         r"(?:[.;!?\r\n]+|\b(?:but|however|although|yet)\b)",
-        value,
+        unicodedata.normalize("NFKC", value),
         flags=re.IGNORECASE,
     )
     for clause in clauses:
@@ -11688,7 +11688,7 @@ def hoxline_case_growth_reject_duplicate_keys(pairs: list[tuple[Any, Any]]) -> d
     for raw_key, value in pairs:
         if not isinstance(raw_key, str):
             raise FactoryError("structured authority objects require string keys")
-        folded = raw_key.casefold()
+        folded = unicodedata.normalize("NFKC", raw_key).casefold()
         if folded in normalized:
             raise FactoryError(f"duplicate structured authority key: {raw_key}")
         normalized.add(folded)
@@ -11726,7 +11726,7 @@ def hoxline_case_growth_load_yaml(path: Path) -> dict[str, Any]:
         for key, value in pairs:
             if not isinstance(key, str):
                 raise FactoryError(f"{path}: YAML mapping keys must be strings")
-            folded = key.casefold()
+            folded = unicodedata.normalize("NFKC", key).casefold()
             if folded in normalized:
                 raise FactoryError(f"{path}: duplicate YAML key: {key}")
             normalized.add(folded)
@@ -12007,17 +12007,28 @@ def hoxline_case_growth_authority_violations(
         }:
             violations.append(("/".join(path), value))
             return violations
-        negative_context = any(
-            re.sub(r"[^a-z0-9]", "", part.casefold())
-            in HOXLINE_NEGATIVE_AUTHORITY_PATHS
-            for part in path
+        exact_blocked_leaf = (
+            len(path) >= 2
+            and path[-1].isdigit()
+            and re.sub(
+                r"[^a-z0-9]",
+                "",
+                unicodedata.normalize("NFKC", path[-2]).casefold(),
+            )
+            in {"blockedclaims", "notclaiming", "doesnotprove"}
+            and re.search(
+                r"\b(?:is|was|has|enabled|granted|received)\b",
+                value,
+                re.IGNORECASE,
+            )
+            is None
         )
         bounded_private_state = value in {
             "SIGNAL_OBSERVED_PRIVATE",
             "RUNTIME_ACTIVE_PRIVATE",
         }
         if (
-            not negative_context
+            not exact_blocked_leaf
             and not bounded_private_state
             and hoxline_case_growth_string_promotions(value)
         ):
@@ -12529,10 +12540,7 @@ def hoxline_case_growth_convergence_verify(
                 manifest_content_revision != state["head"]
                 and not current_is_content_ancestor
                 and not content_is_current_ancestor
-                and (
-                    repo_name == ".github"
-                    or content_is_reviewed_ancestor
-                )
+                and content_is_reviewed_ancestor
                 and current_is_exact_reviewed_tree
             )
             content_relationship_valid = (

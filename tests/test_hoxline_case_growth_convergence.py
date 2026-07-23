@@ -638,7 +638,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             )
         self.assertEqual("pass", result["status"])
 
-    def test_command_center_self_content_survives_rewritten_event_tree(
+    def test_command_center_self_unrelated_content_cannot_survive_rewritten_event_tree(
         self,
     ) -> None:
         content_commit = "c" * 40
@@ -663,7 +663,10 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                 rewritten_head: "e" * 40,
             },
         )
-        self.assertEqual("pass", result["status"])
+        self.assertIn(
+            "SOURCE_AUTHORITY_CONTENT_RELATIONSHIP_INVALID",
+            {item["code"] for item in result["contradictions"]},
+        )
 
     def test_command_center_self_future_content_revision_is_rejected(self) -> None:
         historical_head = "c" * 40
@@ -886,6 +889,40 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
     def test_nested_authority_string_laundering_fails_closed(self) -> None:
         self.website["extensions"] = {
             "opaque": [{"note": "customer deployed and production ready"}]
+        }
+        self.write_sources()
+        result = self.verify()
+        self.assertIn(
+            "NESTED_AUTHORITY_PROMOTION",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_nested_authority_vocabulary_variants_fail_closed(self) -> None:
+        attacks = (
+            "deployed to customer Acme",
+            "customer environment deployed",
+            "production is live",
+            "analyst approved this disposition",
+            "final authorization received",
+            "case closure complete",
+            "runtime is active",
+            "signal was observed",
+            "public safe for release",
+            "SOCaaS is deployed",
+        )
+        for prose in attacks:
+            with self.subTest(prose=prose):
+                self.website["extensions"] = {"opaque": [{"note": prose}]}
+                self.write_sources()
+                result = self.verify()
+                self.assertIn(
+                    "NESTED_AUTHORITY_PROMOTION",
+                    {item["code"] for item in result["contradictions"]},
+                )
+
+    def test_blocked_claim_container_cannot_exempt_nested_prose(self) -> None:
+        self.website["extensions"] = {
+            "blocked_claims": [{"detail": "customer deployment is active"}]
         }
         self.write_sources()
         result = self.verify()
