@@ -12880,13 +12880,25 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
         raise FactoryError(
             "Hoxline workflow safety must inspect the explicit checked platform repository root"
         )
-    explicit_runtime_ops_root = (
-        'hoxline-runtime-ops-self-test --repo-root '
-        '"$GITHUB_WORKSPACE/source-set/hawkinsoperations-platform"'
+    explicit_platform_root_commands = {
+        "hoxline-runtime-ops-self-test",
+        "hoxline-control-plane-self-test",
+        "hoxline-schedule-readiness-self-test",
+        "hoxline-schedule-pilot-self-test",
+    }
+    missing_explicit_roots = sorted(
+        command
+        for command in explicit_platform_root_commands
+        if (
+            f'{command} --repo-root '
+            '"$GITHUB_WORKSPACE/source-set/hawkinsoperations-platform"'
+        )
+        not in source
     )
-    if explicit_runtime_ops_root not in source:
+    if missing_explicit_roots:
         raise FactoryError(
-            "Hoxline runtime-ops self-test must inspect the explicit checked platform repository root"
+            "Platform-owned self-tests must inspect the explicit checked platform "
+            "repository root: " + ", ".join(missing_explicit_roots)
         )
     if "lifetime-ledger-" in source:
         raise FactoryError("Ledger jobs must remain independent from mandatory convergence checks")
