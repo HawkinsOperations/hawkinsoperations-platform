@@ -12687,8 +12687,48 @@ def hoxline_workflow_has_shell_neutralizer(workflow: str) -> bool:
 
 
 def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
-    workflow_dir = repo_root / ".github" / "workflows"
-    workflows = {path.name: path.read_text(encoding="utf-8") for path in sorted(workflow_dir.glob("*.yml"))}
+    repo_root = repo_root.resolve()
+    tracked = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_root),
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "HEAD",
+            "--",
+            ".github/workflows",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if tracked.returncode == 0:
+        workflow_paths = sorted(
+            line.strip()
+            for line in tracked.stdout.splitlines()
+            if line.strip().endswith(".yml")
+        )
+        workflows = {}
+        for relative_path in workflow_paths:
+            committed = subprocess.run(
+                ["git", "-C", str(repo_root), "show", f"HEAD:{relative_path}"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if committed.returncode != 0:
+                raise FactoryError(
+                    f"Hoxline workflow safety cannot read committed workflow: {relative_path}"
+                )
+            workflows[Path(relative_path).name] = committed.stdout
+    else:
+        workflow_dir = repo_root / ".github" / "workflows"
+        workflows = {
+            path.name: path.read_text(encoding="utf-8")
+            for path in sorted(workflow_dir.glob("*.yml"))
+        }
     required = {
         "hoxline-source-checks.yml",
         "hoxline-trusted-runtime-verify.yml",
