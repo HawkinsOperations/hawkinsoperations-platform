@@ -53,7 +53,7 @@ jobs:
           repository: HawkinsOperations/.github
           path: source-set/.github
           ref: ${{ steps.sources.outputs._github }}
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Checkout detection authority
@@ -62,7 +62,7 @@ jobs:
           repository: HawkinsOperations/hawkinsoperations-detections
           path: source-set/hawkinsoperations-detections
           ref: ${{ steps.sources.outputs.hawkinsoperations_detections }}
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Checkout validation authority
@@ -71,7 +71,7 @@ jobs:
           repository: HawkinsOperations/hawkinsoperations-validation
           path: source-set/hawkinsoperations-validation
           ref: ${{ steps.sources.outputs.hawkinsoperations_validation }}
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Checkout proof authority
@@ -80,7 +80,7 @@ jobs:
           repository: HawkinsOperations/hawkinsoperations-proof
           path: source-set/hawkinsoperations-proof
           ref: ${{ steps.sources.outputs.hawkinsoperations_proof }}
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Checkout website consumer
@@ -89,7 +89,7 @@ jobs:
           repository: HawkinsOperations/hawkinsoperations-website
           path: source-set/hawkinsoperations-website
           ref: ${{ steps.sources.outputs.hawkinsoperations_website }}
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Checkout Hoxline consumer
@@ -98,7 +98,7 @@ jobs:
           repository: HawkinsOperations/hoxline
           path: source-set/hoxline
           ref: ${{ steps.sources.outputs.hoxline }}
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Verify exact seven-source selection

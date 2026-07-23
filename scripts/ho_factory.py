@@ -11888,12 +11888,21 @@ def hoxline_case_growth_review_manifest(org_root: Path) -> dict[str, dict[str, A
                 "canonical_repository",
                 "revision_source",
                 "tree_source",
+                "authority_content_revision",
             } or (
                 entry.get("revision_source") != "github_event_sha"
                 or entry.get("tree_source") != "github_event_tree"
             ):
                 raise FactoryError(
-                    "command-center self entry must use the checked event revision and tree"
+                    "command-center self entry must use the checked event revision and "
+                    "tree plus an immutable authority content revision"
+                )
+            if re.fullmatch(
+                r"[0-9a-f]{40}",
+                str(entry.get("authority_content_revision", "")),
+            ) is None:
+                raise FactoryError(
+                    "command-center self authority content revision must be immutable"
                 )
         else:
             if set(entry) != {
@@ -12314,10 +12323,8 @@ def hoxline_case_growth_convergence_verify(
             if repo_name == ".github"
             else review_manifest_entry.get("reviewed_tree_sha")
         )
-        manifest_content_revision = (
-            state["head"]
-            if repo_name == ".github"
-            else review_manifest_entry.get("authority_content_revision")
+        manifest_content_revision = review_manifest_entry.get(
+            "authority_content_revision"
         )
         if (
             manifest_entry.get("revision_source")
@@ -12420,6 +12427,110 @@ def hoxline_case_growth_convergence_verify(
                 "current_event_observation_revision": current_observation_revision,
             }
         )
+        content_revision_matches_current = False
+        if not isinstance(
+            manifest_content_revision, str
+        ) or not hoxline_case_growth_commit_exists(
+            repo_path, manifest_content_revision
+        ):
+            issue(
+                "SOURCE_AUTHORITY_CONTENT_REVISION_UNREACHABLE",
+                repo_name,
+                "governance/CONVERGENCE_SOURCE_MANIFEST.json",
+                "reachable immutable authority content revision",
+                manifest_content_revision,
+                (
+                    f"Fetch the complete reviewed {repo_name} history and select the "
+                    "immutable commit carrying the current authority content."
+                ),
+                revision=state["head"],
+            )
+        else:
+            content_blob = hoxline_case_growth_git_blob(
+                repo_path,
+                manifest_content_revision,
+                expected_source_path,
+            )
+            content_semantic_fingerprint: str | None = None
+            if content_blob is not None:
+                try:
+                    content_semantic_fingerprint = (
+                        hoxline_case_growth_semantic_fingerprint(
+                            expected_source_path, content_blob[1]
+                        )
+                    )
+                except FactoryError:
+                    content_semantic_fingerprint = None
+            content_identity_matches = (
+                content_blob is not None
+                and content_blob[0] == current_blob_sha
+                and content_semantic_fingerprint
+                == current_semantic_fingerprint
+            )
+            if not content_identity_matches:
+                issue(
+                    "SOURCE_AUTHORITY_CONTENT_REVISION_STALE",
+                    repo_name,
+                    expected_source_path,
+                    current_blob_sha,
+                    None if content_blob is None else content_blob[0],
+                    (
+                        f"Review the changed {repo_name} authority content and refresh "
+                        "authority_content_revision without changing the live observation."
+                    ),
+                    revision=state["head"],
+                )
+            current_is_content_ancestor = hoxline_case_growth_is_ancestor(
+                repo_path, state["head"], manifest_content_revision
+            )
+            content_is_current_ancestor = hoxline_case_growth_is_ancestor(
+                repo_path, manifest_content_revision, state["head"]
+            )
+            current_tree_for_content = hoxline_case_growth_tree_sha(
+                repo_path, state["head"]
+            )
+            content_tree = hoxline_case_growth_tree_sha(
+                repo_path, manifest_content_revision
+            )
+            content_tree_is_current_equivalent = (
+                current_tree_for_content is not None
+                and content_tree is not None
+                and current_tree_for_content == content_tree
+            )
+            content_relationship_valid = (
+                not current_is_content_ancestor
+                and (
+                    manifest_content_revision == state["head"]
+                    or content_is_current_ancestor
+                    or content_tree_is_current_equivalent
+                )
+            )
+            if not content_relationship_valid:
+                issue(
+                    "SOURCE_AUTHORITY_CONTENT_RELATIONSHIP_INVALID",
+                    repo_name,
+                    "governance/CONVERGENCE_SOURCE_MANIFEST.json",
+                    (
+                        "authority content revision equal to or ancestral to current, "
+                        "or carrying the exact current repository tree"
+                    ),
+                    {
+                        "current_head": state["head"],
+                        "authority_content_revision": manifest_content_revision,
+                        "current_is_content_ancestor": current_is_content_ancestor,
+                        "content_is_current_ancestor": content_is_current_ancestor,
+                        "current_tree": current_tree_for_content,
+                        "content_tree": content_tree,
+                    },
+                    (
+                        f"Select reviewed {repo_name} authority content from the current "
+                        "lineage; a future descendant cannot establish current authority."
+                    ),
+                    revision=state["head"],
+                )
+            content_revision_matches_current = (
+                content_identity_matches and content_relationship_valid
+            )
         manifest_content_matches_current = False
         if (
             isinstance(manifest_revision, str)
@@ -12563,6 +12674,10 @@ def hoxline_case_growth_convergence_verify(
                     ),
                     revision=state["head"],
                 )
+        manifest_content_matches_current = (
+            manifest_content_matches_current
+            and content_revision_matches_current
+        )
         detached_platform_observation_mismatch = (
             repo_name == "hawkinsoperations-platform"
             and not branch
@@ -12684,8 +12799,7 @@ def hoxline_case_growth_convergence_verify(
                 )
             )
             reviewed_lineage_selects_stated = (
-                repo_name == ".github"
-                or manifest_is_ancestor_of_stated
+                manifest_is_ancestor_of_stated
                 or manifest_tree_selects_stated
                 or generated_pair_parent_selects_stated
             )

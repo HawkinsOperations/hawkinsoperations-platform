@@ -175,6 +175,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                         "canonical_repository": f"HawkinsOperations/{repo}",
                         "revision_source": "github_event_sha",
                         "tree_source": "github_event_tree",
+                        "authority_content_revision": self.sha,
                     }
                     if repo == ".github"
                     else {
@@ -491,7 +492,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             )
         codes = {item["code"] for item in result["contradictions"]}
         self.assertIn("SOURCE_MANIFEST_OBSERVATION_RELATIONSHIP_INVALID", codes)
-        self.assertIn("SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED", codes)
+        self.assertIn("SOURCE_AUTHORITY_CONTENT_RELATIONSHIP_INVALID", codes)
 
     def test_platform_snapshot_unrelated_detached_revision_is_rejected(self) -> None:
         rewritten_head = "d" * 40
@@ -537,6 +538,59 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             "MALFORMED_SOURCE",
             {item["code"] for item in result["contradictions"]},
         )
+
+    def test_command_center_self_content_revision_is_required(self) -> None:
+        del self.review_manifest["repositories"][0]["authority_content_revision"]
+        self.write_sources()
+        result = self.verify()
+        self.assertIn(
+            "MALFORMED_SOURCE",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_command_center_self_content_revision_resolves_from_full_history(
+        self,
+    ) -> None:
+        current_head = "d" * 40
+        self.write_sources()
+        with mock.patch.dict(
+            ho_factory.os.environ,
+            {"HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA": current_head},
+            clear=True,
+        ):
+            result = self.verify(
+                branch="",
+                head=current_head,
+                ancestor_pairs={(self.sha, current_head)},
+            )
+        self.assertEqual("pass", result["status"])
+
+    def test_command_center_self_future_content_revision_is_rejected(self) -> None:
+        historical_head = "c" * 40
+        self.write_sources()
+        with mock.patch.dict(
+            ho_factory.os.environ,
+            {"HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA": historical_head},
+            clear=True,
+        ):
+            result = self.verify(
+                branch="",
+                head=historical_head,
+                ancestor_pairs={(historical_head, self.sha)},
+            )
+        self.assertIn(
+            "SOURCE_AUTHORITY_CONTENT_RELATIONSHIP_INVALID",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_source_workflow_fetches_full_history_for_all_seven_repositories(
+        self,
+    ) -> None:
+        workflow = (
+            ROOT / ".github/workflows/hoxline-source-checks.yml"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(7, workflow.count("fetch-depth: 0"))
+        self.assertNotIn("fetch-depth: 1", workflow)
 
     def test_arbitrary_same_blob_observation_not_selected_by_manifest_fails_closed(self) -> None:
         self.snapshot["source_revisions"]["hawkinsoperations-proof"]["source_commit_sha"] = "c" * 40
