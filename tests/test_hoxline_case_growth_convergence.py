@@ -249,12 +249,14 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         blob_overrides: dict[tuple[str, str], str] | None = None,
         missing_commits: set[str] | None = None,
         ancestor_pairs: set[tuple[str, str]] | None = None,
+        direct_parent_pairs: set[tuple[str, str]] | None = None,
         tree_overrides: dict[str, str | None] | None = None,
     ) -> dict:
         resolved_head = head or self.sha
         selected_blob_overrides = blob_overrides or {}
         selected_missing_commits = missing_commits or set()
         selected_ancestor_pairs = ancestor_pairs or set()
+        selected_direct_parent_pairs = direct_parent_pairs or set()
         selected_tree_overrides = tree_overrides or {}
 
         def git_blob(repo_path: Path, revision: str, relative_path: str) -> tuple[str, bytes]:
@@ -287,6 +289,12 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             "hoxline_case_growth_is_ancestor",
             side_effect=lambda _repo_path, ancestor, descendant: (
                 (ancestor, descendant) in selected_ancestor_pairs
+            ),
+        ), mock.patch.object(
+            ho_factory,
+            "hoxline_case_growth_is_direct_parent",
+            side_effect=lambda _repo_path, parent, child: (
+                (parent, child) in selected_direct_parent_pairs
             ),
         ), mock.patch.object(
             ho_factory,
@@ -537,6 +545,21 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             tree_overrides={"c" * 40: "d" * 40},
         )
         self.assertIn(
+            "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_hoxline_generated_pair_selects_its_exact_content_parent(self) -> None:
+        content_commit = "c" * 40
+        self.snapshot["source_revisions"]["hoxline"][
+            "source_commit_sha"
+        ] = content_commit
+        self.write_sources()
+        result = self.verify(
+            direct_parent_pairs={(content_commit, self.sha)},
+        )
+        self.assertEqual("pass", result["status"])
+        self.assertNotIn(
             "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
             {item["code"] for item in result["contradictions"]},
         )

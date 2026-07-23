@@ -12654,10 +12654,20 @@ def hoxline_case_growth_convergence_verify(
                 stated_tree is not None
                 and stated_tree == manifest_reviewed_tree
             )
+            generated_pair_parent_selects_stated = (
+                repo_name == "hoxline"
+                and isinstance(manifest_revision, str)
+                and hoxline_case_growth_is_direct_parent(
+                    repo_path,
+                    stated_sha,
+                    manifest_revision,
+                )
+            )
             reviewed_lineage_selects_stated = (
                 repo_name == ".github"
                 or manifest_is_ancestor_of_stated
                 or manifest_tree_selects_stated
+                or generated_pair_parent_selects_stated
             )
             stated_is_reviewed_identity = (
                 not current_is_historical_ancestor
@@ -12676,6 +12686,9 @@ def hoxline_case_growth_convergence_verify(
                 "stated_tree": stated_tree,
                 "tree_is_reviewed_equivalent": tree_is_reviewed_equivalent,
                 "manifest_tree_selects_stated": manifest_tree_selects_stated,
+                "generated_pair_parent_selects_stated": (
+                    generated_pair_parent_selects_stated
+                ),
                 "reviewed_lineage_selects_stated": (
                     reviewed_lineage_selects_stated
                 ),
