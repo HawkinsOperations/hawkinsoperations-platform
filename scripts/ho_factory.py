@@ -11625,18 +11625,30 @@ HOXLINE_BLOCKED_AUTHORITY_KEYS = {
     "greenciisapproval",
 }
 HOXLINE_NEGATIVE_AUTHORITY_PATHS = {
+    "allowedclaims",
+    "artifactid",
     "blockedclaims",
     "notclaiming",
     "doesnotprove",
+    "evidenceauthoritysurface",
+    "freshnesspolicy",
+    "humanreviewrequired",
+    "promotionblockers",
     "proofceiling",
     "authorityboundary",
     "noproofpromotionstatement",
+    "ownerrepo",
+    "publicsafesourcerequired",
+    "renderallowed",
+    "reviewlane",
+    "reviewversion",
+    "sourceartifact",
+    "sourcejsonpointer",
+    "sourcepath",
+    "sourcestatus",
+    "websitemaynotpromotepublicsafe",
     "websitemustnotsourcefromwebsiteonlydata",
     "extractormustnot",
-    "ownerrepo",
-    "sourcepath",
-    "sourcejsonpointer",
-    "sourcestatus",
 }
 
 
@@ -11667,18 +11679,50 @@ def hoxline_case_growth_string_promotions(value: str) -> list[str]:
     violations: list[str] = []
     # Adversative conjunctions start a new semantic clause. A negation before
     # "but" must not launder a later promotion in the same sentence.
-    clauses = re.split(
-        r"(?:[,.;:/!?\r\n—–]+|\b(?:but|however|although|yet|while|whereas)\b)",
+    strong_segments = re.split(
+        r"(?:[;:/\r\n—–]+|(?<=[.!?])\s+|\b(?:but|however|although|yet|while|whereas)\b)",
         unicodedata.normalize("NFKC", value),
         flags=re.IGNORECASE,
     )
-    for clause in clauses:
-        bounded_clause = clause_negation.search(clause) is not None
-        for label, pattern in phrase_patterns.items():
-            for match in re.finditer(pattern, clause, flags=re.IGNORECASE):
-                if bounded_clause:
-                    continue
-                violations.append(label)
+    negative_list_intro = re.compile(
+        r"\b(?:does|do|did|must|is|are|was|were|can|cannot|could|should|will|would)\s+not\s+"
+        r"(?:prove|establish|claim|promote|authorize|assert)\b"
+        r"|\b(?:is|are|was|were)\s+not\b|\bwithout\s+claiming\b",
+        re.IGNORECASE,
+    )
+    affirmative_after_negative_list = re.compile(
+        r"\b(?:customer|socaas)\b.{0,48}\b(?:is|was)?\s*deployed\b"
+        r"|\bproduction\b.{0,24}\b(?:is|was)\s+(?:active|live|ready)\b"
+        r"|\bruntime\b.{0,16}\b(?:is|was)\s+active\b"
+        r"|\bsignal\b.{0,16}\b(?:is|was)\s+observed\b"
+        r"|\b(?:ai|analyst)\b.{0,24}\b(?:approved|authorized|granted)\b"
+        r"|\bfinal\s+authori[sz]ation\b.{0,16}\b(?:is|was)?\s*(?:granted|complete)\b"
+        r"|\bcase\b.{0,16}\b(?:is|was)\s+closed\b",
+        re.IGNORECASE,
+    )
+    for segment in strong_segments:
+        intro = negative_list_intro.search(segment)
+        clauses = [segment]
+        if (
+            intro is None
+            or affirmative_after_negative_list.search(segment[intro.end():])
+        ):
+            clauses = segment.split(",")
+        for clause in clauses:
+            bounded_clause = (
+                clause_negation.search(clause) is not None
+                or re.search(
+                    r"\bpublic[- ]safe\s+candidate\b",
+                    clause,
+                    re.IGNORECASE,
+                )
+                is not None
+            )
+            for label, pattern in phrase_patterns.items():
+                for _match in re.finditer(pattern, clause, flags=re.IGNORECASE):
+                    if bounded_clause:
+                        continue
+                    violations.append(label)
     return violations
 
 
@@ -11960,7 +12004,11 @@ def hoxline_case_growth_compositional_promotion_key(key: str) -> bool:
         or (any(part in key for part in ("customer", "socaas")) and any(part in key for part in ("active", "deploy", "state", "status")))
         or ("runtime" in key and any(part in key for part in ("active", "state", "status")))
         or ("signal" in key and any(part in key for part in ("observed", "state", "status")))
-        or ("publicsafe" in key and "count" not in key)
+        or (
+            "publicsafe" in key
+            and "count" not in key
+            and "percent" not in key
+        )
         or ("final" in key and any(part in key for part in ("authoriz", "authority")))
         or ("case" in key and "count" not in key and any(part in key for part in ("closed", "closure", "state", "status")))
         or any(part in key for part in ("approvalstate", "approvalstatus", "closurestatus", "casestate", "casestatus"))
@@ -11981,6 +12029,8 @@ def hoxline_case_growth_explicitly_bounded_authority_value(value: Any) -> bool:
         return False
     return hoxline_case_growth_normalize_authority_key(value) in {
         "blocked",
+        "boundarydefaultnotpromoted",
+        "blockedwaitingnextgate",
         "false",
         "humanreviewrequired",
         "missing",
@@ -11988,6 +12038,7 @@ def hoxline_case_growth_explicitly_bounded_authority_value(value: Any) -> bool:
         "notapproved",
         "notauthorized",
         "notclosed",
+        "notindexed",
         "notproven",
         "notpublicsafe",
         "notruntimeactive",
@@ -11995,9 +12046,12 @@ def hoxline_case_growth_explicitly_bounded_authority_value(value: Any) -> bool:
         "partial",
         "pending",
         "existingflowcandidate",
+        "listedonly",
         "privateruntimeboundarycontextonly",
         "privateruntimeevidencecaptured",
         "privateruntimeevidencecapturedlocalwindowsonly",
+        "privateruntimecandidate",
+        "publicsaferuntimeproofisnotpromotedbythiswebsitedataplane",
         "publicruntimeblocked",
         "runtimeactiveprivate",
         "runtimeblocked",
@@ -12005,6 +12059,7 @@ def hoxline_case_growth_explicitly_bounded_authority_value(value: Any) -> bool:
         "signalblocked",
         "signalobservedprivate",
         "sourceexists",
+        "telemetrycontractonly",
         "unknown",
         "unsupported",
     }
@@ -12050,6 +12105,15 @@ def hoxline_case_growth_authority_violations(
                 hoxline_case_growth_compositional_promotion_key(candidate)
                 for candidate in cumulative_keys
             )
+            negative_authority_path = (
+                normalized in HOXLINE_NEGATIVE_AUTHORITY_PATHS
+                or any(
+                    hoxline_case_growth_normalize_authority_key(part)
+                    in HOXLINE_NEGATIVE_AUTHORITY_PATHS
+                    for part in path
+                    if not str(part).isdigit()
+                )
+            )
             if (
                 (
                     scalar_authority_state
@@ -12059,6 +12123,7 @@ def hoxline_case_growth_authority_violations(
                         or compositional_context
                     )
                 )
+                and not negative_authority_path
                 and not hoxline_case_growth_explicitly_bounded_authority_value(nested)
             ):
                 violations.append(("/".join(child_path), nested))
@@ -12085,8 +12150,10 @@ def hoxline_case_growth_authority_violations(
                 )
             ):
                 violations.append(("/".join(child_path), nested))
-            child_authority_context = authority_context
-            if (
+            child_authority_context = (
+                authority_context if isinstance(nested, (dict, list)) else None
+            )
+            if isinstance(nested, (dict, list)) and (
                 normalized
                 in HOXLINE_BLOCKED_AUTHORITY_KEYS
                 | {"publicsafestatus", "publicsafestate"}
@@ -12110,12 +12177,18 @@ def hoxline_case_growth_authority_violations(
                 )
             )
     elif isinstance(value, str):
+        negative_authority_path = any(
+            hoxline_case_growth_normalize_authority_key(part)
+            in HOXLINE_NEGATIVE_AUTHORITY_PATHS
+            for part in path
+            if not str(part).isdigit()
+        )
         if (
             authority_context
+            and not negative_authority_path
             and not hoxline_case_growth_explicitly_bounded_authority_value(value)
         ):
             violations.append(("/".join(path), value))
-            return violations
         exact_blocked_leaf = (
             len(path) >= 2
             and path[-1].isdigit()
@@ -12142,9 +12215,34 @@ def hoxline_case_growth_authority_violations(
             and hoxline_case_growth_string_promotions(value)
         ):
             violations.append(("/".join(path), value))
-    elif authority_context and value not in (False, None):
+    elif (
+        authority_context
+        and not any(
+            hoxline_case_growth_normalize_authority_key(part)
+            in HOXLINE_NEGATIVE_AUTHORITY_PATHS
+            for part in path
+            if not str(part).isdigit()
+        )
+        and value not in (False, None)
+    ):
         violations.append(("/".join(path), value))
-    return violations
+    unique: list[tuple[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for violation_path, violation_value in violations:
+        signature = (
+            violation_path,
+            json.dumps(
+                violation_value,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                default=str,
+            ),
+        )
+        if signature not in seen:
+            seen.add(signature)
+            unique.append((violation_path, violation_value))
+    return unique
 
 
 def hoxline_case_growth_commit_exists(repo_path: Path, commit_sha: str) -> bool:

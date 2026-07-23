@@ -1074,6 +1074,83 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             ),
         )
 
+    def test_current_hoxline_snapshot_bounded_states_do_not_promote(self) -> None:
+        current_snapshot_authority_surface = {
+            "case_growth_health": {
+                "not_public_safe_percent": 100.0,
+            },
+            "cases": [
+                {
+                    "case_state": "BLOCKED_WAITING_NEXT_GATE",
+                    "runtime_candidate_status": "PRIVATE_RUNTIME_CANDIDATE",
+                },
+                {
+                    "case_state": "BLOCKED_WAITING_NEXT_GATE",
+                    "runtime_candidate_status": "NOT_INDEXED",
+                },
+                {
+                    "case_state": "BLOCKED_WAITING_NEXT_GATE",
+                    "runtime_candidate_status": "LISTED_ONLY",
+                    "notes": [
+                        (
+                            "Controlled fixture validation only. This does not prove "
+                            "runtime-active, signal-observed, production-ready, or "
+                            "public-safe status."
+                        )
+                    ],
+                },
+                {
+                    "case_state": "BLOCKED_WAITING_NEXT_GATE",
+                    "runtime_candidate_status": "TELEMETRY_CONTRACT_ONLY",
+                },
+            ],
+        }
+
+        self.assertEqual(
+            [],
+            ho_factory.hoxline_case_growth_authority_violations(
+                current_snapshot_authority_surface
+            ),
+        )
+
+    def test_authority_violation_diagnostics_are_deduplicated(self) -> None:
+        violations = ho_factory.hoxline_case_growth_authority_violations(
+            {"case_state": "CLOSED"}
+        )
+
+        self.assertEqual([("case_state", "CLOSED")], violations)
+
+    def test_bounded_contract_metadata_does_not_inherit_public_safe_promotion(self) -> None:
+        contract_metadata = {
+            "public_safe_state": {
+                "owner_repo": "hawkinsoperations-proof",
+                "source_path": "proof/index.json",
+                "render_allowed": True,
+                "source_status": "BOUNDARY_DEFAULT_NOT_PROMOTED",
+                "freshness_policy": (
+                    "Remain NOT_PUBLIC_SAFE unless proof-owned authority changes it."
+                ),
+            },
+            "public_safe_candidate_reviews": [
+                {
+                    "artifact_id": "HO-DET-001",
+                    "review_lane": "PUBLIC_SAFE_CANDIDATE_REVIEW_V1",
+                    "human_review_required": True,
+                    "allowed_claims": [
+                        "Controlled validation remains under public-safe candidate review."
+                    ],
+                    "blocked_claims": ["runtime active", "case closed"],
+                }
+            ],
+        }
+
+        self.assertEqual(
+            [],
+            ho_factory.hoxline_case_growth_authority_violations(
+                contract_metadata
+            ),
+        )
+
     def test_nested_authority_string_laundering_fails_closed(self) -> None:
         self.website["extensions"] = {
             "opaque": [{"note": "customer deployed and production ready"}]
