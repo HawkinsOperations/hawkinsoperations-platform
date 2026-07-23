@@ -143,10 +143,14 @@ jobs:
         run: |
           python - <<'PY'
           import subprocess
+          import sqlite3
           import unicodedata
-          from pathlib import PurePosixPath
+          from pathlib import Path, PurePosixPath
 
           retired = "".join(("syn", "thetic"))
+          immutable_sqlite_paths = frozenset({
+              "evidence/autosoc-case-ledger-v0.sqlite",
+          })
           binary_extensions = frozenset({
               ".7z", ".avif", ".avi", ".bz2", ".dll", ".dylib", ".eot", ".exe", ".gif",
               ".gz", ".ico", ".jpeg", ".jpg", ".mov", ".mp3", ".mp4", ".pdf",
@@ -162,13 +166,50 @@ jobs:
           for relative in filter(None, paths):
               if retired in unicodedata.normalize("NFKC", relative).casefold():
                   findings.append(f"tracked filename: {relative}")
-              if PurePosixPath(relative).suffix.casefold() in binary_extensions:
-                  continue
               blob = subprocess.run(
                   ["git", "show", f":{relative}"],
                   check=True,
                   capture_output=True,
               ).stdout
+              suffix = PurePosixPath(relative).suffix.casefold()
+              if suffix == ".sqlite":
+                  if relative not in immutable_sqlite_paths:
+                      findings.append(f"unapproved tracked SQLite path: {relative}")
+                      continue
+                  if not blob.startswith(b"SQLite format 3\0"):
+                      findings.append(
+                          f"tracked SQLite content has invalid file signature: {relative}"
+                      )
+                      continue
+                  if Path(relative).read_bytes() != blob:
+                      findings.append(
+                          f"tracked SQLite worktree content differs from the staged blob: {relative}"
+                      )
+                      continue
+                  try:
+                      connection = sqlite3.connect(
+                          f"file:{Path(relative).resolve().as_posix()}?mode=ro",
+                          uri=True,
+                      )
+                      try:
+                          integrity = connection.execute("PRAGMA quick_check").fetchall()
+                      finally:
+                          connection.close()
+                  except sqlite3.DatabaseError:
+                      integrity = []
+                  if integrity != [("ok",)]:
+                      findings.append(
+                          f"tracked SQLite content is not a valid database: {relative}"
+                      )
+                  continue
+              searchable = unicodedata.normalize(
+                  "NFKC",
+                  blob.decode("utf-8", errors="ignore").replace("\0", ""),
+              ).casefold()
+              if retired in searchable:
+                  findings.append(f"tracked content: {relative}")
+              if suffix in binary_extensions:
+                  continue
               if b"\0" in blob:
                   findings.append(f"tracked non-binary content contains NUL: {relative}")
                   continue
@@ -177,8 +218,9 @@ jobs:
               except UnicodeDecodeError:
                   findings.append(f"tracked non-binary content is not UTF-8: {relative}")
                   continue
-              if retired in unicodedata.normalize("NFKC", text).casefold():
-                  findings.append(f"tracked content: {relative}")
+              # The permissive scan above is authoritative for the retired
+              # token; strict UTF-8 decoding here keeps unknown text formats
+              # fail closed.
           if findings:
               raise SystemExit(
                   "retired fixture vocabulary found:\n- " + "\n- ".join(findings)

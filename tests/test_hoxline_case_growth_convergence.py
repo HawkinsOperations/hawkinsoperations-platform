@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -47,6 +48,18 @@ def run_workflow_vocabulary_guard(workflow_path: Path, files: dict[str, bytes]):
             capture_output=True,
             text=True,
         )
+
+
+def valid_sqlite_blob() -> bytes:
+    with tempfile.TemporaryDirectory() as temp:
+        path = Path(temp) / "fixture.sqlite"
+        connection = sqlite3.connect(path)
+        try:
+            connection.execute("CREATE TABLE fixture (id INTEGER PRIMARY KEY)")
+            connection.commit()
+        finally:
+            connection.close()
+        return path.read_bytes()
 
 
 class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
@@ -954,15 +967,66 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self,
     ) -> None:
         workflow_path = ROOT / ".github/workflows/hoxline-source-checks.yml"
+        retired = "".join(("syn", "thetic"))
         sqlite = run_workflow_vocabulary_guard(
             workflow_path,
             {
-                "evidence/autosoc-case-ledger-v0.sqlite": (
-                    b"SQLite format 3\x00\x10\x00\x01\x01"
-                ),
+                "evidence/autosoc-case-ledger-v0.sqlite": valid_sqlite_blob(),
             },
         )
         self.assertEqual(0, sqlite.returncode, sqlite.stderr + sqlite.stdout)
+
+        plaintext_masquerade = run_workflow_vocabulary_guard(
+            workflow_path,
+            {
+                "evidence/autosoc-case-ledger-v0.sqlite": (
+                    f"retired={retired}\n".encode("utf-8")
+                ),
+            },
+        )
+        self.assertNotEqual(0, plaintext_masquerade.returncode)
+        self.assertIn(
+            "tracked SQLite content has invalid file signature",
+            plaintext_masquerade.stderr + plaintext_masquerade.stdout,
+        )
+
+        malformed_sqlite = run_workflow_vocabulary_guard(
+            workflow_path,
+            {
+                "evidence/autosoc-case-ledger-v0.sqlite": (
+                    b"not-a-sqlite-database"
+                ),
+            },
+        )
+        self.assertNotEqual(0, malformed_sqlite.returncode)
+        self.assertIn(
+            "tracked SQLite content has invalid file signature",
+            malformed_sqlite.stderr + malformed_sqlite.stdout,
+        )
+
+        magic_prefix_masquerade = run_workflow_vocabulary_guard(
+            workflow_path,
+            {
+                "evidence/autosoc-case-ledger-v0.sqlite": (
+                    b"SQLite format 3\x00" + retired.encode("utf-8")
+                ),
+            },
+        )
+        self.assertNotEqual(0, magic_prefix_masquerade.returncode)
+        self.assertIn(
+            "tracked SQLite content is not a valid database",
+            magic_prefix_masquerade.stderr + magic_prefix_masquerade.stdout,
+        )
+
+        unapproved_sqlite = run_workflow_vocabulary_guard(
+            workflow_path,
+            {"evidence/alternate.sqlite": valid_sqlite_blob()},
+        )
+        self.assertNotEqual(0, unapproved_sqlite.returncode)
+        self.assertIn(
+            "unapproved tracked SQLite path",
+            unapproved_sqlite.stderr + unapproved_sqlite.stdout,
+        )
 
         unknown_binary = run_workflow_vocabulary_guard(
             workflow_path,
