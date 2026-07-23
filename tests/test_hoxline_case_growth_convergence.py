@@ -459,6 +459,17 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             )
         self.assertEqual("pass", result["status"])
 
+    def test_exact_content_head_equality_is_not_misclassified_as_future(self) -> None:
+        self.write_sources()
+        result = self.verify(
+            ancestor_pairs={(self.sha, self.sha)},
+        )
+        self.assertEqual("pass", result["status"])
+        self.assertNotIn(
+            "SOURCE_AUTHORITY_CONTENT_RELATIONSHIP_INVALID",
+            {item["code"] for item in result["contradictions"]},
+        )
+
     def test_platform_snapshot_exact_tree_survives_rewritten_identity(self) -> None:
         rewritten_head = "d" * 40
         self.write_sources()

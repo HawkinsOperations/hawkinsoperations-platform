@@ -12498,7 +12498,10 @@ def hoxline_case_growth_convergence_verify(
                 and current_tree_for_content == content_tree
             )
             content_relationship_valid = (
-                not current_is_content_ancestor
+                not (
+                    manifest_content_revision != state["head"]
+                    and current_is_content_ancestor
+                )
                 and (
                     manifest_content_revision == state["head"]
                     or content_is_current_ancestor
