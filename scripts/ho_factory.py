@@ -11956,18 +11956,19 @@ def hoxline_case_growth_normalize_authority_key(value: str) -> str:
 
 def hoxline_case_growth_compositional_promotion_key(key: str) -> bool:
     return (
-        ("production" in key and any(part in key for part in ("active", "live", "ready", "deploy", "status")))
-        or (any(part in key for part in ("customer", "socaas")) and "deploy" in key)
-        or ("runtime" in key and any(part in key for part in ("active", "status")))
-        or ("signal" in key and any(part in key for part in ("observed", "status")))
-        or ("publicsafe" in key and not key.endswith("count"))
-        or ("final" in key and "authoriz" in key)
-        or ("case" in key and any(part in key for part in ("closed", "closure")))
-        or any(part in key for part in ("approvalstatus", "closurestatus", "casestatus"))
+        ("production" in key and any(part in key for part in ("active", "live", "ready", "deploy", "state", "status")))
+        or (any(part in key for part in ("customer", "socaas")) and any(part in key for part in ("active", "deploy", "state", "status")))
+        or ("runtime" in key and any(part in key for part in ("active", "state", "status")))
+        or ("signal" in key and any(part in key for part in ("observed", "state", "status")))
+        or ("publicsafe" in key and "count" not in key)
+        or ("final" in key and any(part in key for part in ("authoriz", "authority")))
+        or ("case" in key and "count" not in key and any(part in key for part in ("closed", "closure", "state", "status")))
+        or any(part in key for part in ("approvalstate", "approvalstatus", "closurestatus", "casestate", "casestatus"))
         or (
             key.startswith(("ai", "analyst"))
             and any(part in key for part in ("approved", "approval", "authority", "disposition"))
         )
+        or ("review" in key and "disposition" in key)
     )
 
 
@@ -11991,15 +11992,19 @@ def hoxline_case_growth_explicitly_bounded_authority_value(value: Any) -> bool:
         "notpublicsafe",
         "notruntimeactive",
         "open",
+        "partial",
         "pending",
+        "existingflowcandidate",
         "privateruntimeboundarycontextonly",
         "privateruntimeevidencecaptured",
         "privateruntimeevidencecapturedlocalwindowsonly",
         "publicruntimeblocked",
         "runtimeactiveprivate",
         "runtimeblocked",
+        "runtimeevidenceverifiedprivate",
         "signalblocked",
         "signalobservedprivate",
+        "sourceexists",
         "unknown",
         "unsupported",
     }
@@ -12015,11 +12020,44 @@ def hoxline_case_growth_authority_violations(
         for key, nested in value.items():
             child_path = (*path, str(key))
             normalized = hoxline_case_growth_normalize_authority_key(str(key))
+            normalized_ancestry = tuple(
+                hoxline_case_growth_normalize_authority_key(part)
+                for part in path
+                if not str(part).isdigit()
+            )
+            cumulative_keys = {normalized}
+            cumulative_keys.update(
+                f"{segment}{normalized}"
+                for segment in normalized_ancestry
+                if segment
+                in {
+                    "runtime",
+                    "signal",
+                    "public",
+                    "approval",
+                    "production",
+                    "customer",
+                    "socaas",
+                    "ai",
+                    "analyst",
+                    "review",
+                    "final",
+                    "case",
+                }
+            )
             scalar_authority_state = not isinstance(nested, (dict, list))
+            compositional_context = any(
+                hoxline_case_growth_compositional_promotion_key(candidate)
+                for candidate in cumulative_keys
+            )
             if (
                 (
-                    normalized in HOXLINE_BLOCKED_AUTHORITY_KEYS
-                    or hoxline_case_growth_compositional_promotion_key(normalized)
+                    scalar_authority_state
+                    and (
+                        normalized in HOXLINE_BLOCKED_AUTHORITY_KEYS
+                        or bool(authority_context)
+                        or compositional_context
+                    )
                 )
                 and not hoxline_case_growth_explicitly_bounded_authority_value(nested)
             ):
@@ -12047,14 +12085,14 @@ def hoxline_case_growth_authority_violations(
                 )
             ):
                 violations.append(("/".join(child_path), nested))
-            child_authority_context = (
+            child_authority_context = authority_context
+            if (
                 normalized
-                if isinstance(nested, list)
-                and normalized
                 in HOXLINE_BLOCKED_AUTHORITY_KEYS
                 | {"publicsafestatus", "publicsafestate"}
-                else None
-            )
+                or compositional_context
+            ):
+                child_authority_context = normalized
             violations.extend(
                 hoxline_case_growth_authority_violations(
                     nested,
@@ -12072,12 +12110,10 @@ def hoxline_case_growth_authority_violations(
                 )
             )
     elif isinstance(value, str):
-        if authority_context and value not in {
-            "NOT_PUBLIC_SAFE",
-            "BLOCKED",
-            "blocked",
-            "UNKNOWN",
-        }:
+        if (
+            authority_context
+            and not hoxline_case_growth_explicitly_bounded_authority_value(value)
+        ):
             violations.append(("/".join(path), value))
             return violations
         exact_blocked_leaf = (
@@ -13413,6 +13449,21 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
     if "lifetime-ledger-" in source:
         raise FactoryError("Ledger jobs must remain independent from mandatory convergence checks")
     governance = workflows.get("governance-gate.yml", "")
+    governance_checkout_count = governance.count(
+        f"uses: actions/checkout@{HOXLINE_ACTIONS_CHECKOUT_SHA}"
+    )
+    if (
+        governance_checkout_count == 0
+        or governance.count("persist-credentials: false")
+        != governance_checkout_count
+    ):
+        raise FactoryError(
+            "Every governance checkout must disable persisted credentials"
+        )
+    if governance.count("python -m pip install jsonschema==4.23.0") != 2:
+        raise FactoryError(
+            "Governance schema validation must pin the reviewed jsonschema version"
+        )
     ledger_condition = hoxline_workflow_job_condition(
         governance, "lifetime-case-ledger-v1"
     )

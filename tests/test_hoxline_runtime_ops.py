@@ -137,6 +137,54 @@ class HoxlineRuntimeOpsTests(unittest.TestCase):
         with self.assertRaisesRegex(ho_factory.FactoryError, "immutable SHA"):
             ho_factory.hoxline_workflow_safety_verify(Path(temp_dir.name))
 
+    def test_governance_gate_disables_persisted_checkout_credentials(self) -> None:
+        workflow = (
+            ROOT / ".github" / "workflows" / "governance-gate.yml"
+        ).read_text(encoding="utf-8")
+        checkout_count = workflow.count(
+            f"uses: actions/checkout@{ho_factory.HOXLINE_ACTIONS_CHECKOUT_SHA}"
+        )
+
+        self.assertGreater(checkout_count, 0)
+        self.assertEqual(
+            workflow.count("persist-credentials: false"),
+            checkout_count,
+        )
+        self.assertEqual(
+            workflow.count("python -m pip install jsonschema==4.23.0"),
+            2,
+        )
+
+    def test_workflow_safety_rejects_persisted_governance_credentials(self) -> None:
+        temp_dir = self.mutated_workflow_root(
+            "governance-gate.yml",
+            lambda text: text.replace(
+                "persist-credentials: false",
+                "persist-credentials: true",
+                1,
+            ),
+        )
+        with self.assertRaisesRegex(
+            ho_factory.FactoryError,
+            "governance checkout must disable persisted credentials",
+        ):
+            ho_factory.hoxline_workflow_safety_verify(Path(temp_dir.name))
+
+    def test_workflow_safety_rejects_unpinned_governance_dependency(self) -> None:
+        temp_dir = self.mutated_workflow_root(
+            "governance-gate.yml",
+            lambda text: text.replace(
+                "jsonschema==4.23.0",
+                "jsonschema",
+                1,
+            ),
+        )
+        with self.assertRaisesRegex(
+            ho_factory.FactoryError,
+            "must pin the reviewed jsonschema version",
+        ):
+            ho_factory.hoxline_workflow_safety_verify(Path(temp_dir.name))
+
     def test_workflow_safety_rejects_ambiguous_process_working_directory(self) -> None:
         temp_dir = self.mutated_workflow_root(
             "hoxline-source-checks.yml",

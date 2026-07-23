@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
+import unicodedata
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +22,29 @@ ho_factory = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 sys.modules[spec.name] = ho_factory
 spec.loader.exec_module(ho_factory)
+
+
+def run_workflow_vocabulary_guard(workflow_path: Path, files: dict[str, bytes]):
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    job = next(iter(workflow["jobs"].values()))
+    step = next(
+        item
+        for item in job["steps"]
+        if item.get("name") == "Reject retired fixture vocabulary"
+    )
+    source = step["run"].split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+    with tempfile.TemporaryDirectory() as temp:
+        root = Path(temp)
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        for relative, content in files.items():
+            (root / relative).write_bytes(content)
+        subprocess.run(["git", "add", "--", *files], cwd=root, check=True)
+        return subprocess.run(
+            [sys.executable, "-c", source],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
 
 
 class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
@@ -694,7 +719,49 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertEqual(7, workflow.count("fetch-depth: 0"))
         self.assertNotIn("fetch-depth: 1", workflow)
-        self.assertIn("'s[y]nthetic'", workflow)
+        self.assertIn('retired = "".join(("syn", "thetic"))', workflow)
+        self.assertIn('unicodedata.normalize("NFKC"', workflow)
+        self.assertIn('["git", "ls-files", "-z"]', workflow)
+        self.assertIn('["git", "show", f":{relative}"]', workflow)
+        self.assertIn("tracked non-binary content contains NUL", workflow)
+        self.assertGreaterEqual(workflow.count("check=True"), 2)
+        self.assertNotIn("git grep", workflow)
+
+    def test_source_workflow_vocabulary_guard_rejects_nfkc_utf16_and_git_errors(
+        self,
+    ) -> None:
+        workflow_path = ROOT / ".github/workflows/hoxline-source-checks.yml"
+        retired = "".join(("syn", "thetic"))
+        fullwidth = "".join(chr(ord(character) + 0xFEE0) for character in retired)
+        self.assertEqual(
+            retired,
+            unicodedata.normalize("NFKC", fullwidth).casefold(),
+        )
+        result = run_workflow_vocabulary_guard(
+            workflow_path,
+            {
+                f"fixture-{fullwidth}.txt": b"controlled-test\n",
+                "content-fixture.txt": f"{fullwidth}\n".encode(),
+                "utf16-fixture.md": f"{retired}\n".encode("utf-16-le"),
+            },
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("utf16-fixture.md", result.stderr + result.stdout)
+        workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+        step = next(
+            item
+            for item in next(iter(workflow["jobs"].values()))["steps"]
+            if item.get("name") == "Reject retired fixture vocabulary"
+        )
+        source = step["run"].split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+        with tempfile.TemporaryDirectory() as temp:
+            operational = subprocess.run(
+                [sys.executable, "-c", source],
+                cwd=temp,
+                capture_output=True,
+                text=True,
+            )
+        self.assertNotEqual(0, operational.returncode)
 
     def test_controlled_test_truth_class_replaces_retired_factory_token(self) -> None:
         factory = SCRIPT_PATH.read_text(encoding="utf-8")
@@ -917,6 +984,95 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                     "NESTED_AUTHORITY_PROMOTION",
                     {item["code"] for item in result["contradictions"]},
                 )
+
+    def test_split_and_direct_authority_state_paths_fail_closed(self) -> None:
+        attacks = (
+            {"runtime": {"state": True}},
+            {"signal": {"observed": True}},
+            {"public": {"safe": True}},
+            {"approval": {"status": True}},
+            {"production": {"active": True}},
+            {"customer": {"deployed": True}},
+            {"socaas": {"deployed": True}},
+            {"ai": {"authority": True}},
+            {"analyst": {"approval": True}},
+            {"review": {"disposition": "APPROVED"}},
+            {"final": {"authorization": True}},
+            {"case": {"closed": True}},
+            {"extensions": [{"final": {"authorization": True}}]},
+            {"runtime": {"metadata": {"state": True}}},
+            {"final": {"review": {"authorization": True}}},
+            {"ai": {"metadata": {"authority": True}}},
+            {"customer": {"review": {"deployed": True}}},
+            {"review": {"metadata": {"disposition": "APPROVED"}}},
+            {"production_live": {"enabled": True}},
+            {"ai_authority": {"enabled": True}},
+            {"review_disposition": {"approved": True}},
+            {"final_authorization": {"granted": True}},
+            {"runtime_state": True},
+            {"approval_state": True},
+            {"production_state": True},
+            {"customer_state": True},
+            {"socaas_state": True},
+            {"final_authority": True},
+            {"case_state": True},
+        )
+        for attack in attacks:
+            with self.subTest(attack=attack):
+                self.assertTrue(
+                    ho_factory.hoxline_case_growth_authority_violations(attack)
+                )
+
+    def test_split_and_direct_authority_state_bounded_controls_pass(self) -> None:
+        controls = (
+            {"runtime": {"state": False}},
+            {"signal": {"observed": False}},
+            {"public": {"safe": "NOT_PUBLIC_SAFE"}},
+            {"approval": {"status": "NOT_APPROVED"}},
+            {"production": {"active": "BLOCKED"}},
+            {"customer": {"deployed": False}},
+            {"socaas": {"deployed": False}},
+            {"ai": {"authority": False}},
+            {"analyst": {"approval": "NOT_APPROVED"}},
+            {"review": {"disposition": "NOT_APPROVED"}},
+            {"final": {"authorization": "BLOCKED"}},
+            {"case": {"closed": False}},
+            {"extensions": [{"final": {"authorization": "BLOCKED"}}]},
+            {"runtime_state": False},
+            {"approval_state": "NOT_APPROVED"},
+            {"production_state": "BLOCKED"},
+            {"customer_state": False},
+            {"socaas_state": False},
+            {"final_authority": False},
+            {"case_state": False},
+            {"production_live": {"enabled": False}},
+            {"ai_authority": {"enabled": False}},
+            {"review_disposition": {"approved": "NOT_APPROVED"}},
+            {"final_authorization": {"granted": "BLOCKED"}},
+        )
+        for control in controls:
+            with self.subTest(control=control):
+                self.assertEqual(
+                    [],
+                    ho_factory.hoxline_case_growth_authority_violations(control),
+                )
+
+    def test_compound_owned_context_names_remain_bounded(self) -> None:
+        self.assertEqual(
+            [],
+            ho_factory.hoxline_case_growth_authority_violations(
+                {
+                    "runtime_truth_spine": {
+                        "runtime_truth": {
+                            "state": "RUNTIME_EVIDENCE_VERIFIED_PRIVATE"
+                        }
+                    },
+                    "socaas_pilot_receipt_flow": {
+                        "pilot_status": "EXISTING_FLOW_CANDIDATE"
+                    },
+                }
+            ),
+        )
 
     def test_nested_authority_string_laundering_fails_closed(self) -> None:
         self.website["extensions"] = {
