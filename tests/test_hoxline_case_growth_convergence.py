@@ -1259,6 +1259,11 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                 "runtime truth, public-safe status, final authorization, or "
                 "case closure."
             ),
+            (
+                "Runtime, signal, public-safe, production, customer, AI "
+                "approval, final authorization, and case closure claims "
+                "remain blocked."
+            ),
             "Café résumé – reviewer note.",
         ):
             with self.subTest(prose=prose):
@@ -1301,6 +1306,83 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                 self.assertIn(
                     "NESTED_AUTHORITY_PROMOTION",
                     {item["code"] for item in result["contradictions"]},
+                )
+
+    def test_combining_mark_obfuscation_in_nested_shapes_fails_closed(self) -> None:
+        templates = (
+            "public\\u{code} safe is confirmed",
+            "case\\u{code} closure approved",
+            "runtime\\u{code} is active",
+            "AI\\u{code} authority is enabled",
+        )
+        for code in ("034f", "0301", "fe0f", "0000", "0008", "001f", "007f"):
+            for template in templates:
+                attack = json.loads(
+                    '{"opaque":[{"notes":[{"deep":"'
+                    + template.format(code=code)
+                    + '"}]}]}'
+                )
+                with self.subTest(code=code, template=template):
+                    self.website["extensions"] = attack
+                    self.write_sources()
+                    result = self.verify()
+                    self.assertIn(
+                        "NESTED_AUTHORITY_PROMOTION",
+                        {item["code"] for item in result["contradictions"]},
+                    )
+
+        self.website["extensions"] = {
+            "opaque": [
+                {
+                    "notes": [
+                        "Café résumé – reviewer note.",
+                        {"deep": "Reviewer 👩‍💻️ note."},
+                        {"multiline": "Reviewer note.\n\tStill bounded."},
+                    ]
+                }
+            ]
+        }
+        self.write_sources()
+        result = self.verify()
+        self.assertNotIn(
+            "NESTED_AUTHORITY_PROMOTION",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_connector_independent_and_trailing_negation_attacks_fail(self) -> None:
+        connectors = (
+            ",", "and", "plus", "though", "because", "therefore",
+            "meanwhile", "furthermore", "also", "nevertheless",
+            "nonetheless", "except", "despite that", "in fact", "so",
+            "consequently", "moreover", "then", "still", "even though",
+        )
+        attacks = [
+            (
+                f"does not prove runtime{connector} customer deployment is active"
+                if connector == ","
+                else f"does not prove runtime {connector} customer deployment is active"
+            )
+            for connector in connectors
+        ]
+        attacks.extend(
+            (
+                "customer deployment is active and not a typo",
+                "runtime is active and not simulated",
+                "final authorization received and no objections",
+                "AI authority is enabled and not revoked",
+                "public safe is confirmed and not disputed",
+                "case closure approved and not provisional",
+                "production is ready and not delayed",
+                "signal is observed and not inferred",
+                "customer deployment is active without ambiguity",
+            )
+        )
+        for attack in attacks:
+            with self.subTest(attack=attack):
+                self.assertTrue(
+                    ho_factory.hoxline_case_growth_authority_violations(
+                        {"notes": attack}
+                    )
                 )
 
     def test_unhashable_nested_public_safe_shape_fails_closed_without_crashing(self) -> None:

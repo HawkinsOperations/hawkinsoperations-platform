@@ -11653,16 +11653,60 @@ HOXLINE_NEGATIVE_AUTHORITY_PATHS = {
 
 
 def hoxline_case_growth_security_text(value: str) -> str:
-    normalized = unicodedata.normalize("NFKC", value)
+    normalized = unicodedata.normalize("NFKD", value).translate(
+        {ord("\t"): " ", ord("\n"): " ", ord("\r"): " "}
+    )
     return "".join(
         character
         for character in normalized
-        if unicodedata.category(character) != "Cf"
+        if not unicodedata.category(character).startswith(("C", "M"))
     )
+
+
+def hoxline_case_growth_bounded_claim_noun_list(value: str) -> bool:
+    suffix = re.search(
+        r"\bclaims?\s+(?:remain|remains|are|is)\s+"
+        r"(?:blocked|unsupported|not\s+approved)\.?$",
+        value,
+        re.IGNORECASE,
+    )
+    if suffix is None:
+        return False
+    prefix = value[:suffix.start()].strip(" \t,.;:")
+    items = [
+        item.strip()
+        for item in re.split(
+            r"\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+",
+            prefix,
+            flags=re.IGNORECASE,
+        )
+        if item.strip()
+    ]
+    bounded_noun = re.compile(
+        r"(?:"
+        r"runtime(?:[- ]active(?:\s+status)?)?"
+        r"|signal(?:[- ]observed(?:\s+status)?)?"
+        r"|public[- ]safe(?:\s+(?:status|runtime\s+proof))?"
+        r"|production(?:[- ]ready(?:\s+status)?|\s+(?:readiness|identity\s+coverage))?"
+        r"|customer(?:\s+deployment)?"
+        r"|socaas(?:\s+deployment)?"
+        r"|ai(?:[- ]approved(?:\s+(?:status|disposition))?|\s+approval)?"
+        r"|analyst(?:[- ]approved(?:\s+(?:status|disposition))?|\s+approval)?"
+        r"|final\s+authori[sz]ation"
+        r"|case\s+closure"
+        r"|live\s+idp"
+        r"|autonomous\s+soc"
+        r")",
+        re.IGNORECASE,
+    )
+    return bool(items) and all(bounded_noun.fullmatch(item) for item in items)
 
 
 def hoxline_case_growth_string_promotions(value: str) -> list[str]:
     """Return unambiguously promotional phrases using clause-local negation."""
+    security_value = hoxline_case_growth_security_text(value)
+    if hoxline_case_growth_bounded_claim_noun_list(security_value):
+        return []
     phrase_patterns = {
         "runtime active": r"\bruntime\b.{0,24}\b(?:active|live)\b",
         "signal observed": r"\bsignal\b.{0,24}\b(?:active|observed)\b",
@@ -11690,7 +11734,7 @@ def hoxline_case_growth_string_promotions(value: str) -> list[str]:
     # "but" must not launder a later promotion in the same sentence.
     strong_segments = re.split(
         r"(?:[;:/\r\n—–]+|(?<=[.!?])\s+|\b(?:but|however|although|yet|while|whereas)\b)",
-        hoxline_case_growth_security_text(value),
+        security_value,
         flags=re.IGNORECASE,
     )
     negative_list_intro = re.compile(
@@ -11700,8 +11744,7 @@ def hoxline_case_growth_string_promotions(value: str) -> list[str]:
         r"|\b(?:is|are|was|were)\s+not\b|\bwithout\s+claiming\b",
         re.IGNORECASE,
     )
-    affirmative_reset_after_negative_list = re.compile(
-        r"(?:,\s*|\b(?:and|plus|though)\b\s*)"
+    affirmative_state_after_negative_list = re.compile(
         r"(?:"
         r"\b(?:customer|socaas)\b.{0,48}\b(?:is|was)\s+deployed\b"
         r"|\b(?:customer|socaas)\s+deployment\b.{0,24}\b(?:is|was)\s+active\b"
@@ -11723,11 +11766,14 @@ def hoxline_case_growth_string_promotions(value: str) -> list[str]:
     for segment in strong_segments:
         intro = negative_list_intro.search(segment)
         if intro is not None:
-            if affirmative_reset_after_negative_list.search(segment[intro.end():]):
+            if affirmative_state_after_negative_list.search(segment[intro.end():]):
                 violations.append("negation-laundered authority promotion")
             continue
         clauses = segment.split(",")
         for clause in clauses:
+            for match in affirmative_state_after_negative_list.finditer(clause):
+                if clause_negation.search(clause[:match.start()]) is None:
+                    violations.append("explicit affirmative authority state")
             bounded_clause = (
                 clause_negation.search(clause) is not None
                 or re.search(
