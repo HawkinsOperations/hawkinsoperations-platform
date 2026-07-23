@@ -694,6 +694,18 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertEqual(7, workflow.count("fetch-depth: 0"))
         self.assertNotIn("fetch-depth: 1", workflow)
+        self.assertIn("'s[y]nthetic'", workflow)
+
+    def test_controlled_test_truth_class_replaces_retired_factory_token(self) -> None:
+        factory = SCRIPT_PATH.read_text(encoding="utf-8")
+        controller = (
+            ROOT / "docs/factory/DETECTION_FACTORY_CONTROLLER_V0.md"
+        ).read_text(encoding="utf-8")
+        retired = "SYN" + "THETIC_TEST_CASE"
+        self.assertIn("CONTROLLED_TEST_CASE", factory)
+        self.assertIn("CONTROLLED_TEST_CASE", controller)
+        self.assertNotIn(retired, factory)
+        self.assertNotIn(retired, controller)
 
     def test_arbitrary_same_blob_observation_not_selected_by_manifest_fails_closed(self) -> None:
         self.snapshot["source_revisions"]["hawkinsoperations-proof"]["source_commit_sha"] = "c" * 40

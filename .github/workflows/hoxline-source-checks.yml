@@ -138,6 +138,14 @@ jobs:
         working-directory: source-set/hawkinsoperations-platform
         run: python -B -m py_compile scripts/ho_factory.py
 
+      - name: Reject retired fixture vocabulary
+        working-directory: source-set/hawkinsoperations-platform
+        run: |
+          if git grep -n -I -i -E 's[y]nthetic' -- .; then
+            echo "retired fixture vocabulary found in tracked source" >&2
+            exit 1
+          fi
+
       - name: Runtime collector self-tests
         working-directory: source-set/hawkinsoperations-platform
         run: |
