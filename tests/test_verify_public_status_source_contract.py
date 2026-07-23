@@ -228,7 +228,7 @@ class PublicStatusSourceContractTests(unittest.TestCase):
                 source="proof-owned current status index",
             )
 
-    def test_detached_authority_requires_exact_manifest_sha(self) -> None:
+    def test_detached_historical_authority_is_rejected_even_with_same_blob(self) -> None:
         proof_count = self.load_contract()["public_fields"]["proof_record_count"]
         real_git_output = verifier.git_output
 
@@ -239,9 +239,37 @@ class PublicStatusSourceContractTests(unittest.TestCase):
                 return "f" * 40
             return real_git_output(repo, *args)
 
-        with mock.patch.object(verifier, "git_output", side_effect=fake_git_output):
-            with self.assertRaisesRegex(verifier.VerificationError, "detached proof authority"):
+        with mock.patch.object(
+            verifier, "git_output", side_effect=fake_git_output
+        ), mock.patch.object(
+            verifier,
+            "git_is_ancestor",
+            side_effect=lambda _repo, ancestor, descendant: ancestor == "f" * 40,
+        ):
+            with self.assertRaisesRegex(verifier.VerificationError, "older historical ancestor"):
                 verifier.verify_proof_source_identity(proof_count)
+
+    def test_detached_rewritten_authority_accepts_exact_reviewed_tree(self) -> None:
+        proof_count = self.load_contract()["public_fields"]["proof_record_count"]
+        real_git_output = verifier.git_output
+
+        def fake_git_output(repo: Path, *args: str) -> str:
+            if args == ("branch", "--show-current"):
+                return ""
+            if args == ("rev-parse", "HEAD"):
+                return "f" * 40
+            return real_git_output(repo, *args)
+
+        with mock.patch.object(
+            verifier, "git_output", side_effect=fake_git_output
+        ), mock.patch.object(
+            verifier, "git_is_ancestor", return_value=False
+        ), mock.patch.object(
+            verifier, "git_tree_sha", return_value="e" * 40
+        ):
+            raw, observed_head = verifier.verify_proof_source_identity(proof_count)
+        self.assertTrue(raw)
+        self.assertEqual("f" * 40, observed_head)
 
     def test_reviewed_classification_cannot_launder_unreachable_observation(self) -> None:
         proof_count = self.load_contract()["public_fields"]["proof_record_count"]

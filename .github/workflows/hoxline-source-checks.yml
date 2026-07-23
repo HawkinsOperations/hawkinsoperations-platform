@@ -125,7 +125,7 @@ jobs:
           if actual_names != sorted(expected):
               raise SystemExit(f"seven-source set mismatch: expected={sorted(expected)} actual={actual_names}")
           for name, entry in expected.items():
-              expected_sha = event_sha if entry.get("revision_source") == "github_event_sha" else entry["revision"]
+              expected_sha = event_sha if entry.get("revision_source") == "checked_platform_observation" else entry["revision"]
               actual_sha = subprocess.check_output(
                   ["git", "-C", str(source_root / name), "rev-parse", "HEAD"], text=True
               ).strip()
@@ -175,6 +175,7 @@ jobs:
         working-directory: source-set/hawkinsoperations-platform
         env:
           HAWKINS_PROOF_REPO: ${{ github.workspace }}/source-set/hawkinsoperations-proof
+          HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           python -B scripts/ho_factory.py public-status-source-contract-verify --format json
           python -B scripts/ho_factory.py hoxline-case-growth-convergence-verify --repo-root "$GITHUB_WORKSPACE/source-set" --format json

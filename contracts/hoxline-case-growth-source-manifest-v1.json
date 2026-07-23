@@ -31,8 +31,7 @@
     },
     "hawkinsoperations-platform": {
       "repository": "HawkinsOperations/hawkinsoperations-platform",
-      "revision_source": "github_event_sha",
-      "reviewed_revision": "dce32809fcee7faef3f92da7139b2781bb9c4330"
+      "revision_source": "checked_platform_observation"
     }
   },
   "constraints": {

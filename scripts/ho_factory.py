@@ -11788,28 +11788,20 @@ def hoxline_case_growth_source_manifest(org_root: Path) -> dict[str, Any]:
             "repository",
             "revision",
             "revision_source",
-            "reviewed_revision",
         }:
             raise FactoryError(f"source manifest entry has an unsupported shape: {repo_name}")
         if entry.get("repository") != f"HawkinsOperations/{repo_name}":
             raise FactoryError(f"source manifest repository owner mismatch: {repo_name}")
         if repo_name == "hawkinsoperations-platform":
             if (
-                entry.get("revision_source") != "github_event_sha"
+                entry.get("revision_source") != "checked_platform_observation"
                 or "revision" in entry
-                or (
-                    "reviewed_revision" in entry
-                    and re.fullmatch(
-                        r"[0-9a-f]{40}",
-                        str(entry.get("reviewed_revision", "")),
-                    )
-                    is None
-                )
             ):
-                raise FactoryError("platform source manifest entry must use github_event_sha")
+                raise FactoryError(
+                    "platform source manifest entry must use the checked platform observation"
+                )
         elif (
-            "reviewed_revision" in entry
-            or re.fullmatch(r"[0-9a-f]{40}", str(entry.get("revision", ""))) is None
+            re.fullmatch(r"[0-9a-f]{40}", str(entry.get("revision", ""))) is None
         ):
             raise FactoryError(f"source manifest revision must be immutable: {repo_name}")
     constraints = manifest.get("constraints")
@@ -12192,15 +12184,38 @@ def hoxline_case_growth_convergence_verify(
         branch = str(state.get("branch", ""))
         manifest_entry = manifest_entries.get(repo_name, {})
         current_observation_revision = (
-            os.environ.get("GITHUB_SHA")
-            if manifest_entry.get("revision_source") == "github_event_sha"
+            (
+                os.environ.get("HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA")
+                if not branch
+                else state["head"]
+            )
+            if manifest_entry.get("revision_source")
+            == "checked_platform_observation"
             else None
         )
         manifest_revision = (
-            manifest_entry.get("reviewed_revision")
-            or manifest_entry.get("revision")
+            manifest_entry.get("revision")
             or current_observation_revision
         )
+        if (
+            manifest_entry.get("revision_source")
+            == "checked_platform_observation"
+            and not branch
+            and current_observation_revision != state["head"]
+        ):
+            issue(
+                "SOURCE_PLATFORM_OBSERVATION_MISMATCH",
+                repo_name,
+                "HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA",
+                state["head"],
+                current_observation_revision,
+                (
+                    "Supply the exact detached platform checkout SHA through the "
+                    "read-only convergence environment; another repository event "
+                    "SHA cannot establish platform currentness."
+                ),
+                revision=state["head"],
+            )
         expected_origin = HOXLINE_CANONICAL_ORIGINS[repo_name]
         actual_origin = hoxline_case_growth_normalized_origin(str(state.get("origin", "")))
         if actual_origin != expected_origin:

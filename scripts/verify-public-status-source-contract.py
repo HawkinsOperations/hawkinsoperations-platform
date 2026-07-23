@@ -445,6 +445,25 @@ def git_output(repo: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def git_is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
+    result = subprocess.run(
+        ["git", "-C", str(repo), "merge-base", "--is-ancestor", ancestor, descendant],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if result.returncode not in (0, 1):
+        fail(
+            "git merge-base authority relationship check failed for "
+            f"{repo.name}: {result.stderr.strip()}"
+        )
+    return result.returncode == 0
+
+
+def git_tree_sha(repo: Path, revision: str) -> str:
+    return git_output(repo, "rev-parse", f"{revision}^{{tree}}")
+
+
 def normalized_origin(value: str) -> str:
     origin = value.strip().replace("\\", "/")
     origin = re.sub(r"^git@", "", origin)
@@ -501,7 +520,26 @@ def verify_proof_source_identity(proof_count: dict[str, Any]) -> tuple[bytes, st
         fail("proof source manifest entry must contain the canonical owner and immutable revision")
     immutable_manifest_sha = proof_manifest_entry["revision"]
     if not current_ref and immutable_manifest_sha != current_head:
-        fail("detached proof authority requires an exact immutable manifest SHA")
+        current_is_historical_ancestor = git_is_ancestor(
+            PROOF_REPO, current_head, immutable_manifest_sha
+        )
+        if current_is_historical_ancestor:
+            fail(
+                "detached proof authority is an older historical ancestor of "
+                "the immutable manifest selection"
+            )
+        reviewed_is_ancestor = git_is_ancestor(
+            PROOF_REPO, immutable_manifest_sha, current_head
+        )
+        tree_is_reviewed_equivalent = (
+            git_tree_sha(PROOF_REPO, immutable_manifest_sha)
+            == git_tree_sha(PROOF_REPO, current_head)
+        )
+        if not (reviewed_is_ancestor or tree_is_reviewed_equivalent):
+            fail(
+                "detached proof authority requires the reviewed revision as an "
+                "ancestor or an exact reviewed repository tree"
+            )
 
     current_blob = git_output(PROOF_REPO, "rev-parse", f"HEAD:{PROOF_INDEX_GIT_PATH}")
     blob_bytes = subprocess.run(
