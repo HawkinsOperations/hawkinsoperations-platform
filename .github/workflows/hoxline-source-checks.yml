@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout platform event revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           path: source-set/hawkinsoperations-platform
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -48,7 +48,7 @@ jobs:
           done
 
       - name: Checkout command-center authority
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/.github
           path: source-set/.github
@@ -57,7 +57,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout detection authority
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/hawkinsoperations-detections
           path: source-set/hawkinsoperations-detections
@@ -66,7 +66,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout validation authority
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/hawkinsoperations-validation
           path: source-set/hawkinsoperations-validation
@@ -75,7 +75,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout proof authority
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/hawkinsoperations-proof
           path: source-set/hawkinsoperations-proof
@@ -84,7 +84,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout website consumer
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/hawkinsoperations-website
           path: source-set/hawkinsoperations-website
@@ -93,7 +93,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout Hoxline consumer
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/hoxline
           path: source-set/hoxline

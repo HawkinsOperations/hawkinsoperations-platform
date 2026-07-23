@@ -13,7 +13,7 @@ jobs:
   required-files:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Check Required Governance Files
         shell: pwsh
         run: |
@@ -44,7 +44,7 @@ jobs:
   ho-det-011-case-packet:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install schema validation dependency
         run: python -m pip install jsonschema
       - name: Verify HO-DET-011 case packet guardrail
@@ -53,7 +53,7 @@ jobs:
   runtime-route-proof-v1-private-candidate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Parse Runtime Route Proof v1 private candidate schema
         run: python -m json.tool contracts/schemas/runtime-route-proof-v1-private-candidate.schema.json >/dev/null
       - name: Parse Runtime Route Proof v1 private candidate sample
@@ -64,7 +64,7 @@ jobs:
   runtime-collector-eligibility-v0:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install schema validation dependency
         run: python -m pip install jsonschema
       - name: Verify Runtime Collector Eligibility Registry v0
@@ -75,17 +75,17 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Check out HawkinsOperations sibling repositories
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/hawkinsoperations-detections
           path: hawkinsoperations-detections
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/hawkinsoperations-validation
           path: hawkinsoperations-validation
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/hawkinsoperations-proof
           path: hawkinsoperations-proof

@@ -213,52 +213,48 @@ DENIED_TEXT = [
     ),
 ]
 
-PROMOTION_PHRASES = [
-    "runtime active",
-    "runtime proven",
-    "signal observed",
-    "runtime-active",
-    "signal-observed",
-    "public-safe approved",
-    "public-safe proof",
-    "public-safe runtime proof",
-    "public-safe status",
-    "production ready",
-    "production SOC",
-    "production readiness",
-    "production deployment",
-    "SOC deployed",
-    "SOCaaS deployed",
-    "customer deployed",
-    "customer validated",
-    "customer deployment",
-    "SOCaaS deployment",
-    "AI approved",
-    "analyst approved",
-    "AI-approved disposition",
-    "analyst-approved disposition",
-    "autonomous approval",
-    "final human authorization",
-    "final authorization",
-    "case closed",
-    "case closure",
-    "green CI as approval",
-    "website rendering as proof",
-    "GitHub rendering as proof",
-]
-NEGATIVE_BOUNDARY_MARKERS = [
-    "not ",
-    "no ",
-    "never ",
-    "does not",
-    "must not",
-    "blocked",
-    "without",
-    "unless",
-    "false",
-    "UNKNOWN_SOURCE_NOT_CAPTURED",
-    "boundary",
-]
+def unnegated_promotional_phrases(value: str) -> list[str]:
+    """Find claim promotions without letting a distant negation launder them."""
+    phrase_patterns = {
+        "runtime active": r"\bruntime[\s_-]+active\b",
+        "runtime proven": r"\bruntime[\s_-]+proven\b",
+        "signal observed": r"\bsignal[\s_-]+observed\b",
+        "public safe": r"\bpublic\s+safe\b",
+        "public-safe promotion": r"\bpublic[\s_-]+safe[\s_-]+(?:approved|proof|status)\b",
+        "production": r"\bproduction[\s_-]+(?:ready|readiness|deployment|status|soc)\b",
+        "customer": r"\bcustomer[\s_-]+(?:deployed|deployment|validated)\b",
+        "SOC deployment": r"\b(?:soc|socaas)[\s_-]+(?:deployed|deployment)\b",
+        "AI authority": r"\bai[\s_-]+(?:approved|authority)\b",
+        "analyst authority": r"\banalyst[\s_-]+(?:approved|authority)\b",
+        "autonomous approval": r"\bautonomous[\s_-]+approval\b",
+        "final authorization": r"\bfinal(?:[\s_-]+human)?[\s_-]+authorization\b",
+        "case closure": r"\bcase[\s_-]+(?:closed|closure)\b",
+        "green CI as approval": r"\bgreen[\s_-]+ci[\s_-]+(?:as|is)[\s_-]+approval\b",
+        "website as proof": r"\bwebsite(?:[\s_-]+rendering)?[\s_-]+(?:as|is)[\s_-]+proof\b",
+        "GitHub as proof": r"\bgithub(?:[\s_-]+rendering)?[\s_-]+(?:as|is)[\s_-]+proof\b",
+    }
+    clause_negation = re.compile(
+        r"(?:"
+        r"\b(?:not|never|no|without|missing|blocked)\b"
+        r"|\b(?:does|do|must|is|are|was|were|can|cannot|could|should|will|would)\s+not\b"
+        r"|\bnot\s+(?:authorized|approved|promoted)\b"
+        r")",
+        flags=re.IGNORECASE,
+    )
+    found: list[str] = []
+    clauses = re.split(
+        r"(?:[.;!?\r\n]+|\b(?:but|however|although|yet)\b)",
+        value,
+        flags=re.IGNORECASE,
+    )
+    for clause in clauses:
+        bounded_clause = clause_negation.search(clause) is not None
+        for label, pattern in phrase_patterns.items():
+            for match in re.finditer(pattern, clause, flags=re.IGNORECASE):
+                if bounded_clause:
+                    continue
+                found.append(label)
+    return found
 
 
 class VerificationError(Exception):
@@ -400,6 +396,8 @@ NEGATIVE_POLICY_PATHS = {
     "extractormustnot",
     "mustnotsource",
     "promotionblockers",
+    "websitemustnotsourcefromwebsiteonlydata",
+    "sourcejsonpointer",
 }
 
 
@@ -422,14 +420,17 @@ def verify_no_promotional_claims(data: dict[str, Any]) -> None:
             continue
         text = value
         lowered = text.lower()
-        if lowered in blocked_policy_strings:
-            continue
         policy_context = any(normalized_key(part) in NEGATIVE_POLICY_PATHS for part in path)
-        for phrase in PROMOTION_PHRASES:
-            if phrase.lower() not in lowered:
-                continue
-            if not policy_context and not any(marker.lower() in lowered for marker in NEGATIVE_BOUNDARY_MARKERS):
-                fail(f"promotional phrase appears outside negative boundary context: {phrase}")
+        if policy_context and lowered in blocked_policy_strings:
+            continue
+        if policy_context:
+            continue
+        promotions = unnegated_promotional_phrases(text)
+        if promotions:
+            fail(
+                "promotional phrase appears outside negative boundary context: "
+                + promotions[0]
+            )
 
 
 def git_output(repo: Path, *args: str) -> str:

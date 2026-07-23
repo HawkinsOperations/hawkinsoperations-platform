@@ -268,14 +268,24 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.assertFalse(result["runtime_mutated"])
         self.assertFalse(result["public_proof_promoted"])
 
-    def test_stale_head_observation_with_same_authority_blob_is_bounded(self) -> None:
+    def test_manifest_selected_stale_head_with_same_authority_blob_is_bounded(self) -> None:
         self.snapshot["source_revisions"]["hawkinsoperations-proof"]["source_commit_sha"] = "b" * 40
+        self.source_manifest["repositories"]["hawkinsoperations-proof"]["revision"] = "b" * 40
         self.write_sources()
         result = self.verify()
         self.assertEqual(result["status"], "pass")
         self.assertIn(
             "SOURCE_HEAD_OBSERVATION_STALE_CONTENT_CURRENT",
             {item["code"] for item in result["drift"]},
+        )
+
+    def test_arbitrary_same_blob_observation_not_selected_by_manifest_fails_closed(self) -> None:
+        self.snapshot["source_revisions"]["hawkinsoperations-proof"]["source_commit_sha"] = "c" * 40
+        self.write_sources()
+        result = self.verify()
+        self.assertIn(
+            "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
+            {item["code"] for item in result["contradictions"]},
         )
 
     def test_arbitrary_observation_cannot_override_current_authority_blob(self) -> None:
@@ -365,6 +375,42 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
     def test_nested_authority_string_laundering_fails_closed(self) -> None:
         self.website["extensions"] = {
             "opaque": [{"note": "customer deployed and production ready"}]
+        }
+        self.write_sources()
+        result = self.verify()
+        self.assertIn(
+            "NESTED_AUTHORITY_PROMOTION",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_nested_plain_public_safe_and_ai_authority_prose_fails_closed(self) -> None:
+        for prose in ("public safe", "AI authority enabled"):
+            with self.subTest(prose=prose):
+                self.website["extensions"] = {"opaque": [{"note": prose}]}
+                self.write_sources()
+                result = self.verify()
+                self.assertIn(
+                    "NESTED_AUTHORITY_PROMOTION",
+                    {item["code"] for item in result["contradictions"]},
+                )
+
+    def test_clause_local_negative_prose_remains_bounded(self) -> None:
+        for prose in (
+            "does not prove customer deployed",
+            "missing production ready",
+        ):
+            with self.subTest(prose=prose):
+                self.website["extensions"] = {"opaque": [{"note": prose}]}
+                self.write_sources()
+                result = self.verify()
+                self.assertNotIn(
+                    "NESTED_AUTHORITY_PROMOTION",
+                    {item["code"] for item in result["contradictions"]},
+                )
+
+    def test_negation_cannot_launder_later_adversative_promotion(self) -> None:
+        self.website["extensions"] = {
+            "opaque": [{"note": "does not prove customer deployed, but public safe"}]
         }
         self.write_sources()
         result = self.verify()

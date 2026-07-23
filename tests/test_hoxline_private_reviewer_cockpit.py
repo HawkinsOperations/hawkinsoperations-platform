@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
-import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -85,27 +85,29 @@ class HoxlinePrivateReviewerCockpitTests(unittest.TestCase):
         self.assertEqual(global_state["remote_lab_authority_rule"], "present")
         self.assertEqual(global_state["remote_default_mode"], "read_only")
 
-    def test_remote_lab_authority_ci_fallback_is_bounded(self) -> None:
-        original_path = ho_factory.HOXLINE_AGENTS_RULES
-        original_env = os.environ.get("GITHUB_ACTIONS")
-        try:
-            ho_factory.HOXLINE_AGENTS_RULES = ROOT / "missing-agents-rules.md"
-            os.environ.pop("GITHUB_ACTIONS", None)
+    def test_remote_lab_authority_uses_repo_controlled_fixture(self) -> None:
+        state = ho_factory.hoxline_remote_lab_authority_state()
+
+        self.assertEqual(state["remote_lab_authority_rule"], "present")
+        self.assertEqual(state["remote_default_mode"], "read_only")
+        self.assertEqual(state["rule_source"], "repo_controlled_fixture")
+
+    def test_remote_lab_authority_missing_or_extended_fixture_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing-authority.json"
             with self.assertRaises(ho_factory.FactoryError):
-                ho_factory.hoxline_remote_lab_authority_state()
+                ho_factory.hoxline_remote_lab_authority_state(missing)
 
-            os.environ["GITHUB_ACTIONS"] = "true"
-            state = ho_factory.hoxline_remote_lab_authority_state()
-
-            self.assertEqual(state["remote_lab_authority_rule"], "present")
-            self.assertEqual(state["remote_default_mode"], "read_only")
-            self.assertEqual(state["rule_source"], "github_actions_ci_fallback")
-        finally:
-            ho_factory.HOXLINE_AGENTS_RULES = original_path
-            if original_env is None:
-                os.environ.pop("GITHUB_ACTIONS", None)
-            else:
-                os.environ["GITHUB_ACTIONS"] = original_env
+            extended = Path(tmp) / "extended-authority.json"
+            payload = ho_factory.hoxline_case_growth_load_json(
+                ho_factory.HOXLINE_REMOTE_LAB_AUTHORITY_FIXTURE
+            )
+            payload["runtime_mutation_authorized"] = True
+            extended.write_text(ho_factory.json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                ho_factory.FactoryError, "exact CONTROLLED_TEST_ONLY v1 contract"
+            ):
+                ho_factory.hoxline_remote_lab_authority_state(extended)
 
     def test_evidence_product_convergence_self_test_passes(self) -> None:
         result = ho_factory.hoxline_evidence_to_product_convergence_self_test(ROOT)

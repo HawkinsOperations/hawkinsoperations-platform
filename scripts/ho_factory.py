@@ -47,7 +47,12 @@ HOXLINE_PR67_AI_RECONCILIATION_REPORT = Path(
 HOXLINE_OPERATOR_EVIDENCE_PACKAGE = Path(
     "C:/Raylee/Data/Hoxline/operator-evidence-package-20260621"
 )
-HOXLINE_AGENTS_RULES = Path("C:/Raylee/Codex/Rules/AGENTS.md")
+HOXLINE_REMOTE_LAB_AUTHORITY_FIXTURE = (
+    PLATFORM_ROOT
+    / "contracts"
+    / "examples"
+    / "hoxline-remote-lab-authority-v1.controlled.json"
+)
 PROOF_STATUS_INDEX_REL = "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml"
 PROOF_STATUS_INDEX_OWNER = "hawkinsoperations-proof"
 PROOF_STATUS_INDEX_VISIBILITY_STATUS = "STATUS_VISIBILITY_ONLY_NON_AUTHORITATIVE"
@@ -11022,49 +11027,32 @@ def hoxline_file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def hoxline_remote_lab_authority_state() -> dict[str, Any]:
-    if not HOXLINE_AGENTS_RULES.is_file():
-        if os.environ.get("GITHUB_ACTIONS") != "true":
-            raise FactoryError(f"Codex AGENTS rules file is missing: {HOXLINE_AGENTS_RULES}")
-        return {
-            "remote_lab_authority_rule": "present",
-            "remote_default_mode": "read_only",
-            "rule_source": "github_actions_ci_fallback",
-            "rule_hash": canonical_sha256(
-                {
-                    "rule": "REMOTE LAB / SSH EVIDENCE SURFACE AUTHORITY",
-                    "hosts": ["ho-wazuh-01", "ho-wazuh-02", "ho-gpu-01", "ho-runner-01"],
-                    "default_mode": "read_only",
-                    "source": "github_actions_ci_fallback",
-                }
-            ),
-        }
-    text = HOXLINE_AGENTS_RULES.read_text(encoding="utf-8")
-    required_markers = [
-        "REMOTE LAB / SSH EVIDENCE SURFACE AUTHORITY",
-        "Raylee-owned lab servers and VMs are approved evidence surfaces",
-        "Default remote mode is read-only.",
-        "ho-wazuh-01",
-        "ho-wazuh-02",
-        "ho-gpu-01",
-        "ho-runner-01",
-        "C:\\Raylee\\LogBook",
-        "C:\\Raylee\\Work",
-    ]
-    if not all(marker in text for marker in required_markers):
-        raise FactoryError("Codex remote lab authority rule is not present or is incomplete")
+def hoxline_remote_lab_authority_state(
+    authority_fixture: Path | None = None,
+) -> dict[str, Any]:
+    fixture_path = authority_fixture or HOXLINE_REMOTE_LAB_AUTHORITY_FIXTURE
+    fixture = hoxline_case_growth_load_json(fixture_path)
+    expected = {
+        "fixture_id": "HOXLINE_REMOTE_LAB_AUTHORITY_CONTROLLED_V1",
+        "fixture_version": 1,
+        "fixture_class": "CONTROLLED_TEST_ONLY",
+        "remote_default_mode": "read_only",
+        "hosts": ["ho-wazuh-01", "ho-wazuh-02", "ho-gpu-01", "ho-runner-01"],
+        "runtime_mutation_authorized": False,
+        "ledger_mutation_authorized": False,
+        "public_proof_promotion_authorized": False,
+        "proof_ceiling": "CONTROLLED_REPO_CONVERGENCE_AND_LOCAL_FIXTURE_REVIEW_ONLY",
+    }
+    if fixture != expected:
+        raise FactoryError(
+            "repo-controlled remote lab authority fixture must equal the exact "
+            "CONTROLLED_TEST_ONLY v1 contract"
+        )
     return {
         "remote_lab_authority_rule": "present",
         "remote_default_mode": "read_only",
-        "rule_source": "raylee_codex_rules_file",
-        "rule_hash": canonical_sha256(
-            {
-                "rule": "REMOTE LAB / SSH EVIDENCE SURFACE AUTHORITY",
-                "hosts": ["ho-wazuh-01", "ho-wazuh-02", "ho-gpu-01", "ho-runner-01"],
-                "default_mode": "read_only",
-                "source": "raylee_codex_rules_file",
-            }
-        ),
+        "rule_source": "repo_controlled_fixture",
+        "rule_hash": canonical_sha256(fixture),
     }
 
 
@@ -11635,18 +11623,6 @@ HOXLINE_BLOCKED_AUTHORITY_KEYS = {
     "websiteisproof",
     "greenciisapproval",
 }
-HOXLINE_BLOCKED_AUTHORITY_STRING_TOKENS = {
-    "runtimeactive",
-    "signalobserved",
-    "publicsafeapproved",
-    "productionready",
-    "customerdeployed",
-    "socaasdeployed",
-    "aiapproved",
-    "analystapproved",
-    "finalauthorization",
-    "caseclosed",
-}
 HOXLINE_NEGATIVE_AUTHORITY_PATHS = {
     "blockedclaims",
     "notclaiming",
@@ -11661,6 +11637,49 @@ HOXLINE_NEGATIVE_AUTHORITY_PATHS = {
     "sourcejsonpointer",
     "sourcestatus",
 }
+
+
+def hoxline_case_growth_string_promotions(value: str) -> list[str]:
+    """Return unambiguously promotional phrases using clause-local negation."""
+    phrase_patterns = {
+        "runtime active": r"\bruntime[\s_-]+active\b",
+        "signal observed": r"\bsignal[\s_-]+observed\b",
+        "public safe": r"\bpublic\s+safe\b",
+        "public-safe approval": r"\bpublic[\s_-]+safe[\s_-]+(?:approved|proof|status)\b",
+        "production ready": r"\bproduction[\s_-]+(?:ready|readiness|deployment|status)\b",
+        "customer deployed": r"\bcustomer[\s_-]+(?:deployed|deployment|validated)\b",
+        "SOCaaS deployed": r"\bsocaas[\s_-]+(?:deployed|deployment)\b",
+        "AI authority": r"\bai[\s_-]+(?:approved|authority)\b",
+        "analyst authority": r"\banalyst[\s_-]+(?:approved|authority)\b",
+        "final authorization": r"\bfinal(?:[\s_-]+human)?[\s_-]+authorization\b",
+        "case closure": r"\bcase[\s_-]+(?:closed|closure)\b",
+        "website as proof": r"\bwebsite(?:[\s_-]+rendering)?[\s_-]+(?:as|is)[\s_-]+proof\b",
+        "green CI as approval": r"\bgreen[\s_-]+ci[\s_-]+(?:as|is)[\s_-]+approval\b",
+    }
+    clause_negation = re.compile(
+        r"(?:"
+        r"\b(?:not|never|no|without|missing|blocked)\b"
+        r"|\b(?:does|do|must|is|are|was|were|can|cannot|could|should|will|would)\s+not\b"
+        r"|\bnot\s+(?:authorized|approved|promoted)\b"
+        r")",
+        flags=re.IGNORECASE,
+    )
+    violations: list[str] = []
+    # Adversative conjunctions start a new semantic clause. A negation before
+    # "but" must not launder a later promotion in the same sentence.
+    clauses = re.split(
+        r"(?:[.;!?\r\n]+|\b(?:but|however|although|yet)\b)",
+        value,
+        flags=re.IGNORECASE,
+    )
+    for clause in clauses:
+        bounded_clause = clause_negation.search(clause) is not None
+        for label, pattern in phrase_patterns.items():
+            for match in re.finditer(pattern, clause, flags=re.IGNORECASE):
+                if bounded_clause:
+                    continue
+                violations.append(label)
+    return violations
 
 
 def hoxline_case_growth_reject_duplicate_keys(pairs: list[tuple[Any, Any]]) -> dict[str, Any]:
@@ -11856,7 +11875,6 @@ def hoxline_case_growth_authority_violations(
                 )
             )
     elif isinstance(value, str):
-        normalized_value = re.sub(r"[^a-z0-9]", "", value.casefold())
         if authority_context and value not in {
             "NOT_PUBLIC_SAFE",
             "BLOCKED",
@@ -11870,20 +11888,16 @@ def hoxline_case_growth_authority_violations(
             in HOXLINE_NEGATIVE_AUTHORITY_PATHS
             for part in path
         )
-        bounded_negative_statement = re.search(
-            r"(?:^|[\s_-])(?:does[\s_-]+not|do[\s_-]+not|must[\s_-]+not|never|not[\s_-]+authorized|not[\s_-]+approved|not[\s_-]+promoted|missing)(?:[\s_-]|$)",
-            value,
-            flags=re.IGNORECASE,
-        ) is not None
         bounded_private_state = value in {
             "SIGNAL_OBSERVED_PRIVATE",
             "RUNTIME_ACTIVE_PRIVATE",
         }
-        if not negative_context and not bounded_negative_statement and not bounded_private_state:
-            for token in HOXLINE_BLOCKED_AUTHORITY_STRING_TOKENS:
-                if token in normalized_value:
-                    violations.append(("/".join(path), value))
-                    break
+        if (
+            not negative_context
+            and not bounded_private_state
+            and hoxline_case_growth_string_promotions(value)
+        ):
+            violations.append(("/".join(path), value))
     elif authority_context and value not in (False, None):
         violations.append(("/".join(path), value))
     return violations
@@ -12305,6 +12319,26 @@ def hoxline_case_growth_convergence_verify(
                 revision=state["head"],
             )
             continue
+        selected_observations = {state["head"]}
+        if isinstance(manifest_revision, str) and re.fullmatch(
+            r"[0-9a-fA-F]{40}", manifest_revision
+        ):
+            selected_observations.add(manifest_revision)
+        if stated_sha not in selected_observations:
+            issue(
+                "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
+                repo_name,
+                f"source_revisions/{repo_name}",
+                sorted(selected_observations),
+                stated_sha,
+                (
+                    f"Record either the checked {repo_name} current head or the exact "
+                    "separately reviewed immutable source-manifest revision; arbitrary "
+                    "same-blob ancestors are not current authority observations."
+                ),
+                revision=state["head"],
+            )
+            continue
         if observed_commit_exists:
             observed_blob = hoxline_case_growth_git_blob(repo_path, stated_sha, expected_source_path)
             if observed_blob is None or observed_blob[0] != current_blob_sha:
@@ -12559,6 +12593,47 @@ def hoxline_case_growth_convergence_verify(
         "proof_ceiling": "CONTROLLED_REPO_CONVERGENCE_AND_LOCAL_FIXTURE_REVIEW_ONLY",
     }
 
+HOXLINE_ACTIONS_CHECKOUT_SHA = "11bd71901bbe5b1630ceea73d27597364c9af683"
+
+
+def hoxline_workflow_job_condition(workflow: str, job_name: str) -> str:
+    """Extract one exact top-level job condition without substring matching."""
+    lines = workflow.splitlines()
+    job_start = [
+        index
+        for index, line in enumerate(lines)
+        if line == f"  {job_name}:"
+    ]
+    if len(job_start) != 1:
+        raise FactoryError(f"workflow must define exactly one {job_name} job")
+    block: list[str] = []
+    for line in lines[job_start[0] + 1 :]:
+        if re.fullmatch(r"  [A-Za-z0-9_-]+:", line):
+            break
+        block.append(line)
+    conditions = [
+        match.group(1).strip()
+        for line in block
+        if (match := re.fullmatch(r"    if:\s*(.*?)\s*", line))
+    ]
+    if len(conditions) != 1:
+        raise FactoryError(f"{job_name} must define exactly one job-level if condition")
+    return conditions[0]
+
+
+def hoxline_workflow_has_shell_neutralizer(workflow: str) -> bool:
+    neutralizers = (
+        r"\|\|\s*(?:true|:|exit\s+0)(?:\s*(?:#.*)?)?$",
+        r"(?:^|[;&]\s*)set\s+\+e(?:\s|$)",
+        r"\|\|\s*(?:echo|printf)\b",
+        r"trap\s+['\"].*['\"]\s+EXIT(?:\s|$)",
+    )
+    return any(
+        re.search(pattern, workflow, flags=re.IGNORECASE | re.MULTILINE)
+        for pattern in neutralizers
+    )
+
+
 def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
     workflow_dir = repo_root / ".github" / "workflows"
     workflows = {path.name: path.read_text(encoding="utf-8") for path in sorted(workflow_dir.glob("*.yml"))}
@@ -12574,10 +12649,16 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
     for name, text in workflows.items():
         if "pull_request_target" in text:
             raise FactoryError(f"pull_request_target is not allowed: {name}")
-        if re.search(r"(?m)^\s*continue-on-error\s*:\s*true\s*$", text):
+        if re.search(r"(?m)^\s*continue-on-error\s*:", text):
             raise FactoryError(f"continue-on-error is not allowed: {name}")
-        if re.search(r"(?m)(?:^|[;&|]\s*)\|\|\s*true(?:\s|$)", text):
+        if hoxline_workflow_has_shell_neutralizer(text):
             raise FactoryError(f"shell failure swallowing is not allowed: {name}")
+        checkout_refs = re.findall(
+            r"(?m)^\s*(?:-\s*)?uses:\s*actions/checkout@([^\s#]+)",
+            text,
+        )
+        if any(ref != HOXLINE_ACTIONS_CHECKOUT_SHA for ref in checkout_refs):
+            raise FactoryError(f"actions/checkout must use the reviewed immutable SHA: {name}")
         if "pull_request:" in text:
             if "self-hosted" in text:
                 raise FactoryError(f"pull_request workflow cannot use self-hosted runner: {name}")
@@ -12602,7 +12683,10 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
     }
     if set(checkout_paths) != expected_checkout_paths or len(checkout_paths) != 7:
         raise FactoryError("Hoxline source checks must check out exactly seven collision-free repositories")
-    if source.count("uses: actions/checkout@") != 7 or source.count("persist-credentials: false") != 7:
+    if (
+        source.count(f"uses: actions/checkout@{HOXLINE_ACTIONS_CHECKOUT_SHA}") != 7
+        or source.count("persist-credentials: false") != 7
+    ):
         raise FactoryError("Every Hoxline source checkout must disable persisted credentials")
     required_source_commands = {
         "hoxline-case-growth-convergence-verify",
@@ -12620,11 +12704,10 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
     if "lifetime-ledger-" in source:
         raise FactoryError("Ledger jobs must remain independent from mandatory convergence checks")
     governance = workflows.get("governance-gate.yml", "")
-    ledger_pr_skip = (
-        "lifetime-case-ledger-v1:" in governance
-        and "if: github.event_name != 'pull_request'" in governance
+    ledger_condition = hoxline_workflow_job_condition(
+        governance, "lifetime-case-ledger-v1"
     )
-    if not ledger_pr_skip:
+    if ledger_condition != "github.event_name != 'pull_request'":
         raise FactoryError("The intentional PR ledger skip must remain explicit and independently bounded")
     trusted = workflows["hoxline-trusted-runtime-verify.yml"]
     canary = workflows["hoxline-private-canary.yml"]

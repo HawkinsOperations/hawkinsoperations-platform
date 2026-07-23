@@ -127,6 +127,39 @@ class PublicStatusSourceContractTests(unittest.TestCase):
         with self.assertRaisesRegex(verifier.VerificationError, "promotional phrase"):
             self.verify_contract_copy(contract)
 
+    def test_blocked_claim_text_is_not_allowed_outside_blocked_claims(self) -> None:
+        for prose in ("customer deployed", "public safe", "AI authority enabled"):
+            with self.subTest(prose=prose):
+                contract = self.load_contract()
+                contract["future_generated_status_v1_extraction"]["extension"] = {
+                    "note": prose
+                }
+                with self.assertRaisesRegex(
+                    verifier.VerificationError, "promotional phrase"
+                ):
+                    self.verify_contract_copy(contract)
+
+    def test_clause_local_negative_claim_text_remains_bounded(self) -> None:
+        for prose in (
+            "does not prove customer deployed",
+            "missing production ready",
+        ):
+            with self.subTest(prose=prose):
+                contract = self.load_contract()
+                contract["future_generated_status_v1_extraction"]["extension"] = {
+                    "note": prose
+                }
+                result = self.verify_contract_copy(contract)
+                self.assertEqual(result["status"], "pass")
+
+    def test_distant_negation_does_not_launder_later_public_safe_claim(self) -> None:
+        contract = self.load_contract()
+        contract["future_generated_status_v1_extraction"]["extension"] = {
+            "note": "does not prove customer deployed, but public safe"
+        }
+        with self.assertRaisesRegex(verifier.VerificationError, "promotional phrase"):
+            self.verify_contract_copy(contract)
+
     def test_rejects_case_folded_duplicate_json_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "duplicate.json"

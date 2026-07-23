@@ -1,0 +1,16 @@
+{
+  "fixture_id": "HOXLINE_REMOTE_LAB_AUTHORITY_CONTROLLED_V1",
+  "fixture_version": 1,
+  "fixture_class": "CONTROLLED_TEST_ONLY",
+  "remote_default_mode": "read_only",
+  "hosts": [
+    "ho-wazuh-01",
+    "ho-wazuh-02",
+    "ho-gpu-01",
+    "ho-runner-01"
+  ],
+  "runtime_mutation_authorized": false,
+  "ledger_mutation_authorized": false,
+  "public_proof_promotion_authorized": false,
+  "proof_ceiling": "CONTROLLED_REPO_CONVERGENCE_AND_LOCAL_FIXTURE_REVIEW_ONLY"
+}
