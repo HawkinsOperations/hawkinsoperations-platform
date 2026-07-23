@@ -12497,6 +12497,41 @@ def hoxline_case_growth_convergence_verify(
                 and content_tree is not None
                 and current_tree_for_content == content_tree
             )
+            reviewed_revision_exists_for_content = (
+                isinstance(manifest_revision, str)
+                and hoxline_case_growth_commit_exists(
+                    repo_path, manifest_revision
+                )
+            )
+            content_is_reviewed_ancestor = (
+                reviewed_revision_exists_for_content
+                and (
+                    manifest_content_revision == manifest_revision
+                    or hoxline_case_growth_is_ancestor(
+                        repo_path,
+                        manifest_content_revision,
+                        manifest_revision,
+                    )
+                )
+            )
+            reviewed_tree_for_content = (
+                hoxline_case_growth_tree_sha(repo_path, manifest_revision)
+                if reviewed_revision_exists_for_content
+                else None
+            )
+            current_is_exact_reviewed_tree = (
+                current_tree_for_content is not None
+                and reviewed_tree_for_content is not None
+                and current_tree_for_content == reviewed_tree_for_content
+                and reviewed_tree_for_content == manifest_reviewed_tree
+            )
+            rewritten_reviewed_projection = (
+                manifest_content_revision != state["head"]
+                and not current_is_content_ancestor
+                and not content_is_current_ancestor
+                and content_is_reviewed_ancestor
+                and current_is_exact_reviewed_tree
+            )
             content_relationship_valid = (
                 not (
                     manifest_content_revision != state["head"]
@@ -12506,6 +12541,7 @@ def hoxline_case_growth_convergence_verify(
                     manifest_content_revision == state["head"]
                     or content_is_current_ancestor
                     or content_tree_is_current_equivalent
+                    or rewritten_reviewed_projection
                 )
             )
             if not content_relationship_valid:
@@ -12524,6 +12560,15 @@ def hoxline_case_growth_convergence_verify(
                         "content_is_current_ancestor": content_is_current_ancestor,
                         "current_tree": current_tree_for_content,
                         "content_tree": content_tree,
+                        "reviewed_revision": manifest_revision,
+                        "reviewed_tree": reviewed_tree_for_content,
+                        "manifest_reviewed_tree": manifest_reviewed_tree,
+                        "content_is_reviewed_ancestor": (
+                            content_is_reviewed_ancestor
+                        ),
+                        "current_is_exact_reviewed_tree": (
+                            current_is_exact_reviewed_tree
+                        ),
                     },
                     (
                         f"Select reviewed {repo_name} authority content from the current "

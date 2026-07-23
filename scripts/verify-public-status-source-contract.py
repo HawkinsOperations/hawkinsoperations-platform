@@ -519,6 +519,20 @@ def verify_proof_source_identity(proof_count: dict[str, Any]) -> tuple[bytes, st
     ):
         fail("proof source manifest entry must contain the canonical owner and immutable revision")
     immutable_manifest_sha = proof_manifest_entry["revision"]
+    immutable_manifest_commit = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(PROOF_REPO),
+            "cat-file",
+            "-e",
+            f"{immutable_manifest_sha}^{{commit}}",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if immutable_manifest_commit.returncode != 0:
+        fail("proof source manifest revision is unreachable in the canonical proof repository")
     if not current_ref and immutable_manifest_sha != current_head:
         current_is_historical_ancestor = git_is_ancestor(
             PROOF_REPO, current_head, immutable_manifest_sha

@@ -488,6 +488,68 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             )
         self.assertEqual("pass", result["status"])
 
+    def test_content_commit_survives_rewritten_final_reviewed_tree(self) -> None:
+        content_commit = "c" * 40
+        rewritten_head = "d" * 40
+        self.snapshot["source_revisions"]["hawkinsoperations-platform"][
+            "source_commit_sha"
+        ] = content_commit
+        self.snapshot["source_revisions"]["hawkinsoperations-platform"][
+            "source_observed_head_sha"
+        ] = content_commit
+        for entry in self.review_manifest["repositories"]:
+            if entry["repository"] == "hawkinsoperations-platform":
+                entry["authority_content_revision"] = content_commit
+        self.write_sources()
+        with mock.patch.dict(
+            ho_factory.os.environ,
+            {"HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA": rewritten_head},
+            clear=True,
+        ):
+            result = self.verify(
+                branch="",
+                head=rewritten_head,
+                ancestor_pairs={(content_commit, self.sha)},
+                tree_overrides={
+                    content_commit: "c" * 40,
+                    self.sha: "e" * 40,
+                    rewritten_head: "e" * 40,
+                },
+            )
+        self.assertEqual("pass", result["status"])
+
+    def test_rewritten_tree_rejects_content_outside_reviewed_lineage(self) -> None:
+        content_commit = "c" * 40
+        rewritten_head = "d" * 40
+        self.snapshot["source_revisions"]["hawkinsoperations-platform"][
+            "source_commit_sha"
+        ] = content_commit
+        self.snapshot["source_revisions"]["hawkinsoperations-platform"][
+            "source_observed_head_sha"
+        ] = content_commit
+        for entry in self.review_manifest["repositories"]:
+            if entry["repository"] == "hawkinsoperations-platform":
+                entry["authority_content_revision"] = content_commit
+        self.write_sources()
+        with mock.patch.dict(
+            ho_factory.os.environ,
+            {"HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA": rewritten_head},
+            clear=True,
+        ):
+            result = self.verify(
+                branch="",
+                head=rewritten_head,
+                tree_overrides={
+                    content_commit: "c" * 40,
+                    self.sha: "e" * 40,
+                    rewritten_head: "e" * 40,
+                },
+            )
+        self.assertIn(
+            "SOURCE_AUTHORITY_CONTENT_RELATIONSHIP_INVALID",
+            {item["code"] for item in result["contradictions"]},
+        )
+
     def test_platform_snapshot_current_ancestor_of_reviewed_is_rejected(self) -> None:
         historical_head = "c" * 40
         self.write_sources()
