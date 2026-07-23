@@ -12842,7 +12842,7 @@ def hoxline_case_growth_convergence_verify(
                 and not content_is_current_ancestor
                 and (
                     content_is_reviewed_ancestor
-                    or (repo_name == ".github" and not branch)
+                    or repo_name == ".github"
                 )
                 and current_is_exact_reviewed_tree
             )

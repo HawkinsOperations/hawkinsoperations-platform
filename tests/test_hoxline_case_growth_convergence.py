@@ -700,7 +700,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             )
         self.assertEqual("pass", result["status"])
 
-    def test_command_center_self_unrelated_content_cannot_survive_rewritten_event_tree(
+    def test_command_center_same_content_survives_rewritten_event_tree(
         self,
     ) -> None:
         content_commit = "c" * 40
@@ -725,8 +725,38 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                 rewritten_head: "e" * 40,
             },
         )
+        self.assertEqual("pass", result["status"])
+
+    def test_command_center_rewritten_event_rejects_changed_authority_blob(
+        self,
+    ) -> None:
+        content_commit = "c" * 40
+        rewritten_head = "d" * 40
+        self.snapshot["source_revisions"][".github"][
+            "source_commit_sha"
+        ] = content_commit
+        self.snapshot["source_revisions"][".github"][
+            "source_observed_head_sha"
+        ] = content_commit
+        self.review_manifest["repositories"][0][
+            "authority_content_revision"
+        ] = content_commit
+        self.write_sources()
+        result = self.verify(
+            branch="rehearsal-squash",
+            head=rewritten_head,
+            blob_overrides={
+                (".github", content_commit): "c" * 40,
+                (".github", rewritten_head): "b" * 40,
+            },
+            tree_overrides={
+                content_commit: "c" * 40,
+                self.sha: "e" * 40,
+                rewritten_head: "e" * 40,
+            },
+        )
         self.assertIn(
-            "SOURCE_AUTHORITY_CONTENT_RELATIONSHIP_INVALID",
+            "SOURCE_AUTHORITY_CONTENT_REVISION_STALE",
             {item["code"] for item in result["contradictions"]},
         )
 
