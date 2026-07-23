@@ -957,15 +957,24 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                 )
 
     def test_negation_cannot_launder_later_adversative_promotion(self) -> None:
-        self.website["extensions"] = {
-            "opaque": [{"note": "does not prove customer deployed, but public safe"}]
-        }
-        self.write_sources()
-        result = self.verify()
-        self.assertIn(
-            "NESTED_AUTHORITY_PROMOTION",
-            {item["code"] for item in result["contradictions"]},
+        attacks = (
+            "does not prove customer deployed, but public safe",
+            "pending documentation, production is live",
+            "unsupported note — customer environment deployed",
+            "future issue: signal was observed",
+            "missing receipt while production is live",
+            "no proof currently, customer environment deployed",
+            "not approved / production is live",
         )
+        for prose in attacks:
+            with self.subTest(prose=prose):
+                self.website["extensions"] = {"opaque": [{"note": prose}]}
+                self.write_sources()
+                result = self.verify()
+                self.assertIn(
+                    "NESTED_AUTHORITY_PROMOTION",
+                    {item["code"] for item in result["contradictions"]},
+                )
 
     def test_unhashable_nested_public_safe_shape_fails_closed_without_crashing(self) -> None:
         self.website["extensions"] = {

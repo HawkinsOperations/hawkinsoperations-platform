@@ -11668,7 +11668,7 @@ def hoxline_case_growth_string_promotions(value: str) -> list[str]:
     # Adversative conjunctions start a new semantic clause. A negation before
     # "but" must not launder a later promotion in the same sentence.
     clauses = re.split(
-        r"(?:[.;!?\r\n]+|\b(?:but|however|although|yet)\b)",
+        r"(?:[,.;:/!?\r\n—–]+|\b(?:but|however|although|yet|while|whereas)\b)",
         unicodedata.normalize("NFKC", value),
         flags=re.IGNORECASE,
     )
