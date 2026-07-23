@@ -205,8 +205,19 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         dirty: bool = False,
         branch: str = "feature/test",
         head: str | None = None,
+        blob_overrides: dict[tuple[str, str], str] | None = None,
+        missing_commits: set[str] | None = None,
     ) -> dict:
         resolved_head = head or self.sha
+        selected_blob_overrides = blob_overrides or {}
+        selected_missing_commits = missing_commits or set()
+
+        def git_blob(repo_path: Path, revision: str, relative_path: str) -> tuple[str, bytes]:
+            blob_sha = selected_blob_overrides.get(
+                (repo_path.name, revision), "b" * 40
+            )
+            return blob_sha, (repo_path / relative_path).read_bytes()
+
         with mock.patch.object(
             ho_factory,
             "hoxline_case_growth_git_state",
@@ -217,14 +228,15 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                 "dirty": dirty,
             },
         ), mock.patch.object(
-            ho_factory, "hoxline_case_growth_commit_exists", return_value=True
+            ho_factory,
+            "hoxline_case_growth_commit_exists",
+            side_effect=lambda _repo_path, commit_sha: (
+                commit_sha not in selected_missing_commits
+            ),
         ), mock.patch.object(
             ho_factory,
             "hoxline_case_growth_git_blob",
-            side_effect=lambda repo_path, revision, relative_path: (
-                "b" * 40,
-                (repo_path / relative_path).read_bytes(),
-            ),
+            side_effect=git_blob,
         ):
             return ho_factory.hoxline_case_growth_convergence_verify(
                 self.org_root, now=datetime(2026, 7, 22, 18, tzinfo=timezone.utc)
@@ -279,12 +291,90 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             {item["code"] for item in result["drift"]},
         )
 
+    def test_detached_rewritten_tip_with_manifest_selected_same_blob_passes(self) -> None:
+        rewritten_head = "d" * 40
+        self.source_manifest["repositories"]["hawkinsoperations-platform"][
+            "reviewed_revision"
+        ] = self.sha
+        self.write_sources()
+        with mock.patch.dict(ho_factory.os.environ, {}, clear=True):
+            result = self.verify(branch="", head=rewritten_head)
+        self.assertEqual(result["status"], "pass")
+        self.assertNotIn(
+            "DETACHED_SOURCE_NOT_MANIFEST_SELECTED",
+            {item["code"] for item in result["contradictions"]},
+        )
+
     def test_arbitrary_same_blob_observation_not_selected_by_manifest_fails_closed(self) -> None:
         self.snapshot["source_revisions"]["hawkinsoperations-proof"]["source_commit_sha"] = "c" * 40
         self.write_sources()
         result = self.verify()
         self.assertIn(
             "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_detached_arbitrary_third_same_blob_observation_fails_closed(self) -> None:
+        self.source_manifest["repositories"]["hawkinsoperations-platform"][
+            "reviewed_revision"
+        ] = self.sha
+        self.snapshot["source_revisions"]["hawkinsoperations-proof"][
+            "source_commit_sha"
+        ] = "c" * 40
+        self.write_sources()
+        with mock.patch.dict(ho_factory.os.environ, {}, clear=True):
+            result = self.verify(branch="", head="d" * 40)
+        self.assertIn(
+            "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_detached_foreign_or_unreachable_observation_fails_closed(self) -> None:
+        self.source_manifest["repositories"]["hawkinsoperations-platform"][
+            "reviewed_revision"
+        ] = self.sha
+        foreign_sha = "f" * 40
+        self.snapshot["source_revisions"]["hawkinsoperations-proof"][
+            "source_commit_sha"
+        ] = foreign_sha
+        self.write_sources()
+        with mock.patch.dict(ho_factory.os.environ, {}, clear=True):
+            result = self.verify(
+                branch="",
+                head="d" * 40,
+                missing_commits={foreign_sha},
+            )
+        self.assertIn(
+            "SOURCE_REVISION_UNRESOLVED",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_detached_manifest_selected_changed_blob_fails_closed(self) -> None:
+        self.source_manifest["repositories"]["hawkinsoperations-platform"][
+            "reviewed_revision"
+        ] = self.sha
+        self.write_sources()
+        with mock.patch.dict(ho_factory.os.environ, {}, clear=True):
+            result = self.verify(
+                branch="",
+                head="d" * 40,
+                blob_overrides={
+                    ("hawkinsoperations-proof", self.sha): "c" * 40,
+                },
+            )
+        codes = {item["code"] for item in result["contradictions"]}
+        self.assertIn("SOURCE_MANIFEST_CONTENT_STALE", codes)
+        self.assertIn("DETACHED_SOURCE_NOT_MANIFEST_SELECTED", codes)
+
+    def test_detached_platform_without_exact_reviewed_manifest_revision_fails(self) -> None:
+        self.source_manifest["repositories"]["hawkinsoperations-platform"].pop(
+            "reviewed_revision", None
+        )
+        self.write_sources()
+        with mock.patch.dict(ho_factory.os.environ, {}, clear=True):
+            result = self.verify(branch="", head="d" * 40)
+        self.assertIn(
+            "DETACHED_SOURCE_NOT_MANIFEST_SELECTED",
             {item["code"] for item in result["contradictions"]},
         )
 

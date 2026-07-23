@@ -11788,14 +11788,29 @@ def hoxline_case_growth_source_manifest(org_root: Path) -> dict[str, Any]:
             "repository",
             "revision",
             "revision_source",
+            "reviewed_revision",
         }:
             raise FactoryError(f"source manifest entry has an unsupported shape: {repo_name}")
         if entry.get("repository") != f"HawkinsOperations/{repo_name}":
             raise FactoryError(f"source manifest repository owner mismatch: {repo_name}")
         if repo_name == "hawkinsoperations-platform":
-            if entry.get("revision_source") != "github_event_sha" or "revision" in entry:
+            if (
+                entry.get("revision_source") != "github_event_sha"
+                or "revision" in entry
+                or (
+                    "reviewed_revision" in entry
+                    and re.fullmatch(
+                        r"[0-9a-f]{40}",
+                        str(entry.get("reviewed_revision", "")),
+                    )
+                    is None
+                )
+            ):
                 raise FactoryError("platform source manifest entry must use github_event_sha")
-        elif re.fullmatch(r"[0-9a-f]{40}", str(entry.get("revision", ""))) is None:
+        elif (
+            "reviewed_revision" in entry
+            or re.fullmatch(r"[0-9a-f]{40}", str(entry.get("revision", ""))) is None
+        ):
             raise FactoryError(f"source manifest revision must be immutable: {repo_name}")
     constraints = manifest.get("constraints")
     expected_constraints = {
@@ -12145,21 +12160,16 @@ def hoxline_case_growth_convergence_verify(
         sources[repo_name] = state
         branch = str(state.get("branch", ""))
         manifest_entry = manifest_entries.get(repo_name, {})
-        manifest_revision = (
+        current_observation_revision = (
             os.environ.get("GITHUB_SHA")
             if manifest_entry.get("revision_source") == "github_event_sha"
-            else manifest_entry.get("revision")
+            else None
         )
-        if not branch and state["head"] != manifest_revision:
-            issue(
-                "DETACHED_SOURCE_NOT_MANIFEST_SELECTED",
-                repo_name,
-                repo_name,
-                manifest_revision,
-                state["head"],
-                f"Check out the exact {repo_name} revision selected by the immutable source manifest.",
-                revision=state["head"],
-            )
+        manifest_revision = (
+            manifest_entry.get("reviewed_revision")
+            or manifest_entry.get("revision")
+            or current_observation_revision
+        )
         expected_origin = HOXLINE_CANONICAL_ORIGINS[repo_name]
         actual_origin = hoxline_case_growth_normalized_origin(str(state.get("origin", "")))
         if actual_origin != expected_origin:
@@ -12234,8 +12244,11 @@ def hoxline_case_growth_convergence_verify(
                 "authority_path": expected_source_path,
                 "authoritative_git_blob_sha": current_blob_sha,
                 "authoritative_content_fingerprint": current_semantic_fingerprint,
+                "manifest_selected_reviewed_revision": manifest_revision,
+                "current_event_observation_revision": current_observation_revision,
             }
         )
+        manifest_content_matches_current = False
         if (
             isinstance(manifest_revision, str)
             and manifest_revision != state["head"]
@@ -12254,7 +12267,23 @@ def hoxline_case_growth_convergence_verify(
                 manifest_blob = hoxline_case_growth_git_blob(
                     repo_path, manifest_revision, expected_source_path
                 )
-                if manifest_blob is None or manifest_blob[0] != current_blob_sha:
+                manifest_semantic_fingerprint: str | None = None
+                if manifest_blob is not None:
+                    try:
+                        manifest_semantic_fingerprint = (
+                            hoxline_case_growth_semantic_fingerprint(
+                                expected_source_path, manifest_blob[1]
+                            )
+                        )
+                    except FactoryError:
+                        manifest_semantic_fingerprint = None
+                manifest_content_matches_current = (
+                    manifest_blob is not None
+                    and manifest_blob[0] == current_blob_sha
+                    and manifest_semantic_fingerprint
+                    == current_semantic_fingerprint
+                )
+                if not manifest_content_matches_current:
                     issue(
                         "SOURCE_MANIFEST_CONTENT_STALE",
                         repo_name,
@@ -12275,6 +12304,29 @@ def hoxline_case_growth_convergence_verify(
                         revision=state["head"],
                         historical=True,
                     )
+        elif manifest_revision == state["head"]:
+            manifest_content_matches_current = True
+        if not branch and not manifest_content_matches_current:
+            issue(
+                "DETACHED_SOURCE_NOT_MANIFEST_SELECTED",
+                repo_name,
+                repo_name,
+                (
+                    "detached current tree whose canonical authority content "
+                    "matches an exact manifest-selected reviewed revision"
+                ),
+                {
+                    "current_head": state["head"],
+                    "manifest_selected_reviewed_revision": manifest_revision,
+                    "current_blob": current_blob_sha,
+                },
+                (
+                    f"Supply the exact reviewed {repo_name} revision through the "
+                    "immutable source manifest and verify that its authority blob and "
+                    "semantic fingerprint equal the detached current tree."
+                ),
+                revision=state["head"],
+            )
         if stated_blob_sha != current_blob_sha:
             issue(
                 "SOURCE_AUTHORITY_BLOB_DRIFT",
