@@ -16,6 +16,11 @@
   },
   "source_repos": [
     {
+      "repo": ".github",
+      "role": "cross-repository orchestration and command-center invariant owner",
+      "authority_boundary": "read-only orchestration only; not detection, validation, proof, runtime, signal, public-safe, approval, or closure authority"
+    },
+    {
       "repo": "hawkinsoperations-platform",
       "role": "source-contract, ledger mechanics, runtime candidate guardrails, and state manifest owner",
       "authority_boundary": "platform mechanics and source routing only; not runtime truth, signal truth, public proof, or website authority"
@@ -27,29 +32,13 @@
     },
     {
       "repo": "hawkinsoperations-validation",
-      "role": "controlled validation and activity ledger owner",
+      "role": "controlled validation, activity ledger, and landed Hoxline validation bridge source-route owner",
       "authority_boundary": "controlled validation truth only; not runtime truth, signal truth, proof authority, or public-safe truth"
     },
     {
-      "repo": "hawkinsoperations-validation",
-      "role": "landed Hoxline Gauntlet validation bridge source route owner",
-      "source_pr": 67,
-      "source_branch": "feature/hoxline-gauntlet-validation-bridge-v1",
-      "source_status": "SOURCE_CAPTURED",
-      "authority_boundary": "landed validation bridge route only; not runtime truth, signal truth, proof authority, or public-safe truth"
-    },
-    {
       "repo": "hawkinsoperations-proof",
-      "role": "proof record, blocked claim, proof ceiling, and public-safe boundary owner",
+      "role": "proof record, card, blocked claim, proof ceiling, public-safe boundary, and landed Hoxline proof bridge source-route owner",
       "authority_boundary": "proof source records and proof boundaries only; website rendering does not create proof"
-    },
-    {
-      "repo": "hawkinsoperations-proof",
-      "role": "landed Hoxline Gauntlet proof bridge source route owner",
-      "source_pr": 81,
-      "source_branch": "feature/hoxline-gauntlet-proof-bridge-v1",
-      "source_status": "SOURCE_CAPTURED",
-      "authority_boundary": "landed proof bridge route only; not proof promotion, runtime truth, signal truth, or public-safe truth"
     },
     {
       "repo": "hawkinsoperations-website",
@@ -58,11 +47,8 @@
     },
     {
       "repo": "hoxline",
-      "role": "Hoxline product and Gauntlet field owner",
-      "source_pr": 15,
-      "source_branch": "feature/hoxline-gauntlet-v1-engine",
-      "source_status": "SOURCE_CAPTURED",
-      "authority_boundary": "landed Hoxline Gauntlet v1 source manifest and reviewer command routes only; not runtime truth, signal truth, public-safe truth, production readiness, customer deployment, SOCaaS deployment, approval, authorization, or closure"
+      "role": "Hoxline product, local fixture-review engine, and generated reviewer-artifact consumer",
+      "authority_boundary": "consumer and local review mechanics only; not cross-domain source, runtime, signal, proof, public-safe, production, customer, approval, authorization, or closure authority"
     }
   ],
   "source_paths": {
@@ -74,7 +60,7 @@
     "proof_reviewer_map": "../hawkinsoperations-proof/proof/indexes/reviewer-proof-map.json",
     "proof_current_status_index": "../hawkinsoperations-proof/proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml",
     "detections_promotion_matrix": "../hawkinsoperations-detections/detections/DETECTION_PROMOTION_MATRIX.yml",
-    "website_generated_status_consumer": "../hawkinsoperations-website/UNKNOWN_SOURCE_NOT_CAPTURED",
+    "website_generated_status_consumer": "../hawkinsoperations-website/schemas/public-status-v0.schema.json",
     "hoxline_v1_source_manifest": "../hoxline/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json",
     "hoxline_gauntlet_run_v1": "../hoxline/examples/gauntlet/ho-det-001-gauntlet-run-v1.json",
     "hoxline_gauntlet_run_v1_overclaim": "../hoxline/examples/gauntlet/ho-det-001-gauntlet-run-v1-overclaim.json",
@@ -213,8 +199,13 @@
       "owner_repo": "hawkinsoperations-proof",
       "source_path": "../hawkinsoperations-proof/proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml",
       "source_json_pointer": "/current_authority/derived_counts/proof_record_count",
-      "source_revision": "042a918ad4a8473cd5abcfd575072fc094639682",
+      "source_revision": "5f7a40e52a9ea4892f9ea557c8a6423ef840124b",
+      "source_observed_head_sha": "5f7a40e52a9ea4892f9ea557c8a6423ef840124b",
+      "current_observed_head_sha": "5f7a40e52a9ea4892f9ea557c8a6423ef840124b",
+      "source_observation_kind": "reviewed_immutable_commit",
+      "source_git_blob_sha": "623b93e6e5ac141684978ff4dcdc6ed1dec55678",
       "source_fingerprint_sha256": "a8c24bd78bd20f318d4dfb5a930ea44bc108305bcc18b23db6ff2fc11e81a52d",
+      "source_semantic_fingerprint_sha256": "68e5de4749bfe34a6677331f6116fab82987c88e999ae14eaf706e9b33536170",
       "derivation_method": "count non-null unique proof_record_path values",
       "historical_snapshot": false,
       "current_authority": true,
@@ -291,7 +282,7 @@
       "owner_repo": "hawkinsoperations-platform",
       "source_path": "contracts/public-status-source-contract-v1.json",
       "source_json_pointer": "/generated_at",
-      "current_value": "2026-06-16T22:06:47.5510594-05:00",
+      "current_value": "2026-07-22T18:02:33.8431932-05:00",
       "render_allowed": true,
       "source_status": "SOURCE_CAPTURED",
       "freshness_policy": "Generated status v1 must update this timestamp when it regenerates from source artifacts."

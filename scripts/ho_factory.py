@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import unquote
 
 try:
     import yaml  # type: ignore
@@ -11510,6 +11511,20 @@ HOXLINE_CASE_GROWTH_REPOS = (
     "hoxline",
 )
 
+HOXLINE_CASE_GROWTH_AUTHORITY_PATHS = {
+    ".github": "governance/COMMAND_CENTER_INVARIANTS.json",
+    "hawkinsoperations-detections": "detections/DETECTION_PROMOTION_MATRIX.yml",
+    "hawkinsoperations-validation": "validation/VALIDATION_REGISTRY.yml",
+    "hawkinsoperations-platform": "contracts/public-status-source-contract-v1.json",
+    "hawkinsoperations-proof": "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml",
+    "hawkinsoperations-website": "schemas/public-status-v0.schema.json",
+    "hoxline": "src/hoxline/case_growth/collector.py",
+}
+
+HOXLINE_CANONICAL_ORIGINS = {
+    name: f"github.com/HawkinsOperations/{name}".casefold() for name in HOXLINE_CASE_GROWTH_REPOS
+}
+
 
 def hoxline_case_growth_org_root(repo_root: Path) -> Path:
     resolved = repo_root.resolve()
@@ -11544,8 +11559,334 @@ def hoxline_case_growth_git_state(repo_path: Path) -> dict[str, Any]:
     return {
         "branch": run("branch", "--show-current"),
         "head": run("rev-parse", "HEAD"),
+        "origin": run("remote", "get-url", "origin"),
         "dirty": bool(meaningful_status),
     }
+
+
+def hoxline_case_growth_normalized_origin(value: str) -> str:
+    origin = value.strip().replace("\\", "/")
+    origin = re.sub(r"^git@", "", origin)
+    if origin.startswith("github.com:"):
+        origin = origin.replace(":", "/", 1)
+    origin = re.sub(r"^(?:https?|ssh)://", "", origin, flags=re.IGNORECASE)
+    return origin.removesuffix(".git").rstrip("/").casefold()
+
+
+def hoxline_case_growth_git_blob(repo_path: Path, revision: str, relative_path: str) -> tuple[str, bytes] | None:
+    blob = subprocess.run(
+        ["git", "-C", str(repo_path), "rev-parse", f"{revision}:{relative_path}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if blob.returncode != 0:
+        return None
+    blob_sha = blob.stdout.strip()
+    raw = subprocess.run(
+        ["git", "-C", str(repo_path), "cat-file", "blob", blob_sha],
+        check=False,
+        capture_output=True,
+    )
+    if raw.returncode != 0:
+        return None
+    return blob_sha, raw.stdout
+
+
+def hoxline_case_growth_semantic_fingerprint(relative_path: str, raw: bytes) -> str:
+    suffix = Path(relative_path).suffix.casefold()
+    try:
+        if suffix == ".json":
+            value = json.loads(raw.decode("utf-8"))
+            canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        elif suffix in {".yml", ".yaml"}:
+            if yaml is None:
+                raise FactoryError("PyYAML is required for source semantic fingerprints")
+            value = yaml.safe_load(raw.decode("utf-8"))
+            canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        else:
+            canonical = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    except (UnicodeDecodeError, json.JSONDecodeError, yaml.YAMLError if yaml is not None else ValueError) as exc:
+        raise FactoryError(f"unable to canonicalize {relative_path}: {exc}") from exc
+    return hashlib.sha256(canonical).hexdigest()
+
+
+HOXLINE_BLOCKED_AUTHORITY_KEYS = {
+    "aidispositionauthority",
+    "aiauthority",
+    "analystauthority",
+    "analystapproval",
+    "analystapproved",
+    "aiapproved",
+    "finalauthorization",
+    "caseclosed",
+    "caseclosure",
+    "publicsafe",
+    "publicsafeapproved",
+    "runtimeactive",
+    "signalobserved",
+    "productionready",
+    "productionstatus",
+    "customerdeployed",
+    "customerdeployment",
+    "socaasdeployment",
+    "socaasdeployed",
+    "websiterenderingisproof",
+    "websiteisproof",
+    "greenciisapproval",
+}
+HOXLINE_BLOCKED_AUTHORITY_STRING_TOKENS = {
+    "runtimeactive",
+    "signalobserved",
+    "publicsafeapproved",
+    "productionready",
+    "customerdeployed",
+    "socaasdeployed",
+    "aiapproved",
+    "analystapproved",
+    "finalauthorization",
+    "caseclosed",
+}
+HOXLINE_NEGATIVE_AUTHORITY_PATHS = {
+    "blockedclaims",
+    "notclaiming",
+    "doesnotprove",
+    "proofceiling",
+    "authorityboundary",
+    "noproofpromotionstatement",
+    "websitemustnotsourcefromwebsiteonlydata",
+    "extractormustnot",
+    "ownerrepo",
+    "sourcepath",
+    "sourcejsonpointer",
+    "sourcestatus",
+}
+
+
+def hoxline_case_growth_reject_duplicate_keys(pairs: list[tuple[Any, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    normalized: set[str] = set()
+    for raw_key, value in pairs:
+        if not isinstance(raw_key, str):
+            raise FactoryError("structured authority objects require string keys")
+        folded = raw_key.casefold()
+        if folded in normalized:
+            raise FactoryError(f"duplicate structured authority key: {raw_key}")
+        normalized.add(folded)
+        result[raw_key] = value
+    return result
+
+
+def hoxline_case_growth_load_json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=hoxline_case_growth_reject_duplicate_keys,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise FactoryError(f"{path}: invalid JSON: {exc}") from exc
+    if not isinstance(value, dict):
+        raise FactoryError(f"{path}: top-level JSON value must be an object")
+    return value
+
+
+def hoxline_case_growth_load_yaml(path: Path) -> dict[str, Any]:
+    if yaml is None:
+        raise FactoryError("PyYAML is required for structured authority verification")
+
+    class UniqueKeyLoader(yaml.SafeLoader):  # type: ignore[misc, name-defined]
+        pass
+
+    def construct_mapping(loader: Any, node: Any, deep: bool = False) -> dict[Any, Any]:
+        # Authority verification consumes nested lists of mappings.  Force deep
+        # construction so PyYAML cannot leave collection values as deferred
+        # ``None`` placeholders while this duplicate-key constructor runs.
+        pairs = loader.construct_pairs(node, deep=True)
+        result: dict[Any, Any] = {}
+        normalized: set[str] = set()
+        for key, value in pairs:
+            if not isinstance(key, str):
+                raise FactoryError(f"{path}: YAML mapping keys must be strings")
+            folded = key.casefold()
+            if folded in normalized:
+                raise FactoryError(f"{path}: duplicate YAML key: {key}")
+            normalized.add(folded)
+            result[key] = value
+        return result
+
+    UniqueKeyLoader.add_constructor(  # type: ignore[attr-defined]
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, construct_mapping  # type: ignore[union-attr]
+    )
+    try:
+        value = yaml.load(path.read_text(encoding="utf-8"), Loader=UniqueKeyLoader)  # type: ignore[union-attr]
+    except FactoryError:
+        raise
+    except (OSError, UnicodeError, yaml.YAMLError) as exc:  # type: ignore[union-attr]
+        raise FactoryError(f"{path}: invalid YAML: {exc}") from exc
+    if not isinstance(value, dict):
+        raise FactoryError(f"{path}: top-level YAML value must be an object")
+    return value
+
+
+def hoxline_case_growth_source_manifest(org_root: Path) -> dict[str, Any]:
+    manifest_path = (
+        org_root
+        / "hawkinsoperations-platform"
+        / "contracts"
+        / "hoxline-case-growth-source-manifest-v1.json"
+    )
+    manifest = hoxline_case_growth_load_json(manifest_path)
+    expected_root_keys = {
+        "manifest_id",
+        "version",
+        "owner_repo",
+        "purpose",
+        "proof_ceiling",
+        "repositories",
+        "constraints",
+    }
+    if set(manifest) != expected_root_keys:
+        raise FactoryError(
+            "source manifest root must use the exact v1 shape without extensions"
+        )
+    if (
+        manifest.get("manifest_id") != "HOXLINE_CASE_GROWTH_SOURCE_MANIFEST_V1"
+        or manifest.get("version") != 1
+        or manifest.get("owner_repo") != "hawkinsoperations-platform"
+        or manifest.get("proof_ceiling")
+        != "CONTROLLED_REPO_CONVERGENCE_AND_LOCAL_FIXTURE_REVIEW_ONLY"
+    ):
+        raise FactoryError("source manifest identity or proof ceiling is invalid")
+    entries = manifest.get("repositories")
+    if not isinstance(entries, dict):
+        raise FactoryError("source manifest repositories must be an object")
+    if set(entries) != set(HOXLINE_CASE_GROWTH_REPOS):
+        raise FactoryError(
+            "source manifest must name exactly the seven HawkinsOperations repositories"
+        )
+    for repo_name, entry in entries.items():
+        if not isinstance(entry, dict) or set(entry) - {
+            "repository",
+            "revision",
+            "revision_source",
+        }:
+            raise FactoryError(f"source manifest entry has an unsupported shape: {repo_name}")
+        if entry.get("repository") != f"HawkinsOperations/{repo_name}":
+            raise FactoryError(f"source manifest repository owner mismatch: {repo_name}")
+        if repo_name == "hawkinsoperations-platform":
+            if entry.get("revision_source") != "github_event_sha" or "revision" in entry:
+                raise FactoryError("platform source manifest entry must use github_event_sha")
+        elif re.fullmatch(r"[0-9a-f]{40}", str(entry.get("revision", ""))) is None:
+            raise FactoryError(f"source manifest revision must be immutable: {repo_name}")
+    constraints = manifest.get("constraints")
+    expected_constraints = {
+        "exact_repository_count": 7,
+        "read_only": True,
+        "allow_default_branch_substitution": False,
+        "allow_detached_authority_substitution": False,
+        "allow_dirty_authority_source": False,
+        "website_is_authority": False,
+        "hoxline_is_cross_domain_authority": False,
+    }
+    if constraints != expected_constraints:
+        raise FactoryError("source manifest constraints must equal the fail-closed v1 contract")
+    if not isinstance(constraints, dict) or constraints.get("exact_repository_count") != 7:
+        raise FactoryError("source manifest must require exactly seven repositories")
+    if constraints.get("read_only") is not True:
+        raise FactoryError("source manifest must declare read-only verification")
+    return manifest
+
+
+def hoxline_case_growth_authority_violations(
+    value: Any,
+    path: tuple[str, ...] = (),
+    authority_context: str | None = None,
+) -> list[tuple[str, Any]]:
+    violations: list[tuple[str, Any]] = []
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            child_path = (*path, str(key))
+            normalized = re.sub(r"[^a-z0-9]", "", str(key).casefold())
+            scalar_authority_state = not isinstance(nested, (dict, list))
+            if (
+                normalized in HOXLINE_BLOCKED_AUTHORITY_KEYS
+                and scalar_authority_state
+                and nested not in (
+                False,
+                None,
+                "NOT_PUBLIC_SAFE",
+                "BLOCKED",
+                "UNKNOWN",
+                )
+            ):
+                violations.append(("/".join(child_path), nested))
+            if (
+                normalized in {"publicsafestatus", "publicsafestate"}
+                and scalar_authority_state
+                and nested not in (
+                "NOT_PUBLIC_SAFE",
+                "BLOCKED",
+                "blocked",
+                False,
+                )
+            ):
+                violations.append(("/".join(child_path), nested))
+            child_authority_context = (
+                normalized
+                if isinstance(nested, list)
+                and normalized
+                in HOXLINE_BLOCKED_AUTHORITY_KEYS
+                | {"publicsafestatus", "publicsafestate"}
+                else None
+            )
+            violations.extend(
+                hoxline_case_growth_authority_violations(
+                    nested,
+                    child_path,
+                    child_authority_context,
+                )
+            )
+    elif isinstance(value, list):
+        for index, nested in enumerate(value):
+            violations.extend(
+                hoxline_case_growth_authority_violations(
+                    nested,
+                    (*path, str(index)),
+                    authority_context,
+                )
+            )
+    elif isinstance(value, str):
+        normalized_value = re.sub(r"[^a-z0-9]", "", value.casefold())
+        if authority_context and value not in {
+            "NOT_PUBLIC_SAFE",
+            "BLOCKED",
+            "blocked",
+            "UNKNOWN",
+        }:
+            violations.append(("/".join(path), value))
+            return violations
+        negative_context = any(
+            re.sub(r"[^a-z0-9]", "", part.casefold())
+            in HOXLINE_NEGATIVE_AUTHORITY_PATHS
+            for part in path
+        )
+        bounded_negative_statement = re.search(
+            r"(?:^|[\s_-])(?:does[\s_-]+not|do[\s_-]+not|must[\s_-]+not|never|not[\s_-]+authorized|not[\s_-]+approved|not[\s_-]+promoted|missing)(?:[\s_-]|$)",
+            value,
+            flags=re.IGNORECASE,
+        ) is not None
+        bounded_private_state = value in {
+            "SIGNAL_OBSERVED_PRIVATE",
+            "RUNTIME_ACTIVE_PRIVATE",
+        }
+        if not negative_context and not bounded_negative_statement and not bounded_private_state:
+            for token in HOXLINE_BLOCKED_AUTHORITY_STRING_TOKENS:
+                if token in normalized_value:
+                    violations.append(("/".join(path), value))
+                    break
+    elif authority_context and value not in (False, None):
+        violations.append(("/".join(path), value))
+    return violations
 
 
 def hoxline_case_growth_commit_exists(repo_path: Path, commit_sha: str) -> bool:
@@ -11618,6 +11959,7 @@ def hoxline_case_growth_convergence_verify(
     contradictions: list[dict[str, Any]] = []
     drift: list[dict[str, Any]] = []
     sources: dict[str, Any] = {}
+    source_manifest: dict[str, Any] = {}
 
     def issue(
         code: str,
@@ -11633,12 +11975,22 @@ def hoxline_case_growth_convergence_verify(
         item = {
             "code": code,
             "owner": owner,
+            "repo": owner,
             "path": path,
             "revision": revision or "UNKNOWN",
+            "current_head": revision or sources.get(owner, {}).get("head", "UNKNOWN"),
             "expected": expected,
             "actual": actual,
+            "expected_blob": expected if "BLOB" in code else None,
+            "actual_blob": actual if "BLOB" in code else None,
+            "expected_count": expected if "COUNT" in code else None,
+            "actual_count": actual if "COUNT" in code else None,
+            "freshness": "invalid" if any(
+                marker in code for marker in ("FRESH", "STALE", "FUTURE")
+            ) else "not_applicable",
             "classification": "expected_historical_context" if historical else "actionable_drift",
             "next_legal_action": next_legal_action,
+            "exact_remediation": next_legal_action,
         }
         (drift if historical else contradictions).append(item)
 
@@ -11650,6 +12002,21 @@ def hoxline_case_growth_convergence_verify(
         "website_status": org_root / "hawkinsoperations-website" / "public" / "data" / "public-status.json",
         "platform_contract": org_root / "hawkinsoperations-platform" / "contracts" / "public-status-source-contract-v1.json",
     }
+    repository_dirs = sorted(
+        path.name
+        for path in org_root.iterdir()
+        if path.is_dir() and (path / ".git").exists()
+    )
+    expected_repository_dirs = sorted(HOXLINE_CASE_GROWTH_REPOS)
+    if repository_dirs != expected_repository_dirs:
+        issue(
+            "SEVEN_SOURCE_REVERSE_INVENTORY_MISMATCH",
+            "hawkinsoperations-platform",
+            str(org_root),
+            expected_repository_dirs,
+            repository_dirs,
+            "Provide exactly the seven canonical repository checkouts; do not substitute or omit a source.",
+        )
     for label, source_path in paths.items():
         if not source_path.is_file():
             issue(
@@ -11670,18 +12037,22 @@ def hoxline_case_growth_convergence_verify(
             "sources": sources,
             "read_only": True,
             "ledger_mutated": False,
+            "runtime_mutated": False,
+            "signal_mutated": False,
             "public_proof_promoted": False,
+            "evidence_published": False,
             "proof_ceiling": "CONTROLLED_REPO_CONVERGENCE_AND_LOCAL_FIXTURE_REVIEW_ONLY",
         }
 
     try:
-        snapshot = json.loads(paths["hoxline_snapshot"].read_text(encoding="utf-8"))
-        proof_index = yaml.safe_load(paths["proof_index"].read_text(encoding="utf-8")) if yaml is not None else None
-        detection_matrix = yaml.safe_load(paths["detection_matrix"].read_text(encoding="utf-8")) if yaml is not None else None
-        validation_registry = yaml.safe_load(paths["validation_registry"].read_text(encoding="utf-8")) if yaml is not None else None
-        website_status = json.loads(paths["website_status"].read_text(encoding="utf-8"))
-        platform_contract = json.loads(paths["platform_contract"].read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError, ValueError) as exc:
+        source_manifest = hoxline_case_growth_source_manifest(org_root)
+        snapshot = hoxline_case_growth_load_json(paths["hoxline_snapshot"])
+        proof_index = hoxline_case_growth_load_yaml(paths["proof_index"])
+        detection_matrix = hoxline_case_growth_load_yaml(paths["detection_matrix"])
+        validation_registry = hoxline_case_growth_load_yaml(paths["validation_registry"])
+        website_status = hoxline_case_growth_load_json(paths["website_status"])
+        platform_contract = hoxline_case_growth_load_json(paths["platform_contract"])
+    except FactoryError as exc:
         issue(
             "MALFORMED_SOURCE",
             "cross-repo",
@@ -11691,15 +12062,28 @@ def hoxline_case_growth_convergence_verify(
             "Repair the malformed source in its owner repository and rerun this read-only verifier.",
         )
         snapshot = proof_index = detection_matrix = validation_registry = website_status = platform_contract = {}
-    if yaml is None:
-        issue(
-            "YAML_UNAVAILABLE",
-            "hawkinsoperations-platform",
-            "scripts/ho_factory.py",
-            "PyYAML available",
-            "missing",
-            "Install the repository's declared verification dependency and rerun; do not bypass YAML validation.",
-        )
+    manifest_entries = (
+        source_manifest.get("repositories", {})
+        if isinstance(source_manifest, dict)
+        else {}
+    )
+    for label, parsed_source, owner in (
+        ("hoxline_snapshot", snapshot, "hoxline"),
+        ("proof_index", proof_index, "hawkinsoperations-proof"),
+        ("detection_matrix", detection_matrix, "hawkinsoperations-detections"),
+        ("validation_registry", validation_registry, "hawkinsoperations-validation"),
+        ("website_status", website_status, "hawkinsoperations-website"),
+        ("platform_contract", platform_contract, "hawkinsoperations-platform"),
+    ):
+        for violation_path, actual in hoxline_case_growth_authority_violations(parsed_source):
+            issue(
+                "NESTED_AUTHORITY_PROMOTION",
+                owner,
+                f"{label}#/{violation_path}",
+                "blocked or false authority state",
+                actual,
+                f"Remove the unauthorized nested authority field from the {owner}-owned source and add a regression fixture.",
+            )
 
     historical, current_authority = hoxline_case_growth_snapshot_flags(snapshot if isinstance(snapshot, dict) else {})
     if historical is not False or current_authority is not True:
@@ -11745,6 +12129,35 @@ def hoxline_case_growth_convergence_verify(
             issue("GIT_STATE_UNRESOLVED", repo_name, repo_name, "resolvable branch and HEAD", str(exc), "Repair local Git metadata and rerun.")
             continue
         sources[repo_name] = state
+        branch = str(state.get("branch", ""))
+        manifest_entry = manifest_entries.get(repo_name, {})
+        manifest_revision = (
+            os.environ.get("GITHUB_SHA")
+            if manifest_entry.get("revision_source") == "github_event_sha"
+            else manifest_entry.get("revision")
+        )
+        if not branch and state["head"] != manifest_revision:
+            issue(
+                "DETACHED_SOURCE_NOT_MANIFEST_SELECTED",
+                repo_name,
+                repo_name,
+                manifest_revision,
+                state["head"],
+                f"Check out the exact {repo_name} revision selected by the immutable source manifest.",
+                revision=state["head"],
+            )
+        expected_origin = HOXLINE_CANONICAL_ORIGINS[repo_name]
+        actual_origin = hoxline_case_growth_normalized_origin(str(state.get("origin", "")))
+        if actual_origin != expected_origin:
+            issue(
+                "SOURCE_REPOSITORY_IDENTITY_INVALID",
+                repo_name,
+                repo_name,
+                expected_origin,
+                actual_origin,
+                f"Use the canonical HawkinsOperations/{repo_name} checkout; repository-name suffixes are not authority.",
+                revision=state["head"],
+            )
         if state.get("dirty") is True:
             issue(
                 "SOURCE_WORKTREE_DIRTY",
@@ -11756,6 +12169,118 @@ def hoxline_case_growth_convergence_verify(
                 revision=state["head"],
             )
         revision = revisions.get(repo_name, {})
+        expected_source_path = HOXLINE_CASE_GROWTH_AUTHORITY_PATHS[repo_name]
+        stated_source_path = revision.get("authoritative_path") or revision.get("source_path")
+        if stated_source_path != expected_source_path:
+            issue(
+                "SOURCE_AUTHORITY_PATH_INVALID",
+                repo_name,
+                f"source_revisions/{repo_name}/authoritative_path",
+                expected_source_path,
+                stated_source_path,
+                f"Regenerate the source identity from the canonical {repo_name} authority path.",
+                revision=state["head"],
+            )
+            continue
+        current_blob = hoxline_case_growth_git_blob(repo_path, "HEAD", expected_source_path)
+        if current_blob is None:
+            issue(
+                "SOURCE_AUTHORITY_BLOB_MISSING",
+                repo_name,
+                expected_source_path,
+                "blob at checked current tree",
+                "missing",
+                f"Restore the canonical {repo_name} authority file in the checked current tree.",
+                revision=state["head"],
+            )
+            continue
+        current_blob_sha, current_blob_bytes = current_blob
+        try:
+            current_semantic_fingerprint = hoxline_case_growth_semantic_fingerprint(
+                expected_source_path, current_blob_bytes
+            )
+        except FactoryError as exc:
+            issue(
+                "SOURCE_AUTHORITY_SEMANTIC_INVALID",
+                repo_name,
+                expected_source_path,
+                "canonicalizable authoritative content",
+                str(exc),
+                f"Repair the canonical {repo_name} source content and regenerate its source identity.",
+                revision=state["head"],
+            )
+            continue
+        stated_blob_sha = revision.get("authoritative_git_blob_sha") or revision.get("source_git_blob_sha")
+        stated_semantic_fingerprint = (
+            revision.get("authoritative_content_fingerprint")
+            or revision.get("source_semantic_fingerprint_sha256")
+        )
+        sources[repo_name].update(
+            {
+                "authority_path": expected_source_path,
+                "authoritative_git_blob_sha": current_blob_sha,
+                "authoritative_content_fingerprint": current_semantic_fingerprint,
+            }
+        )
+        if (
+            isinstance(manifest_revision, str)
+            and manifest_revision != state["head"]
+        ):
+            if not hoxline_case_growth_commit_exists(repo_path, manifest_revision):
+                issue(
+                    "SOURCE_MANIFEST_REVISION_UNREACHABLE",
+                    repo_name,
+                    "contracts/hoxline-case-growth-source-manifest-v1.json",
+                    "reachable immutable revision in canonical repository",
+                    manifest_revision,
+                    f"Refresh the source manifest with a reviewed reachable {repo_name} revision.",
+                    revision=state["head"],
+                )
+            else:
+                manifest_blob = hoxline_case_growth_git_blob(
+                    repo_path, manifest_revision, expected_source_path
+                )
+                if manifest_blob is None or manifest_blob[0] != current_blob_sha:
+                    issue(
+                        "SOURCE_MANIFEST_CONTENT_STALE",
+                        repo_name,
+                        expected_source_path,
+                        current_blob_sha,
+                        None if manifest_blob is None else manifest_blob[0],
+                        f"Review the changed {repo_name} authority content and refresh the immutable source manifest.",
+                        revision=state["head"],
+                    )
+                else:
+                    issue(
+                        "SOURCE_MANIFEST_HEAD_OBSERVATION_STALE_CONTENT_CURRENT",
+                        repo_name,
+                        "contracts/hoxline-case-growth-source-manifest-v1.json",
+                        state["head"],
+                        manifest_revision,
+                        f"Refresh the observed {repo_name} manifest revision after merge; content identity remains current.",
+                        revision=state["head"],
+                        historical=True,
+                    )
+        if stated_blob_sha != current_blob_sha:
+            issue(
+                "SOURCE_AUTHORITY_BLOB_DRIFT",
+                repo_name,
+                expected_source_path,
+                current_blob_sha,
+                stated_blob_sha,
+                f"Regenerate only the {repo_name} content identity after reviewing the authoritative file change.",
+                revision=state["head"],
+            )
+        if stated_semantic_fingerprint != current_semantic_fingerprint:
+            issue(
+                "SOURCE_AUTHORITY_SEMANTIC_DRIFT",
+                repo_name,
+                expected_source_path,
+                current_semantic_fingerprint,
+                stated_semantic_fingerprint,
+                f"Regenerate the {repo_name} semantic fingerprint from canonical authoritative content.",
+                revision=state["head"],
+            )
         stated_sha = revision.get("source_commit_sha") or revision.get("commit_sha") or revision.get("source_revision")
         if not isinstance(stated_sha, str) or re.fullmatch(r"[0-9a-fA-F]{40}", stated_sha) is None:
             issue(
@@ -11768,36 +12293,41 @@ def hoxline_case_growth_convergence_verify(
                 revision=state["head"],
             )
             continue
-        if not hoxline_case_growth_commit_exists(repo_path, stated_sha):
+        observed_commit_exists = hoxline_case_growth_commit_exists(repo_path, stated_sha)
+        if not observed_commit_exists:
             issue(
                 "SOURCE_REVISION_UNRESOLVED",
                 repo_name,
                 f"source_revisions/{repo_name}",
                 "commit reachable in the declared repository",
                 stated_sha,
-                f"Record a reachable {repo_name} source commit and regenerate the snapshot.",
+                f"Record a reachable {repo_name} source commit selected by the source manifest and regenerate the snapshot.",
                 revision=state["head"],
             )
             continue
-        self_referential = repo_name == "hoxline" and (
-            revision.get("self_referential") is True
-            or revision.get("revision_scope") == "authoritative_sources_excluding_snapshot"
-        )
+        if observed_commit_exists:
+            observed_blob = hoxline_case_growth_git_blob(repo_path, stated_sha, expected_source_path)
+            if observed_blob is None or observed_blob[0] != current_blob_sha:
+                issue(
+                    "SOURCE_OBSERVATION_CONTENT_MISMATCH",
+                    repo_name,
+                    expected_source_path,
+                    current_blob_sha,
+                    None if observed_blob is None else observed_blob[0],
+                    f"Record a reviewed {repo_name} observation carrying the same authoritative content as the checked current tree.",
+                    revision=state["head"],
+                )
         if stated_sha != state["head"]:
-            acceptable_self_revision = (
-                self_referential
-                and revision.get("revision_scope") == "authoritative_sources_excluding_snapshot"
-                and hoxline_case_growth_is_direct_parent(repo_path, stated_sha, state["head"])
-            )
             issue(
-                "SOURCE_REVISION_DRIFT",
+                "SOURCE_HEAD_OBSERVATION_STALE_CONTENT_CURRENT",
                 repo_name,
                 f"source_revisions/{repo_name}",
                 state["head"],
                 stated_sha,
-                f"Regenerate the Hoxline snapshot from current {repo_name} authority and record the resolved revision.",
+                f"Refresh the observed {repo_name} head when the reviewer artifact is next regenerated; authoritative content remains current by blob identity.",
                 revision=state["head"],
-                historical=historical is True or acceptable_self_revision,
+                historical=stated_blob_sha == current_blob_sha
+                and stated_semantic_fingerprint == current_semantic_fingerprint,
             )
 
     proof_entries = proof_index.get("entries") if isinstance(proof_index, dict) else None
@@ -11821,12 +12351,32 @@ def hoxline_case_growth_convergence_verify(
             value = entry.get(field)
             if value is None:
                 continue
-            if not isinstance(value, str) or Path(value).is_absolute() or ".." in Path(value).parts:
+            decoded_value = value if isinstance(value, str) else ""
+            for _ in range(4):
+                try:
+                    next_value = unquote(decoded_value)
+                except (UnicodeDecodeError, ValueError):
+                    next_value = decoded_value
+                if next_value == decoded_value:
+                    break
+                decoded_value = next_value
+            normalized_value = decoded_value.replace("\\", "/")
+            path_parts = [part for part in normalized_value.split("/") if part not in {"", "."}]
+            if (
+                not isinstance(value, str)
+                or re.match(r"^[A-Za-z]:[\\/]", decoded_value)
+                or decoded_value.startswith(("\\\\", "//"))
+                or normalized_value.startswith("/")
+                or "\x00" in decoded_value
+                or ("/" in decoded_value and "\\" in decoded_value)
+                or ".." in path_parts
+                or decoded_value != value
+            ):
                 issue("UNSAFE_PROOF_PATH", "hawkinsoperations-proof", f"{case_id}/{field}", "safe repository-relative path", value, "Replace with a proof-repo-relative owned path.")
                 continue
             proof_root = (org_root / "hawkinsoperations-proof").resolve()
             owned_root = (proof_root / "proof" / ("records" if field == "proof_record_path" else "cards")).resolve()
-            resolved_value = (proof_root / value).resolve()
+            resolved_value = (proof_root / normalized_value).resolve()
             try:
                 resolved_value.relative_to(owned_root)
             except ValueError:
@@ -11860,8 +12410,30 @@ def hoxline_case_growth_convergence_verify(
     if snapshot_records != proof_counts["proof_record_count"] or snapshot_cards != proof_counts["proof_card_count"]:
         issue("HOXLINE_PROOF_COUNT_DRIFT", "hoxline", "examples/case-growth/current-case-growth-index.json#/summary", {"proof_record_count": proof_counts["proof_record_count"], "proof_card_count": proof_counts["proof_card_count"]}, {"proof_record_count": snapshot_records, "proof_card_count": snapshot_cards}, "Regenerate the Hoxline current snapshot from the proof-owned index.")
 
-    detection_entries = detection_matrix.get("entries") if isinstance(detection_matrix, dict) else []
-    validation_packages = validation_registry.get("packages") if isinstance(validation_registry, dict) else []
+    detection_entries = detection_matrix.get("entries") if isinstance(detection_matrix, dict) else None
+    if not isinstance(detection_entries, list):
+        issue(
+            "DETECTION_ENTRIES_INVALID",
+            "hawkinsoperations-detections",
+            "detections/DETECTION_PROMOTION_MATRIX.yml#/entries",
+            "array of detection-owned entries",
+            type(detection_entries).__name__,
+            "Repair the detection-owned promotion matrix shape; do not infer entries from a malformed source.",
+        )
+        detection_entries = []
+    validation_packages = (
+        validation_registry.get("packages") if isinstance(validation_registry, dict) else None
+    )
+    if not isinstance(validation_packages, list):
+        issue(
+            "VALIDATION_PACKAGES_INVALID",
+            "hawkinsoperations-validation",
+            "validation/VALIDATION_REGISTRY.yml#/packages",
+            "array of validation-owned packages",
+            type(validation_packages).__name__,
+            "Repair the validation-owned registry shape; do not infer packages from a malformed source.",
+        )
+        validation_packages = []
     detection_ids = {item.get("detection_id") for item in detection_entries if isinstance(item, dict)}
     validation_ids = {item.get("detection_id") for item in validation_packages if isinstance(item, dict)}
     for entry in proof_entries:
@@ -11910,16 +12482,31 @@ def hoxline_case_growth_convergence_verify(
 
     contract_field = platform_contract.get("public_fields", {}).get("proof_record_count", {}) if isinstance(platform_contract, dict) else {}
     proof_head = sources.get("hawkinsoperations-proof", {}).get("head")
+    proof_blob = sources.get("hawkinsoperations-proof", {}).get("authoritative_git_blob_sha")
+    proof_semantic = sources.get("hawkinsoperations-proof", {}).get("authoritative_content_fingerprint")
     contract_expected = {
         "current_value": proof_counts["proof_record_count"],
         "source_path": "../hawkinsoperations-proof/proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml",
-        "source_revision": proof_head,
+        "source_git_blob_sha": proof_blob,
+        "source_semantic_fingerprint_sha256": proof_semantic,
         "historical_snapshot": False,
         "current_authority": True,
     }
     contract_actual = {key: contract_field.get(key) for key in contract_expected}
     if contract_actual != contract_expected:
         issue("PLATFORM_PROOF_SOURCE_DRIFT", "hawkinsoperations-platform", "contracts/public-status-source-contract-v1.json#/public_fields/proof_record_count", contract_expected, contract_actual, "Refresh the platform source contract from the proof-owned current index without changing proof authority.", revision=proof_head)
+    contract_observed_head = contract_field.get("source_observed_head_sha") or contract_field.get("source_revision")
+    if contract_observed_head != proof_head:
+        issue(
+            "PLATFORM_PROOF_HEAD_OBSERVATION_STALE_CONTENT_CURRENT",
+            "hawkinsoperations-platform",
+            "contracts/public-status-source-contract-v1.json#/public_fields/proof_record_count/source_observed_head_sha",
+            proof_head,
+            contract_observed_head,
+            "Refresh the observed proof head after merge; do not change content identity when the authority blob is unchanged.",
+            revision=proof_head,
+            historical=contract_actual == contract_expected,
+        )
     contract_generated_at = hoxline_case_growth_parse_time(
         platform_contract.get("generated_at") if isinstance(platform_contract, dict) else None
     )
@@ -11964,7 +12551,9 @@ def hoxline_case_growth_convergence_verify(
         "read_only": True,
         "ledger_mutated": False,
         "runtime_mutated": False,
+        "signal_mutated": False,
         "public_proof_promoted": False,
+        "evidence_published": False,
         "website_is_proof": False,
         "green_ci_is_approval": False,
         "proof_ceiling": "CONTROLLED_REPO_CONVERGENCE_AND_LOCAL_FIXTURE_REVIEW_ONLY",
@@ -11985,11 +12574,58 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
     for name, text in workflows.items():
         if "pull_request_target" in text:
             raise FactoryError(f"pull_request_target is not allowed: {name}")
+        if re.search(r"(?m)^\s*continue-on-error\s*:\s*true\s*$", text):
+            raise FactoryError(f"continue-on-error is not allowed: {name}")
+        if re.search(r"(?m)(?:^|[;&|]\s*)\|\|\s*true(?:\s|$)", text):
+            raise FactoryError(f"shell failure swallowing is not allowed: {name}")
         if "pull_request:" in text:
             if "self-hosted" in text:
                 raise FactoryError(f"pull_request workflow cannot use self-hosted runner: {name}")
             if "secrets." in text or "private-route" in text or "PRIVATE_ROUTE" in text:
                 raise FactoryError(f"pull_request workflow cannot access private runtime routes or secrets: {name}")
+    source = workflows["hoxline-source-checks.yml"]
+    if "pull_request:" not in source:
+        raise FactoryError("Hoxline source checks must run on pull_request")
+    if re.search(r"(?m)^\s*if\s*:", source) or re.search(r"(?m)^\s*needs\s*:", source):
+        raise FactoryError("Hoxline source checks cannot be conditional on another job")
+    if not re.search(r"(?ms)^permissions:\s*\n\s+contents:\s*read\s*$", source):
+        raise FactoryError("Hoxline source checks must use read-only contents permission")
+    checkout_paths = re.findall(r"(?m)^\s+path:\s*(source-set/[^\s#]+)\s*$", source)
+    expected_checkout_paths = {
+        "source-set/.github",
+        "source-set/hawkinsoperations-detections",
+        "source-set/hawkinsoperations-validation",
+        "source-set/hawkinsoperations-platform",
+        "source-set/hawkinsoperations-proof",
+        "source-set/hawkinsoperations-website",
+        "source-set/hoxline",
+    }
+    if set(checkout_paths) != expected_checkout_paths or len(checkout_paths) != 7:
+        raise FactoryError("Hoxline source checks must check out exactly seven collision-free repositories")
+    if source.count("uses: actions/checkout@") != 7 or source.count("persist-credentials: false") != 7:
+        raise FactoryError("Every Hoxline source checkout must disable persisted credentials")
+    required_source_commands = {
+        "hoxline-case-growth-convergence-verify",
+        "public-status-source-contract-verify",
+        "hoxline-workflow-safety-verify",
+        "python -B -m unittest discover -s tests",
+        "git diff --check",
+    }
+    missing_commands = sorted(command for command in required_source_commands if command not in source)
+    if missing_commands:
+        raise FactoryError(
+            "Hoxline source checks omit mandatory platform gates: "
+            + ", ".join(missing_commands)
+        )
+    if "lifetime-ledger-" in source:
+        raise FactoryError("Ledger jobs must remain independent from mandatory convergence checks")
+    governance = workflows.get("governance-gate.yml", "")
+    ledger_pr_skip = (
+        "lifetime-case-ledger-v1:" in governance
+        and "if: github.event_name != 'pull_request'" in governance
+    )
+    if not ledger_pr_skip:
+        raise FactoryError("The intentional PR ledger skip must remain explicit and independently bounded")
     trusted = workflows["hoxline-trusted-runtime-verify.yml"]
     canary = workflows["hoxline-private-canary.yml"]
     schedule = workflows["hoxline-schedule-gated-collection.yml"]
@@ -12017,6 +12653,9 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
         "schedule_disabled_by_default": True,
         "active_cron_trigger": active_cron,
         "unrestricted_artifact_upload": False,
+        "source_checkout_count": len(checkout_paths),
+        "mandatory_convergence_unconditional": True,
+        "ledger_pr_skip_independent": True,
     }
 
 

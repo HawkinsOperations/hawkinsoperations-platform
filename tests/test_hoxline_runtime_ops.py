@@ -72,6 +72,9 @@ class HoxlineRuntimeOpsTests(unittest.TestCase):
         self.assertTrue(result["pr_source_checks_github_hosted_only"])
         self.assertTrue(result["active_cron_trigger"])
         self.assertFalse(result["unrestricted_artifact_upload"])
+        self.assertEqual(result["source_checkout_count"], 7)
+        self.assertTrue(result["mandatory_convergence_unconditional"])
+        self.assertTrue(result["ledger_pr_skip_independent"])
 
     def test_canary_from_sanitized_receipts_builds_replay_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
