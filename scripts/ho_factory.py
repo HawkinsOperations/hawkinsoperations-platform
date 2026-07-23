@@ -11940,6 +11940,71 @@ def hoxline_case_growth_review_manifest(org_root: Path) -> dict[str, dict[str, A
     return entries
 
 
+def hoxline_case_growth_normalize_authority_key(value: str) -> str:
+    decoded = value
+    for _ in range(4):
+        next_value = unquote(decoded)
+        if next_value == decoded:
+            break
+        decoded = next_value
+    return re.sub(
+        r"[^a-z0-9]",
+        "",
+        unicodedata.normalize("NFKC", decoded).casefold(),
+    )
+
+
+def hoxline_case_growth_compositional_promotion_key(key: str) -> bool:
+    return (
+        ("production" in key and any(part in key for part in ("active", "live", "ready", "deploy", "status")))
+        or (any(part in key for part in ("customer", "socaas")) and "deploy" in key)
+        or ("runtime" in key and any(part in key for part in ("active", "status")))
+        or ("signal" in key and any(part in key for part in ("observed", "status")))
+        or ("publicsafe" in key and not key.endswith("count"))
+        or ("final" in key and "authoriz" in key)
+        or ("case" in key and any(part in key for part in ("closed", "closure")))
+        or any(part in key for part in ("approvalstatus", "closurestatus", "casestatus"))
+        or (
+            key.startswith(("ai", "analyst"))
+            and any(part in key for part in ("approved", "approval", "authority", "disposition"))
+        )
+    )
+
+
+def hoxline_case_growth_explicitly_bounded_authority_value(value: Any) -> bool:
+    if isinstance(value, list) and len(value) == 1:
+        return hoxline_case_growth_explicitly_bounded_authority_value(value[0])
+    if value is False or value is None or value == 0:
+        return True
+    if not isinstance(value, str):
+        return False
+    return hoxline_case_growth_normalize_authority_key(value) in {
+        "blocked",
+        "false",
+        "humanreviewrequired",
+        "missing",
+        "none",
+        "notapproved",
+        "notauthorized",
+        "notclosed",
+        "notproven",
+        "notpublicsafe",
+        "notruntimeactive",
+        "open",
+        "pending",
+        "privateruntimeboundarycontextonly",
+        "privateruntimeevidencecaptured",
+        "privateruntimeevidencecapturedlocalwindowsonly",
+        "publicruntimeblocked",
+        "runtimeactiveprivate",
+        "runtimeblocked",
+        "signalblocked",
+        "signalobservedprivate",
+        "unknown",
+        "unsupported",
+    }
+
+
 def hoxline_case_growth_authority_violations(
     value: Any,
     path: tuple[str, ...] = (),
@@ -11949,8 +12014,16 @@ def hoxline_case_growth_authority_violations(
     if isinstance(value, dict):
         for key, nested in value.items():
             child_path = (*path, str(key))
-            normalized = re.sub(r"[^a-z0-9]", "", str(key).casefold())
+            normalized = hoxline_case_growth_normalize_authority_key(str(key))
             scalar_authority_state = not isinstance(nested, (dict, list))
+            if (
+                (
+                    normalized in HOXLINE_BLOCKED_AUTHORITY_KEYS
+                    or hoxline_case_growth_compositional_promotion_key(normalized)
+                )
+                and not hoxline_case_growth_explicitly_bounded_authority_value(nested)
+            ):
+                violations.append(("/".join(child_path), nested))
             if (
                 normalized in HOXLINE_BLOCKED_AUTHORITY_KEYS
                 and scalar_authority_state

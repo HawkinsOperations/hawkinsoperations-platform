@@ -881,10 +881,30 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.assertIn("PLATFORM_CONTRACT_GENERATED_AT_FUTURE", codes)
 
     def test_nested_authority_promotion_fails_closed(self) -> None:
-        self.website["extensions"] = {"opaque": [{"ai-authority": True}]}
-        self.write_sources()
-        result = self.verify()
-        self.assertIn("NESTED_AUTHORITY_PROMOTION", {item["code"] for item in result["contradictions"]})
+        attacks = (
+            ("ai-authority", True),
+            ("production_active", True),
+            ("production_live", {"enabled": True}),
+            ("customer_deployment", True),
+            ("socaas_deployment", True),
+            ("runtime_status", "active"),
+            ("signal_status", "observed"),
+            ("approval_status", "approved"),
+            ("closure_status", "closed"),
+            ("case_status", "closed"),
+            ("public_safe_runtime", True),
+            ("final_authorized", True),
+            ("%70roduction_active", True),
+        )
+        for key, value in attacks:
+            with self.subTest(key=key):
+                self.website["extensions"] = {"opaque": [{key: value}]}
+                self.write_sources()
+                result = self.verify()
+                self.assertIn(
+                    "NESTED_AUTHORITY_PROMOTION",
+                    {item["code"] for item in result["contradictions"]},
+                )
 
     def test_nested_authority_string_laundering_fails_closed(self) -> None:
         self.website["extensions"] = {
