@@ -18,6 +18,21 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Checkout proof authority
+        uses: actions/checkout@v4
+        with:
+          repository: HawkinsOperations/hawkinsoperations-proof
+          path: source-set/hawkinsoperations-proof
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve declared proof revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          proof_revision="$(python -c 'import json; print(json.load(open("contracts/public-status-source-contract-v1.json", encoding="utf-8"))["public_fields"]["proof_record_count"]["source_revision"])')"
+          git -C source-set/hawkinsoperations-proof checkout --detach "$proof_revision"
+
       - name: Compile controller
         run: python -B -m py_compile scripts/ho_factory.py
 
@@ -53,6 +68,8 @@ jobs:
           python -m json.tool contracts/examples/hoxline-operator-receipt-packet-v0.ho-det-012.sample.json >/dev/null
 
       - name: Claim-boundary checks
+        env:
+          HAWKINS_PROOF_REPO: ${{ github.workspace }}/source-set/hawkinsoperations-proof
         run: |
           python -B scripts/ho_factory.py public-status-source-contract-verify --format json
 
@@ -61,6 +78,8 @@ jobs:
           python -B scripts/ho_factory.py hoxline-workflow-safety-verify --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
 
       - name: Python unit tests
+        env:
+          HAWKINS_PROOF_REPO: ${{ github.workspace }}/source-set/hawkinsoperations-proof
         run: |
           python -B -m unittest tests/test_hoxline_runtime_ops.py
           python -B -m unittest tests/test_hoxline_control_plane.py

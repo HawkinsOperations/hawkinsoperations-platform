@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -22,7 +23,9 @@ except ImportError:  # pragma: no cover - cross-repo value check is unavailable 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "contracts" / "public-status-source-contract-v1.json"
 PROOF_CURRENT_STATUS_INDEX = ROOT.parent / "hawkinsoperations-proof" / "proof" / "indexes" / "DETECTION_PROOF_STATUS_INDEX.yml"
-PROOF_REPO = ROOT.parent / "hawkinsoperations-proof"
+PROOF_REPO = Path(
+    os.environ.get("HAWKINS_PROOF_REPO", ROOT.parent / "hawkinsoperations-proof")
+).resolve()
 PROOF_INDEX_GIT_PATH = "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml"
 UNKNOWN = "UNKNOWN_SOURCE_NOT_CAPTURED"
 HOXLINE_SOURCE_MANIFEST_PATH = "../hoxline/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json"
