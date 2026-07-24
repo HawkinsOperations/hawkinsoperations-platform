@@ -2240,6 +2240,25 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                 "case closure."
             ),
             (
+                "Controlled Windows local user creation fixture validation only. "
+                "This does not prove runtime-active, signal-observed, "
+                "production-ready, public-safe status, or account lifecycle "
+                "completeness."
+            ),
+            (
+                "Website rendering/reporting only. Does not prove runtime, "
+                "signal, production, public-safe proof, customer deployment, "
+                "final approval, merge readiness, or website-as-proof."
+            ),
+            (
+                "Render only bounded source-route metadata; do not treat the "
+                "source manifest as proof, runtime truth, signal truth, "
+                "public-safe status, production readiness, customer deployment, "
+                "SOCaaS deployment, approval, authorization, or closure."
+            ),
+            "Public-safe proof is not present in approved public artifacts.",
+            "Public-safe runtime proof is not promoted by this website data plane.",
+            (
                 "Runtime, signal, public-safe, production, customer, AI "
                 "approval, final authorization, and case closure claims "
                 "remain blocked."

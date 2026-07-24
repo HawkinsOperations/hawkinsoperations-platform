@@ -11854,10 +11854,16 @@ def hoxline_case_growth_string_promotions(value: str) -> list[str]:
         flags=re.IGNORECASE,
     )
     violations: list[str] = []
-    # Adversative conjunctions start a new semantic clause. A negation before
-    # "but" must not launder a later promotion in the same sentence.
+    # Conjunctions start a new semantic clause. In particular, a negation
+    # before "and" or an adversative must not launder a later promotion.
+    # Commas remain inside a segment so an explicit negative claim list keeps
+    # its governing negation.
     strong_segments = re.split(
-        r"(?:[;:/\r\n—–]+|(?<=[.!?])\s+|\b(?:but|however|although|yet|while|whereas)\b)",
+        r"(?:[;:/\r\n—–]+|(?<=[.!?])\s+|"
+        r"\b(?:and|but|plus|though|because|therefore|meanwhile|"
+        r"furthermore|also|nevertheless|nonetheless|except|so|"
+        r"despite(?:\s+that)?|in\s+fact|consequently|moreover|then|"
+        r"still|however|although|yet|while|whereas)\b)",
         security_value,
         flags=re.IGNORECASE,
     )
@@ -11888,7 +11894,7 @@ def hoxline_case_growth_string_promotions(value: str) -> list[str]:
         re.IGNORECASE,
     )
     local_boundary = re.compile(
-        r"(?:[,;:/\r\n—–]+|(?<=[.!?])\s+|"
+        r"(?:[;:/\r\n—–]+|(?<=[.!?])\s+|"
         r"\b(?:and|but|or|plus|though|because|therefore|meanwhile|"
         r"furthermore|also|nevertheless|nonetheless|except|so|"
         r"despite(?:\s+that)?|in\s+fact|consequently|moreover|then|"
@@ -11900,6 +11906,17 @@ def hoxline_case_growth_string_promotions(value: str) -> list[str]:
     def match_is_locally_negated(clause: str, match_start: int) -> bool:
         local_prefix = local_boundary.split(clause[:match_start])[-1]
         return clause_negation.search(local_prefix) is not None
+
+    def match_is_locally_postnegated(clause: str, match_end: int) -> bool:
+        return re.match(
+            r"(?:[\s_-]+(?:proof|runtime[\s_-]+proof|status|deployment|"
+            r"readiness|authorization|closure))?"
+            r"\s+(?:(?:is|are|was|were)\s+|remains?\s+)"
+            r"not\s+(?:present|proven|promoted|approved|authorized|"
+            r"established|confirmed|supported|available)\b",
+            clause[match_end:],
+            flags=re.IGNORECASE,
+        ) is not None
 
     def is_bounded_negative_claim_list(
         segment: str,
@@ -11919,16 +11936,22 @@ def hoxline_case_growth_string_promotions(value: str) -> list[str]:
             r"(?:"
             r"runtime(?:[- ]active)?(?:\s+(?:status|truth))?"
             r"|signal(?:[- ]observed)?(?:\s+status)?"
-            r"|public[- ]safe(?:\s+(?:status|runtime\s+proof))?"
+            r"|public[- ]safe(?:\s+(?:status|proof|runtime\s+proof))?"
             r"|production(?:[- ]ready)?(?:\s+(?:status|readiness))?"
             r"|customer(?:\s+deployment)?"
             r"|socaas(?:\s+deployment)?"
             r"|ai(?:[- ]approved)?(?:\s+(?:status|authority|disposition))?"
             r"|analyst(?:[- ]approved)?(?:\s+(?:status|authority|disposition))?"
             r"|final\s+authori[sz]ation"
+            r"|final\s+approval"
             r"|case\s+closure"
+            r"|merge\s+readiness"
             r"|(?:website\s+)?rendering\s+as\s+proof"
+            r"|website[- ]as[- ]proof"
             r"|green\s+ci\s+as\s+approval"
+            r"|approval"
+            r"|authori[sz]ation"
+            r"|closure"
             r")",
             re.IGNORECASE,
         )
@@ -11940,19 +11963,24 @@ def hoxline_case_growth_string_promotions(value: str) -> list[str]:
             intro is not None
             and is_bounded_negative_claim_list(segment, intro)
         )
-        clauses = segment.split(",")
-        for clause in clauses:
+        # Explicit affirmative state after a comma is never inherited by a
+        # preceding negative intro. This catches
+        # "does not prove runtime, customer deployment is active".
+        for clause in segment.split(","):
             for match in affirmative_state_after_negative_list.finditer(clause):
-                if (
-                    not bounded_negative_list
-                    and not match_is_locally_negated(clause, match.start())
-                ):
+                if not match_is_locally_negated(clause, match.start()):
                     violations.append("explicit affirmative authority state")
+        # An explicit claim verb governs a comma-delimited noun list, while a
+        # generic distant word such as "pending" or "missing" does not.
+        phrase_clauses = (segment,) if intro is not None else segment.split(",")
+        for clause in phrase_clauses:
             for label, pattern in phrase_patterns.items():
                 for match in re.finditer(pattern, clause, flags=re.IGNORECASE):
                     if (
                         bounded_negative_list
                         or match_is_locally_negated(clause, match.start())
+                        or match_is_locally_postnegated(clause, match.end())
+                        or clause_negation.search(match.group(0)) is not None
                         or re.search(
                             r"\bpublic[- ]safe\s+candidate\b",
                             clause,
