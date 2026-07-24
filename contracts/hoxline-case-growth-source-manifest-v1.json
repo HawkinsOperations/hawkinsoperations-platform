@@ -7,13 +7,13 @@
   "repositories": {
     ".github": {
       "repository": "HawkinsOperations/.github",
-      "revision": "cf2769104bfe585b9115eb16bef799f2ee31ff21",
+      "revision": "40a73b53cff40d11dcc83f431d7db471f8e53855",
       "authoritative_path": "governance/CONVERGENCE_SOURCE_MANIFEST.json",
-      "authoritative_git_blob_sha": "56f15ef113b2b456dc5ac497a64bc9a5fb34af73"
+      "authoritative_git_blob_sha": "5987b8e453d2055906775eedb50e0a750e4b9992"
     },
     "hawkinsoperations-detections": {
       "repository": "HawkinsOperations/hawkinsoperations-detections",
-      "revision": "48de1240a8437432f35aee77654b568704627a68"
+      "revision": "f8bc0a0925113ca815bf5692081b5216162cc918"
     },
     "hawkinsoperations-validation": {
       "repository": "HawkinsOperations/hawkinsoperations-validation",
