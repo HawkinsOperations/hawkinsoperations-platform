@@ -918,14 +918,92 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             entry["repository"]: entry
             for entry in command_center_manifest["repositories"]
         }
+        observations: dict[str, dict[str, str]] = {}
         for repository, entry in source_manifest["repositories"].items():
             if repository in {".github", "hawkinsoperations-platform"}:
                 continue
-            self.assertEqual(
-                reviewed[repository]["revision"],
-                entry["revision"],
-                f"{repository} must use the reviewed immutable revision",
-            )
+            repository_root = ROOT.parent / repository
+            reviewed_entry = reviewed[repository]
+            reviewed_revision = reviewed_entry["revision"]
+            content_revision = reviewed_entry["authority_content_revision"]
+            authority_path = ho_factory.HOXLINE_CASE_GROWTH_AUTHORITY_PATHS[
+                repository
+            ]
+            observations[repository] = {
+                "selected_revision": entry["revision"],
+                "checked_head": subprocess.check_output(
+                    ["git", "-C", str(repository_root), "rev-parse", "HEAD"],
+                    text=True,
+                ).strip(),
+                "checked_tree": subprocess.check_output(
+                    [
+                        "git",
+                        "-C",
+                        str(repository_root),
+                        "rev-parse",
+                        "HEAD^{tree}",
+                    ],
+                    text=True,
+                ).strip(),
+                "reviewed_revision": reviewed_revision,
+                "reviewed_tree": reviewed_entry["reviewed_tree_sha"],
+                "reviewed_blob": subprocess.check_output(
+                    [
+                        "git",
+                        "-C",
+                        str(repository_root),
+                        "rev-parse",
+                        f"{reviewed_revision}:{authority_path}",
+                    ],
+                    text=True,
+                ).strip(),
+                "content_blob": subprocess.check_output(
+                    [
+                        "git",
+                        "-C",
+                        str(repository_root),
+                        "rev-parse",
+                        f"{content_revision}:{authority_path}",
+                    ],
+                    text=True,
+                ).strip(),
+            }
+
+        def matrix_findings(
+            values: dict[str, dict[str, str]],
+        ) -> set[str]:
+            findings: set[str] = set()
+            for repository, value in values.items():
+                if value["selected_revision"] != value["reviewed_revision"]:
+                    findings.add(f"{repository}:selected_reviewed_head")
+                if value["checked_head"] != value["reviewed_revision"]:
+                    findings.add(f"{repository}:checked_head")
+                if value["checked_tree"] != value["reviewed_tree"]:
+                    findings.add(f"{repository}:reviewed_tree")
+                if value["reviewed_blob"] != value["content_blob"]:
+                    findings.add(f"{repository}:authority_blob")
+            return findings
+
+        self.assertEqual(set(), matrix_findings(observations))
+
+        wrong_head = json.loads(json.dumps(observations))
+        wrong_head["hawkinsoperations-detections"]["reviewed_revision"] = "f" * 40
+        self.assertIn(
+            "hawkinsoperations-detections:checked_head",
+            matrix_findings(wrong_head),
+        )
+        wrong_tree = json.loads(json.dumps(observations))
+        wrong_tree["hawkinsoperations-detections"]["reviewed_tree"] = "e" * 40
+        self.assertIn(
+            "hawkinsoperations-detections:reviewed_tree",
+            matrix_findings(wrong_tree),
+        )
+        wrong_blob = json.loads(json.dumps(observations))
+        wrong_blob["hawkinsoperations-detections"]["content_blob"] = "d" * 40
+        self.assertIn(
+            "hawkinsoperations-detections:authority_blob",
+            matrix_findings(wrong_blob),
+        )
 
     def test_source_workflow_vocabulary_guard_rejects_nfkc_utf16_and_git_errors(
         self,
