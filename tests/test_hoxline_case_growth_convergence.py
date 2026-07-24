@@ -1736,6 +1736,58 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                 ):
                     ho_factory.hoxline_case_growth_git_state(repo)
 
+    def test_git_state_ignores_ambient_repository_and_index_redirection(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            target = base / "target"
+            decoy = base / "decoy"
+
+            def git(repo: Path, *args: str) -> str:
+                return subprocess.run(
+                    ["git", "-C", str(repo), *args],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+
+            for repo, origin, content in (
+                (target, "C:/hostile/target", "target\n"),
+                (
+                    decoy,
+                    "https://github.com/HawkinsOperations/hawkinsoperations-platform.git",
+                    "decoy\n",
+                ),
+            ):
+                repo.mkdir()
+                git(repo, "init")
+                git(repo, "config", "user.name", "Platform Test")
+                git(repo, "config", "user.email", "platform-test@example.invalid")
+                git(repo, "remote", "add", "origin", origin)
+                (repo / "tracked.txt").write_text(content, encoding="utf-8")
+                git(repo, "add", "tracked.txt")
+                git(repo, "commit", "-m", "fixture")
+
+            target_head = git(target, "rev-parse", "HEAD")
+            self.assertNotEqual(target_head, git(decoy, "rev-parse", "HEAD"))
+            (target / "tracked.txt").write_text("changed\n", encoding="utf-8")
+            with mock.patch.dict(
+                ho_factory.os.environ,
+                {
+                    "GIT_DIR": str(decoy / ".git"),
+                    "GIT_WORK_TREE": str(decoy),
+                    "GIT_INDEX_FILE": str(decoy / ".git" / "index"),
+                    "GIT_OBJECT_DIRECTORY": str(decoy / ".git" / "objects"),
+                    "GIT_CONFIG_COUNT": "1",
+                    "GIT_CONFIG_KEY_0": "core.repositoryformatversion",
+                    "GIT_CONFIG_VALUE_0": "0",
+                },
+                clear=False,
+            ):
+                state = ho_factory.hoxline_case_growth_git_state(target)
+            self.assertEqual(state["origin"], "C:/hostile/target")
+            self.assertEqual(state["head"], target_head)
+            self.assertTrue(state["dirty"])
+
     def test_dirty_authority_sources_fail_closed(self) -> None:
         result = self.verify(dirty=True)
         self.assertIn("SOURCE_WORKTREE_DIRTY", {item["code"] for item in result["contradictions"]})

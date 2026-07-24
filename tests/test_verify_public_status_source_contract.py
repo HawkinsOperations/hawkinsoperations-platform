@@ -255,6 +255,52 @@ class PublicStatusSourceContractTests(unittest.TestCase):
                 ):
                     verifier.verify_proof_source_identity(proof_count)
 
+    def test_proof_source_ignores_ambient_git_dir_decoy(self) -> None:
+        proof_count = self.load_contract()["public_fields"]["proof_record_count"]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            decoy = Path(temp_dir) / "decoy"
+            decoy.mkdir()
+            for args in (
+                ("init",),
+                ("config", "user.name", "Platform Test"),
+                ("config", "user.email", "platform-test@example.invalid"),
+                ("remote", "add", "origin", "C:/hostile/decoy"),
+            ):
+                subprocess.run(
+                    ["git", "-C", str(decoy), *args],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            (decoy / "tracked.txt").write_text("decoy\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(decoy), "add", "tracked.txt"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(decoy), "commit", "-m", "fixture"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            with mock.patch.dict(
+                verifier.os.environ,
+                {
+                    "GIT_DIR": str(decoy / ".git"),
+                    "GIT_WORK_TREE": str(decoy),
+                    "GIT_INDEX_FILE": str(decoy / ".git" / "index"),
+                    "GIT_CONFIG_COUNT": "1",
+                    "GIT_CONFIG_KEY_0": "core.repositoryformatversion",
+                    "GIT_CONFIG_VALUE_0": "0",
+                },
+                clear=False,
+            ):
+                raw, observed_head = verifier.verify_proof_source_identity(proof_count)
+        self.assertTrue(raw)
+        self.assertRegex(observed_head, r"^[0-9a-f]{40}$")
+
     def test_detached_historical_authority_is_rejected_even_with_same_blob(self) -> None:
         proof_count = self.load_contract()["public_fields"]["proof_record_count"]
         real_git_output = verifier.git_output

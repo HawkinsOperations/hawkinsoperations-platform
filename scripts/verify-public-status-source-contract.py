@@ -21,6 +21,17 @@ except ImportError:  # pragma: no cover - cross-repo value check is unavailable 
     yaml = None
 
 
+def sanitized_git_env() -> dict[str, str]:
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.casefold().startswith("git_")
+    }
+    env["GIT_NO_REPLACE_OBJECTS"] = "1"
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "contracts" / "public-status-source-contract-v1.json"
 SOURCE_MANIFEST_PATH = ROOT / "contracts" / "hoxline-case-growth-source-manifest-v1.json"
@@ -439,6 +450,7 @@ def git_output(repo: Path, *args: str) -> str:
         capture_output=True,
         check=False,
         text=True,
+        env=sanitized_git_env(),
     )
     if result.returncode != 0:
         fail(f"git {' '.join(args)} failed for {repo.name}: {result.stderr.strip()}")
@@ -451,6 +463,7 @@ def git_is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
         capture_output=True,
         check=False,
         text=True,
+        env=sanitized_git_env(),
     )
     if result.returncode not in (0, 1):
         fail(
@@ -499,6 +512,7 @@ def verify_proof_source_identity(proof_count: dict[str, Any]) -> tuple[bytes, st
         capture_output=True,
         check=False,
         text=True,
+        env=sanitized_git_env(),
     )
     if origin_result.returncode != 0:
         fail(
@@ -559,6 +573,7 @@ def verify_proof_source_identity(proof_count: dict[str, Any]) -> tuple[bytes, st
         ],
         capture_output=True,
         check=False,
+        env=sanitized_git_env(),
     )
     if immutable_manifest_commit.returncode != 0:
         fail("proof source manifest revision is unreachable in the canonical proof repository")
@@ -589,6 +604,7 @@ def verify_proof_source_identity(proof_count: dict[str, Any]) -> tuple[bytes, st
         ["git", "-C", str(PROOF_REPO), "cat-file", "blob", current_blob],
         capture_output=True,
         check=False,
+        env=sanitized_git_env(),
     )
     if blob_bytes.returncode != 0:
         fail("current proof authority blob cannot be read")
@@ -607,6 +623,7 @@ def verify_proof_source_identity(proof_count: dict[str, Any]) -> tuple[bytes, st
         ["git", "-C", str(PROOF_REPO), "cat-file", "-e", f"{observed_sha}^{{commit}}"],
         capture_output=True,
         check=False,
+        env=sanitized_git_env(),
     )
     if observed_sha != immutable_manifest_sha:
         fail("proof observation must equal the separately reviewed immutable source manifest revision")
@@ -617,6 +634,7 @@ def verify_proof_source_identity(proof_count: dict[str, Any]) -> tuple[bytes, st
         capture_output=True,
         check=False,
         text=True,
+        env=sanitized_git_env(),
     )
     if observed_blob.returncode != 0 or observed_blob.stdout.strip() != current_blob:
         fail("recorded proof observation does not carry the checked current authority blob")

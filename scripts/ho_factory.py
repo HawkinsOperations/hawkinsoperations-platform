@@ -29,6 +29,17 @@ except ImportError:  # pragma: no cover - absence is handled as fail-closed runt
     yaml = None
 
 
+def sanitized_git_env() -> dict[str, str]:
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.casefold().startswith("git_")
+    }
+    env["GIT_NO_REPLACE_OBJECTS"] = "1"
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
 CONTROLLER_VERSION = "0.1.0"
 CASE_LEDGER_VERSION = "AUTOSOC_CASE_LEDGER_V0"
 LIFETIME_CASE_LEDGER_VERSION = "LIFETIME_CASE_LEDGER_V1"
@@ -6486,6 +6497,7 @@ def hoxline_runtime_replay(
         capture_output=True,
         text=True,
         check=False,
+        env=sanitized_git_env(),
     ).stdout.strip()
     manifest = {
         "schema_version": "hoxline-private-evidence-manifest-v0",
@@ -11549,6 +11561,7 @@ def hoxline_case_growth_git_state(repo_path: Path) -> dict[str, Any]:
             check=False,
             capture_output=True,
             text=True,
+            env=sanitized_git_env(),
         )
         if result.returncode != 0:
             raise FactoryError(f"unable to resolve git state for {repo_path.name}: {result.stderr.strip()}")
@@ -11568,6 +11581,7 @@ def hoxline_case_growth_git_state(repo_path: Path) -> dict[str, Any]:
         check=False,
         capture_output=True,
         text=True,
+        env=sanitized_git_env(),
     )
     if origin_result.returncode != 0:
         raise FactoryError(
@@ -11613,6 +11627,7 @@ def hoxline_case_growth_git_blob(repo_path: Path, revision: str, relative_path: 
         check=False,
         capture_output=True,
         text=True,
+        env=sanitized_git_env(),
     )
     if blob.returncode != 0:
         return None
@@ -11621,6 +11636,7 @@ def hoxline_case_growth_git_blob(repo_path: Path, revision: str, relative_path: 
         ["git", "-C", str(repo_path), "cat-file", "blob", blob_sha],
         check=False,
         capture_output=True,
+        env=sanitized_git_env(),
     )
     if raw.returncode != 0:
         return None
@@ -12552,6 +12568,7 @@ def hoxline_case_growth_commit_exists(repo_path: Path, commit_sha: str) -> bool:
         check=False,
         capture_output=True,
         text=True,
+        env=sanitized_git_env(),
     )
     return result.returncode == 0
 
@@ -12562,6 +12579,7 @@ def hoxline_case_growth_is_direct_parent(repo_path: Path, commit_sha: str, head_
         check=False,
         capture_output=True,
         text=True,
+        env=sanitized_git_env(),
     )
     return result.returncode == 0 and result.stdout.strip().casefold() == commit_sha.casefold()
 
@@ -12582,6 +12600,7 @@ def hoxline_case_growth_is_ancestor(
         check=False,
         capture_output=True,
         text=True,
+        env=sanitized_git_env(),
     )
     return result.returncode == 0
 
@@ -12592,6 +12611,7 @@ def hoxline_case_growth_tree_sha(repo_path: Path, revision: str) -> str | None:
         check=False,
         capture_output=True,
         text=True,
+        env=sanitized_git_env(),
     )
     value = result.stdout.strip().casefold()
     return value if result.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", value) else None
@@ -12615,6 +12635,7 @@ def hoxline_case_growth_changed_paths(
         check=False,
         capture_output=True,
         text=True,
+        env=sanitized_git_env(),
     )
     if result.returncode != 0:
         return None
@@ -13846,6 +13867,7 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
         capture_output=True,
         text=True,
         check=False,
+        env=sanitized_git_env(),
     )
     if tracked.returncode == 0:
         workflow_paths = sorted(
@@ -13860,6 +13882,7 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
                 capture_output=True,
                 text=True,
                 check=False,
+                env=sanitized_git_env(),
             )
             if committed.returncode != 0:
                 raise FactoryError(
