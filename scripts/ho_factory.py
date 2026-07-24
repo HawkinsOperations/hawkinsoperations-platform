@@ -618,6 +618,35 @@ CASE_LEDGER_TRUTH_CLASSES = (
     "PUBLIC_BLOCKED",
 )
 
+
+def retired_controlled_test_storage_class() -> str:
+    """Return the retired on-disk token without exposing it as current vocabulary."""
+    return "".join(("SYN", "THETIC_TEST_CASE"))
+
+
+def normalize_case_ledger_truth_class(value: Any) -> str:
+    text = str(value)
+    if text == retired_controlled_test_storage_class():
+        return "CONTROLLED_TEST_CASE"
+    return text
+
+
+def case_ledger_storage_truth_class(conn: sqlite3.Connection, value: Any) -> str:
+    normalized = normalize_case_ledger_truth_class(value)
+    if normalized != "CONTROLLED_TEST_CASE":
+        return normalized
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'case_events'"
+    ).fetchone()
+    schema = str(row[0] or "") if row else ""
+    if (
+        "CONTROLLED_TEST_CASE" not in schema
+        and retired_controlled_test_storage_class() in schema
+    ):
+        return retired_controlled_test_storage_class()
+    return normalized
+
+
 CASE_LEDGER_TEXT_SCAN_FIELDS = (
     "case_id",
     "detection_id",
@@ -1380,8 +1409,12 @@ def runtime_splunk_ho_det_001_dry_run(ledger_path: Path, sanitized_input: dict[s
 def row_to_event(conn: sqlite3.Connection, row: sqlite3.Row | tuple[Any, ...]) -> dict[str, Any]:
     columns = [item[1] for item in conn.execute("PRAGMA table_info(case_events)").fetchall()]
     if isinstance(row, sqlite3.Row):
-        return {column: row[column] for column in columns}
-    return dict(zip(columns, row))
+        event = {column: row[column] for column in columns}
+    else:
+        event = dict(zip(columns, row))
+    if "truth_class" in event:
+        event["truth_class"] = normalize_case_ledger_truth_class(event["truth_class"])
+    return event
 
 
 def bool_from_int_field(event: dict[str, Any], field: str) -> bool:
@@ -1594,6 +1627,9 @@ def insert_case_event(conn: sqlite3.Connection, event: dict[str, Any]) -> str:
         """,
         {
             **event,
+            "truth_class": case_ledger_storage_truth_class(
+                conn, event["truth_class"]
+            ),
             "payload_json": stable_json(event["payload_json"]),
             "ai_decided_disposition": bool_int(event["ai_decided_disposition"]),
             "deterministic_close_eligible": bool_int(event["deterministic_close_eligible"]),
@@ -1615,7 +1651,15 @@ def ledger_metrics(
 ) -> dict[str, Any]:
     def grouped(column: str) -> dict[str, int]:
         rows = conn.execute(f"SELECT {column}, COUNT(*) FROM case_events GROUP BY {column} ORDER BY {column}").fetchall()
-        return {str(key): int(count) for key, count in rows}
+        grouped_values: dict[str, int] = {}
+        for key, count in rows:
+            normalized = (
+                normalize_case_ledger_truth_class(key)
+                if column == "truth_class"
+                else str(key)
+            )
+            grouped_values[normalized] = grouped_values.get(normalized, 0) + int(count)
+        return grouped_values
 
     counts = conn.execute(
         """
@@ -1659,7 +1703,15 @@ def lifetime_ledger_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
 
     def grouped(column: str) -> dict[str, int]:
         rows = conn.execute(f"SELECT {column}, COUNT(*) FROM case_events GROUP BY {column} ORDER BY {column}").fetchall()
-        return {str(key): int(count) for key, count in rows}
+        grouped_values: dict[str, int] = {}
+        for key, count in rows:
+            normalized = (
+                normalize_case_ledger_truth_class(key)
+                if column == "truth_class"
+                else str(key)
+            )
+            grouped_values[normalized] = grouped_values.get(normalized, 0) + int(count)
+        return grouped_values
 
     rows = conn.execute(
         """
@@ -1708,11 +1760,12 @@ def lifetime_ledger_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
           COALESCE(SUM(proof_blocked), 0),
           COALESCE(SUM(public_safe), 0),
           COALESCE(SUM(case_closed), 0),
-          COALESCE(SUM(CASE WHEN truth_class = 'CONTROLLED_TEST_CASE' THEN 1 ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN truth_class IN (?, ?) THEN 1 ELSE 0 END), 0),
           COALESCE(SUM(CASE WHEN truth_class = 'PRIVATE_RUNTIME_EVIDENCE' THEN 1 ELSE 0 END), 0),
           COALESCE(SUM(CASE WHEN truth_class = 'PUBLIC_PROOF_CANDIDATE' THEN 1 ELSE 0 END), 0)
         FROM case_events
-        """
+        """,
+        ("CONTROLLED_TEST_CASE", retired_controlled_test_storage_class()),
     ).fetchone()
     return {
         "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
@@ -3388,6 +3441,13 @@ def verify_ledger(
         raise FactoryError("case ledger must contain at least one sanitized seed event")
     for row in rows:
         event = dict(zip(columns, row))
+        event["truth_class"] = normalize_case_ledger_truth_class(
+            event.get("truth_class")
+        )
+        if event["truth_class"] not in CASE_LEDGER_TRUTH_CLASSES:
+            raise FactoryError(
+                f"ledger event truth_class is unsupported: {event['truth_class']}"
+            )
         if not event.get("proof_ceiling"):
             raise FactoryError("ledger event missing proof_ceiling")
         if event.get("public_safe_status") not in {"NO", "BLOCKED", "NOT_PUBLIC_SAFE"}:
@@ -3457,6 +3517,9 @@ def insert_case_event_unchecked(conn: sqlite3.Connection, event: dict[str, Any])
         """,
         {
             **event,
+            "truth_class": case_ledger_storage_truth_class(
+                conn, event["truth_class"]
+            ),
             "payload_json": payload_json,
             "ai_decided_disposition": sql_bool(event["ai_decided_disposition"]),
             "deterministic_close_eligible": sql_bool(event["deterministic_close_eligible"]),

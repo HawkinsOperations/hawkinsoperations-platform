@@ -1377,6 +1377,63 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.assertNotIn(retired, factory)
         self.assertNotIn(retired, controller)
 
+    def test_retired_ledger_schema_is_adapted_without_mutating_existing_rows(self) -> None:
+        retired = ho_factory.retired_controlled_test_storage_class()
+        schema = ho_factory.case_ledger_schema_sql().replace(
+            "'CONTROLLED_TEST_CASE'",
+            f"'{retired}'",
+        )
+        conn = sqlite3.connect(":memory:")
+        self.addCleanup(conn.close)
+        conn.executescript(schema)
+        ho_factory.initialize_ledger_schema(conn)
+        event = {
+            "event_hash": "a" * 64,
+            "inserted_at": "2026-07-24T00:00:00Z",
+            "ledger_version": ho_factory.CASE_LEDGER_VERSION,
+            "case_id": "CASE-CONTROLLED-001",
+            "detection_id": "HO-DET-001",
+            "truth_class": "CONTROLLED_TEST_CASE",
+            "case_status": "HUMAN_REVIEW_REQUIRED",
+            "proof_ceiling": "CONTROLLED_TEST_VALIDATED",
+            "public_safe_status": "NOT_PUBLIC_SAFE",
+            "ai_support_mode": "AI_SUPPORT_ONLY",
+            "ai_decided_disposition": False,
+            "recommended_disposition": None,
+            "deterministic_close_eligible": False,
+            "deterministic_close_blocked": True,
+            "human_review_required": True,
+            "gpu_supported": False,
+            "public_safe": False,
+            "proof_blocked": True,
+            "github_issue_mutation_allowed": False,
+            "case_closed": False,
+            "legacy_import_count": 0,
+            "payload_json": {"truth_boundary": "controlled test only; not proof"},
+            "source_packet_ref": "controlled-test-fixtures/CASE-CONTROLLED-001.json",
+        }
+        self.assertEqual("inserted", ho_factory.insert_case_event(conn, event))
+        raw_truth_class = conn.execute(
+            "SELECT truth_class FROM case_events"
+        ).fetchone()[0]
+        self.assertEqual(retired, raw_truth_class)
+        normalized = ho_factory.row_to_event(
+            conn,
+            conn.execute("SELECT * FROM case_events").fetchone(),
+        )
+        self.assertEqual("CONTROLLED_TEST_CASE", normalized["truth_class"])
+        self.assertEqual(
+            {"CONTROLLED_TEST_CASE": 1},
+            ho_factory.ledger_metrics(conn)["cases_by_truth_class"],
+        )
+        lifetime = ho_factory.lifetime_ledger_metrics(conn)
+        self.assertEqual(1, lifetime["validation_only_count"])
+        self.assertEqual(
+            {"CONTROLLED_TEST_CASE": 1},
+            lifetime["cases_by_truth_class"],
+        )
+        self.assertEqual("pass", ho_factory.verify_ledger(conn)["ledger_verifier"])
+
     def test_arbitrary_same_blob_observation_not_selected_by_manifest_fails_closed(self) -> None:
         self.snapshot["source_revisions"]["hawkinsoperations-proof"][
             "current_observed_head_sha"
