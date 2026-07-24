@@ -7,7 +7,9 @@
   "repositories": {
     ".github": {
       "repository": "HawkinsOperations/.github",
-      "revision": "816a694de3e3e23961c227d8d59591898a215973"
+      "revision": "816a694de3e3e23961c227d8d59591898a215973",
+      "authoritative_path": "governance/CONVERGENCE_SOURCE_MANIFEST.json",
+      "authoritative_git_blob_sha": "905f945f6de2836933dcdb169bdc01f45ba1e231"
     },
     "hawkinsoperations-detections": {
       "repository": "HawkinsOperations/hawkinsoperations-detections",

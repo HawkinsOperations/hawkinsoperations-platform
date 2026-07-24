@@ -192,6 +192,16 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                     else {
                         "repository": f"HawkinsOperations/{repo}",
                         "revision": self.sha,
+                        **(
+                            {
+                                "authoritative_path": (
+                                    "governance/CONVERGENCE_SOURCE_MANIFEST.json"
+                                ),
+                                "authoritative_git_blob_sha": "b" * 40,
+                            }
+                            if repo == ".github"
+                            else {}
+                        ),
                     }
                 )
                 for repo in ho_factory.HOXLINE_CASE_GROWTH_REPOS
@@ -290,6 +300,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         branch: str = "feature/test",
         head: str | None = None,
         blob_overrides: dict[tuple[str, str], str] | None = None,
+        missing_blobs: set[tuple[str, str]] | None = None,
         missing_commits: set[str] | None = None,
         ancestor_pairs: set[tuple[str, str]] | None = None,
         direct_parent_pairs: set[tuple[str, str]] | None = None,
@@ -299,13 +310,20 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
     ) -> dict:
         resolved_head = head or self.sha
         selected_blob_overrides = blob_overrides or {}
+        selected_missing_blobs = missing_blobs or set()
         selected_missing_commits = missing_commits or set()
         selected_ancestor_pairs = ancestor_pairs or set()
         selected_direct_parent_pairs = direct_parent_pairs or set()
         selected_tree_overrides = tree_overrides or {}
         selected_changed_paths_overrides = changed_paths_overrides or {}
 
-        def git_blob(repo_path: Path, revision: str, relative_path: str) -> tuple[str, bytes]:
+        def git_blob(
+            repo_path: Path,
+            revision: str,
+            relative_path: str,
+        ) -> tuple[str, bytes] | None:
+            if (repo_path.name, revision) in selected_missing_blobs:
+                return None
             blob_sha = selected_blob_overrides.get(
                 (repo_path.name, revision), "b" * 40
             )
@@ -422,7 +440,9 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             {item["code"] for item in result["contradictions"]},
         )
 
-    def test_current_observation_content_mismatch_fails_closed(self) -> None:
+    def test_current_observation_content_mismatch_fails_closed_at_projection(
+        self,
+    ) -> None:
         reviewed_observation = "f" * 40
         self.snapshot["source_revisions"]["hawkinsoperations-proof"][
             "current_observed_head_sha"
@@ -437,8 +457,15 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             },
         )
         self.assertIn(
-            "SOURCE_OBSERVATION_CONTENT_MISMATCH",
+            "MALFORMED_SOURCE",
             {item["code"] for item in result["contradictions"]},
+        )
+        self.assertTrue(
+            any(
+                "reviewed and authority-content identities disagree"
+                in str(item["actual"])
+                for item in result["contradictions"]
+            )
         )
 
     def test_convergence_has_no_filesystem_mutation_primitive(self) -> None:
@@ -928,22 +955,37 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             ["git", "-C", str(command_center_root), "rev-parse", "HEAD"],
             text=True,
         ).strip()
+        pinned_blob = subprocess.check_output(
+            [
+                "git",
+                "-C",
+                str(command_center_root),
+                "rev-parse",
+                (
+                    f"{command_center_revision}:"
+                    "governance/CONVERGENCE_SOURCE_MANIFEST.json"
+                ),
+            ],
+            text=True,
+        ).strip()
         self.assertEqual(
-            0,
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(command_center_root),
-                    "merge-base",
-                    "--is-ancestor",
-                    command_center_revision,
-                    command_center_head,
-                ],
-                check=False,
-            ).returncode,
-            "pinned command-center manifest must remain on the checked lineage",
+            source_manifest["repositories"][".github"][
+                "authoritative_git_blob_sha"
+            ],
+            pinned_blob,
         )
+        current_blob = subprocess.check_output(
+            [
+                "git",
+                "-C",
+                str(command_center_root),
+                "rev-parse",
+                "HEAD:governance/CONVERGENCE_SOURCE_MANIFEST.json",
+            ],
+            text=True,
+        ).strip()
+        self.assertRegex(command_center_head, r"^[0-9a-f]{40}$")
+        self.assertRegex(current_blob, r"^[0-9a-f]{40}$")
         reviewed = {
             entry["repository"]: entry
             for entry in command_center_manifest["repositories"]
@@ -1033,6 +1075,144 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.assertIn(
             "hawkinsoperations-detections:authority_blob",
             matrix_findings(wrong_blob),
+        )
+
+        pinned_entries = ho_factory.hoxline_case_growth_validate_review_manifest(
+            command_center_manifest,
+            "pinned command-center manifest",
+        )
+        current_entries = ho_factory.hoxline_case_growth_review_manifest(
+            ROOT.parent
+        )
+        self.assertEqual(
+            ho_factory.hoxline_case_growth_review_authority_projection(
+                ROOT.parent,
+                pinned_entries,
+                "pinned command-center manifest",
+            ),
+            ho_factory.hoxline_case_growth_review_authority_projection(
+                ROOT.parent,
+                current_entries,
+                "checked command-center manifest",
+            ),
+        )
+
+    def test_pinned_command_center_object_missing_fails_closed(self) -> None:
+        result = self.verify(missing_blobs={(".github", self.sha)})
+        self.assertIn(
+            "MALFORMED_SOURCE",
+            {item["code"] for item in result["contradictions"]},
+        )
+        self.assertIn(
+            "fetch immutable HawkinsOperations/.github object",
+            result["contradictions"][0]["actual"],
+        )
+
+    def test_pinned_projection_rejects_changed_noncyclic_authority_blob(
+        self,
+    ) -> None:
+        pinned_entries = {
+            entry["repository"]: entry
+            for entry in json.loads(json.dumps(self.review_manifest))[
+                "repositories"
+            ]
+        }
+        current_entries = json.loads(json.dumps(pinned_entries))
+        current_entries["hawkinsoperations-detections"].update(
+            {
+                "revision": "c" * 40,
+                "authority_content_revision": "d" * 40,
+                "reviewed_tree_sha": "f" * 40,
+            }
+        )
+
+        def tree(_repo: Path, revision: str) -> str:
+            return "f" * 40 if revision == "c" * 40 else "e" * 40
+
+        def blob(repo: Path, revision: str, relative_path: str):
+            blob_sha = (
+                "c" * 40
+                if repo.name == "hawkinsoperations-detections"
+                and revision in {"c" * 40, "d" * 40}
+                else "b" * 40
+            )
+            return blob_sha, (repo / relative_path).read_bytes()
+
+        with mock.patch.object(
+            ho_factory,
+            "hoxline_case_growth_tree_sha",
+            side_effect=tree,
+        ), mock.patch.object(
+            ho_factory,
+            "hoxline_case_growth_git_blob",
+            side_effect=blob,
+        ):
+            pinned = ho_factory.hoxline_case_growth_review_authority_projection(
+                self.org_root,
+                pinned_entries,
+                "pinned",
+            )
+            current = ho_factory.hoxline_case_growth_review_authority_projection(
+                self.org_root,
+                current_entries,
+                "current",
+            )
+        self.assertNotEqual(pinned, current)
+
+    def test_noncyclic_revision_rewrite_with_same_authority_blob_passes(
+        self,
+    ) -> None:
+        pinned_entries = {
+            entry["repository"]: entry
+            for entry in json.loads(json.dumps(self.review_manifest))[
+                "repositories"
+            ]
+        }
+        current_entries = json.loads(json.dumps(pinned_entries))
+        current_entries["hawkinsoperations-detections"].update(
+            {
+                "revision": "c" * 40,
+                "authority_content_revision": "d" * 40,
+                "reviewed_tree_sha": "f" * 40,
+            }
+        )
+
+        def tree(_repo: Path, revision: str) -> str:
+            return "f" * 40 if revision == "c" * 40 else "e" * 40
+
+        def blob(repo: Path, _revision: str, relative_path: str):
+            return "b" * 40, (repo / relative_path).read_bytes()
+
+        with mock.patch.object(
+            ho_factory,
+            "hoxline_case_growth_tree_sha",
+            side_effect=tree,
+        ), mock.patch.object(
+            ho_factory,
+            "hoxline_case_growth_git_blob",
+            side_effect=blob,
+        ):
+            pinned = ho_factory.hoxline_case_growth_review_authority_projection(
+                self.org_root,
+                pinned_entries,
+                "pinned",
+            )
+            current = ho_factory.hoxline_case_growth_review_authority_projection(
+                self.org_root,
+                current_entries,
+                "current",
+            )
+        self.assertEqual(pinned, current)
+
+    def test_source_manifest_rejects_embedded_projection_extension(self) -> None:
+        self.source_manifest["repositories"][".github"][
+            "acyclic_projection_sha256"
+        ] = "d" * 64
+        self.write_sources()
+        result = self.verify()
+        self.assertIn(
+            "MALFORMED_SOURCE",
+            {item["code"] for item in result["contradictions"]},
         )
 
     def test_source_workflow_vocabulary_guard_rejects_nfkc_utf16_and_git_errors(

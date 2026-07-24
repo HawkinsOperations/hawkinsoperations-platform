@@ -11834,6 +11834,22 @@ def hoxline_case_growth_load_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def hoxline_case_growth_load_json_bytes(
+    raw: bytes,
+    source_label: str,
+) -> dict[str, Any]:
+    try:
+        value = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=hoxline_case_growth_reject_duplicate_keys,
+        )
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise FactoryError(f"{source_label}: invalid JSON: {exc}") from exc
+    if not isinstance(value, dict):
+        raise FactoryError(f"{source_label}: top-level JSON value must be an object")
+    return value
+
+
 def hoxline_case_growth_load_yaml(path: Path) -> dict[str, Any]:
     if yaml is None:
         raise FactoryError("PyYAML is required for structured authority verification")
@@ -11909,23 +11925,51 @@ def hoxline_case_growth_source_manifest(org_root: Path) -> dict[str, Any]:
             "source manifest must name exactly the seven HawkinsOperations repositories"
         )
     for repo_name, entry in entries.items():
-        if not isinstance(entry, dict) or set(entry) - {
-            "repository",
-            "revision",
-            "revision_source",
-        }:
+        if not isinstance(entry, dict):
             raise FactoryError(f"source manifest entry has an unsupported shape: {repo_name}")
         if entry.get("repository") != f"HawkinsOperations/{repo_name}":
             raise FactoryError(f"source manifest repository owner mismatch: {repo_name}")
         if repo_name == "hawkinsoperations-platform":
             if (
+                set(entry) != {"repository", "revision_source"}
+                or
                 entry.get("revision_source") != "checked_platform_observation"
                 or "revision" in entry
             ):
                 raise FactoryError(
                     "platform source manifest entry must use the checked platform observation"
                 )
+        elif repo_name == ".github":
+            if set(entry) != {
+                "repository",
+                "revision",
+                "authoritative_path",
+                "authoritative_git_blob_sha",
+            }:
+                raise FactoryError(
+                    "command-center source manifest entry must pin repo, path, revision, and blob"
+                )
+            if (
+                entry.get("authoritative_path")
+                != "governance/CONVERGENCE_SOURCE_MANIFEST.json"
+                or re.fullmatch(
+                    r"[0-9a-f]{40}",
+                    str(entry.get("authoritative_git_blob_sha", "")),
+                )
+                is None
+            ):
+                raise FactoryError(
+                    "command-center source manifest path or blob identity is invalid"
+                )
+            if re.fullmatch(
+                r"[0-9a-f]{40}", str(entry.get("revision", ""))
+            ) is None:
+                raise FactoryError(
+                    "source manifest revision must be immutable: .github"
+                )
         elif (
+            set(entry) != {"repository", "revision"}
+            or
             re.fullmatch(r"[0-9a-f]{40}", str(entry.get("revision", ""))) is None
         ):
             raise FactoryError(f"source manifest revision must be immutable: {repo_name}")
@@ -11948,17 +11992,14 @@ def hoxline_case_growth_source_manifest(org_root: Path) -> dict[str, Any]:
     return manifest
 
 
-def hoxline_case_growth_review_manifest(org_root: Path) -> dict[str, dict[str, Any]]:
-    manifest_path = (
-        org_root
-        / ".github"
-        / "governance"
-        / "CONVERGENCE_SOURCE_MANIFEST.json"
-    )
-    manifest = hoxline_case_growth_load_json(manifest_path)
+def hoxline_case_growth_validate_review_manifest(
+    manifest: dict[str, Any],
+    source_label: str,
+) -> dict[str, dict[str, Any]]:
     if set(manifest) != {"schema", "manifest_id", "repositories", "constraints"}:
         raise FactoryError(
-            "command-center source manifest must use the exact v1 shape without extensions"
+            f"{source_label}: command-center source manifest must use the exact v1 "
+            "shape without extensions"
         )
     if (
         manifest.get("schema")
@@ -12063,6 +12104,128 @@ def hoxline_case_growth_review_manifest(org_root: Path) -> dict[str, dict[str, A
             "command-center source manifest must name exactly the seven HawkinsOperations repositories"
         )
     return entries
+
+
+def hoxline_case_growth_review_manifest(org_root: Path) -> dict[str, dict[str, Any]]:
+    manifest_path = (
+        org_root
+        / ".github"
+        / "governance"
+        / "CONVERGENCE_SOURCE_MANIFEST.json"
+    )
+    manifest = hoxline_case_growth_load_json(manifest_path)
+    return hoxline_case_growth_validate_review_manifest(
+        manifest,
+        str(manifest_path),
+    )
+
+
+HOXLINE_CASE_GROWTH_ACYCLIC_REVIEW_REPOS = tuple(
+    repository
+    for repository in HOXLINE_CASE_GROWTH_REPOS
+    if repository not in {".github", "hawkinsoperations-platform"}
+)
+
+
+def hoxline_case_growth_review_authority_projection(
+    org_root: Path,
+    entries: dict[str, dict[str, Any]],
+    source_label: str,
+) -> dict[str, dict[str, str]]:
+    projection: dict[str, dict[str, str]] = {}
+    for repository in HOXLINE_CASE_GROWTH_ACYCLIC_REVIEW_REPOS:
+        entry = entries[repository]
+        repository_root = org_root / repository
+        authority_path = HOXLINE_CASE_GROWTH_AUTHORITY_PATHS[repository]
+        reviewed_revision = entry["revision"]
+        content_revision = entry["authority_content_revision"]
+        reviewed_tree = hoxline_case_growth_tree_sha(
+            repository_root,
+            reviewed_revision,
+        )
+        if reviewed_tree is None:
+            raise FactoryError(
+                f"{source_label}: reviewed revision is unavailable for {repository}; "
+                "fetch the immutable reviewed object without substituting a default branch"
+            )
+        if reviewed_tree != entry["reviewed_tree_sha"]:
+            raise FactoryError(
+                f"{source_label}: reviewed tree mismatch for {repository}: "
+                f"expected={entry['reviewed_tree_sha']} actual={reviewed_tree}"
+            )
+        reviewed_blob = hoxline_case_growth_git_blob(
+            repository_root,
+            reviewed_revision,
+            authority_path,
+        )
+        content_blob = hoxline_case_growth_git_blob(
+            repository_root,
+            content_revision,
+            authority_path,
+        )
+        if reviewed_blob is None or content_blob is None:
+            raise FactoryError(
+                f"{source_label}: authority object is unavailable for {repository}; "
+                "fetch the immutable reviewed and authority-content objects"
+            )
+        reviewed_semantic = hoxline_case_growth_semantic_fingerprint(
+            authority_path,
+            reviewed_blob[1],
+        )
+        content_semantic = hoxline_case_growth_semantic_fingerprint(
+            authority_path,
+            content_blob[1],
+        )
+        if (
+            reviewed_blob[0] != content_blob[0]
+            or reviewed_semantic != content_semantic
+        ):
+            raise FactoryError(
+                f"{source_label}: reviewed and authority-content identities disagree "
+                f"for {repository}"
+            )
+        projection[repository] = {
+            "repository": repository,
+            "canonical_repository": entry["canonical_repository"],
+            "authority_path": authority_path,
+            "authority_git_blob_sha": reviewed_blob[0],
+            "authority_content_fingerprint": reviewed_semantic,
+        }
+    return projection
+
+
+def hoxline_case_growth_pinned_review_manifest(
+    org_root: Path,
+    source_manifest: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    command_center = source_manifest["repositories"][".github"]
+    repository_root = org_root / ".github"
+    revision = command_center["revision"]
+    authority_path = command_center["authoritative_path"]
+    expected_blob_sha = command_center["authoritative_git_blob_sha"]
+    pinned_blob = hoxline_case_growth_git_blob(
+        repository_root,
+        revision,
+        authority_path,
+    )
+    if pinned_blob is None:
+        raise FactoryError(
+            "pinned command-center manifest object is unavailable; fetch immutable "
+            f"HawkinsOperations/.github object {revision} without default-branch fallback"
+        )
+    if pinned_blob[0] != expected_blob_sha:
+        raise FactoryError(
+            "pinned command-center manifest blob mismatch: "
+            f"expected={expected_blob_sha} actual={pinned_blob[0]}"
+        )
+    manifest = hoxline_case_growth_load_json_bytes(
+        pinned_blob[1],
+        f"HawkinsOperations/.github@{revision}:{authority_path}",
+    )
+    return hoxline_case_growth_validate_review_manifest(
+        manifest,
+        f"HawkinsOperations/.github@{revision}:{authority_path}",
+    )
 
 
 def hoxline_case_growth_normalize_authority_key(value: str) -> str:
@@ -12570,6 +12733,30 @@ def hoxline_case_growth_convergence_verify(
     try:
         source_manifest = hoxline_case_growth_source_manifest(org_root)
         review_manifest_entries = hoxline_case_growth_review_manifest(org_root)
+        pinned_review_manifest_entries = hoxline_case_growth_pinned_review_manifest(
+            org_root,
+            source_manifest,
+        )
+        current_authority_projection = (
+            hoxline_case_growth_review_authority_projection(
+                org_root,
+                review_manifest_entries,
+                "checked command-center manifest",
+            )
+        )
+        pinned_authority_projection = (
+            hoxline_case_growth_review_authority_projection(
+                org_root,
+                pinned_review_manifest_entries,
+                "pinned command-center manifest",
+            )
+        )
+        if current_authority_projection != pinned_authority_projection:
+            raise FactoryError(
+                "pinned and checked command-center authority projections disagree; "
+                "review the changed authority blobs and refresh the immutable source "
+                "selection without copying consumer or cyclic identity fields"
+            )
         snapshot = hoxline_case_growth_load_json(paths["hoxline_snapshot"])
         proof_index = hoxline_case_growth_load_yaml(paths["proof_index"])
         detection_matrix = hoxline_case_growth_load_yaml(paths["detection_matrix"])
