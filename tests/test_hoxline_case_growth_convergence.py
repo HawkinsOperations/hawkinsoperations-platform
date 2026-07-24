@@ -903,16 +903,46 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                 / "hoxline-case-growth-source-manifest-v1.json"
             ).read_text(encoding="utf-8")
         )
-        command_center_manifest_path = (
-            ROOT.parent
-            / ".github"
-            / "governance"
-            / "CONVERGENCE_SOURCE_MANIFEST.json"
-        )
-        if not command_center_manifest_path.is_file():
+        command_center_root = ROOT.parent / ".github"
+        if not command_center_root.is_dir():
             self.skipTest("command-center sibling checkout is unavailable")
+        command_center_revision = source_manifest["repositories"][".github"][
+            "revision"
+        ]
         command_center_manifest = json.loads(
-            command_center_manifest_path.read_text(encoding="utf-8")
+            subprocess.check_output(
+                [
+                    "git",
+                    "-C",
+                    str(command_center_root),
+                    "show",
+                    (
+                        f"{command_center_revision}:"
+                        "governance/CONVERGENCE_SOURCE_MANIFEST.json"
+                    ),
+                ],
+                text=True,
+            )
+        )
+        command_center_head = subprocess.check_output(
+            ["git", "-C", str(command_center_root), "rev-parse", "HEAD"],
+            text=True,
+        ).strip()
+        self.assertEqual(
+            0,
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(command_center_root),
+                    "merge-base",
+                    "--is-ancestor",
+                    command_center_revision,
+                    command_center_head,
+                ],
+                check=False,
+            ).returncode,
+            "pinned command-center manifest must remain on the checked lineage",
         )
         reviewed = {
             entry["repository"]: entry

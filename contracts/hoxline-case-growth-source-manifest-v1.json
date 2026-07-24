@@ -7,7 +7,7 @@
   "repositories": {
     ".github": {
       "repository": "HawkinsOperations/.github",
-      "revision": "5c9e17cb590d46263d3266138ac654426018a7f7"
+      "revision": "816a694de3e3e23961c227d8d59591898a215973"
     },
     "hawkinsoperations-detections": {
       "repository": "HawkinsOperations/hawkinsoperations-detections",
