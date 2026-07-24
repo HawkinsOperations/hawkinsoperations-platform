@@ -1024,6 +1024,16 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                     ],
                     text=True,
                 ).strip(),
+                "checked_blob": subprocess.check_output(
+                    [
+                        "git",
+                        "-C",
+                        str(repository_root),
+                        "rev-parse",
+                        f"HEAD:{authority_path}",
+                    ],
+                    text=True,
+                ).strip(),
                 "reviewed_revision": reviewed_revision,
                 "reviewed_tree": reviewed_entry["reviewed_tree_sha"],
                 "reviewed_blob": subprocess.check_output(
@@ -1053,30 +1063,22 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         ) -> set[str]:
             findings: set[str] = set()
             for repository, value in values.items():
-                if value["checked_head"] != value["reviewed_revision"]:
-                    findings.add(f"{repository}:checked_head")
-                if value["checked_tree"] != value["reviewed_tree"]:
-                    findings.add(f"{repository}:reviewed_tree")
                 if value["reviewed_blob"] != value["content_blob"]:
                     findings.add(f"{repository}:authority_blob")
                 if value["selected_blob"] != value["reviewed_blob"]:
                     findings.add(f"{repository}:selected_authority_blob")
+                if value["checked_blob"] != value["reviewed_blob"]:
+                    findings.add(f"{repository}:checked_authority_blob")
             return findings
 
         self.assertEqual(set(), matrix_findings(observations))
 
         wrong_head = json.loads(json.dumps(observations))
-        wrong_head["hawkinsoperations-detections"]["reviewed_revision"] = "f" * 40
-        self.assertIn(
-            "hawkinsoperations-detections:checked_head",
-            matrix_findings(wrong_head),
-        )
+        wrong_head["hawkinsoperations-detections"]["checked_head"] = "f" * 40
+        self.assertEqual(set(), matrix_findings(wrong_head))
         wrong_tree = json.loads(json.dumps(observations))
         wrong_tree["hawkinsoperations-detections"]["reviewed_tree"] = "e" * 40
-        self.assertIn(
-            "hawkinsoperations-detections:reviewed_tree",
-            matrix_findings(wrong_tree),
-        )
+        self.assertEqual(set(), matrix_findings(wrong_tree))
         wrong_blob = json.loads(json.dumps(observations))
         wrong_blob["hawkinsoperations-detections"]["content_blob"] = "d" * 40
         self.assertIn(
@@ -1090,6 +1092,14 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.assertIn(
             "hawkinsoperations-detections:selected_authority_blob",
             matrix_findings(wrong_selected_blob),
+        )
+        wrong_checked_blob = json.loads(json.dumps(observations))
+        wrong_checked_blob["hawkinsoperations-detections"]["checked_blob"] = (
+            "c" * 40
+        )
+        self.assertIn(
+            "hawkinsoperations-detections:checked_authority_blob",
+            matrix_findings(wrong_checked_blob),
         )
 
         pinned_entries = ho_factory.hoxline_case_growth_validate_review_manifest(
