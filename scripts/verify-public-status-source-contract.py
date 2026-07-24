@@ -252,6 +252,53 @@ def unnegated_promotional_phrases(value: str) -> list[str]:
         r")",
         flags=re.IGNORECASE,
     )
+    negative_claim_intro = re.compile(
+        r"\b(?:does|do|did|must|is|are|was|were|can|cannot|could|should|will|would)\s+not\s+"
+        r"(?:prove|establish|claim|promote|authorize|assert|treat|render)\b"
+        r"|\bnever\s+(?:prove|establish|claim|promote|authorize|assert|treat|render)\b"
+        r"|\bwithout\s+claiming\b",
+        flags=re.IGNORECASE,
+    )
+    local_boundary = re.compile(
+        r"(?:[,;:/\r\n—–]+|(?<=[.!?])\s+|"
+        r"\b(?:and|but|or|plus|though|because|therefore|meanwhile|"
+        r"furthermore|also|nevertheless|nonetheless|except|so|"
+        r"despite(?:\s+that)?|in\s+fact|consequently|moreover|then|"
+        r"still|however|although|yet|"
+        r"while|whereas)\b)",
+        flags=re.IGNORECASE,
+    )
+
+    def is_bounded_negative_claim_list(clause: str, intro: re.Match[str]) -> bool:
+        tail = clause[intro.end():].strip(" \t,.;:")
+        items = [
+            item.strip(" \t,.;:")
+            for item in re.split(
+                r"\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+",
+                tail,
+                flags=re.IGNORECASE,
+            )
+            if item.strip(" \t,.;:")
+        ]
+        bounded_noun = re.compile(
+            r"(?:"
+            r"runtime(?:[- ]active)?(?:\s+(?:status|truth))?"
+            r"|signal(?:[- ]observed)?(?:\s+status)?"
+            r"|public[- ]safe(?:\s+(?:status|runtime\s+proof))?"
+            r"|production(?:[- ]ready)?(?:\s+(?:status|readiness))?"
+            r"|customer(?:\s+deployment)?"
+            r"|socaas(?:\s+deployment)?"
+            r"|ai(?:[- ]approved)?(?:\s+(?:status|authority|disposition))?"
+            r"|analyst(?:[- ]approved)?(?:\s+(?:status|authority|disposition))?"
+            r"|final\s+authori[sz]ation"
+            r"|case\s+closure"
+            r"|(?:website\s+)?rendering\s+as\s+proof"
+            r"|green\s+ci\s+as\s+approval"
+            r")",
+            flags=re.IGNORECASE,
+        )
+        return bool(items) and all(bounded_noun.fullmatch(item) for item in items)
+
     found: list[str] = []
     clauses = re.split(
         r"(?:[.;!?\r\n]+|\b(?:but|however|although|yet)\b)",
@@ -259,10 +306,17 @@ def unnegated_promotional_phrases(value: str) -> list[str]:
         flags=re.IGNORECASE,
     )
     for clause in clauses:
-        bounded_clause = clause_negation.search(clause) is not None
+        claim_intro = negative_claim_intro.search(clause)
+        bounded_negative_list = (
+            claim_intro is not None
+            and is_bounded_negative_claim_list(clause, claim_intro)
+        )
         for label, pattern in phrase_patterns.items():
             for match in re.finditer(pattern, clause, flags=re.IGNORECASE):
-                if bounded_clause:
+                if bounded_negative_list:
+                    continue
+                local_prefix = local_boundary.split(clause[:match.start()])[-1]
+                if clause_negation.search(local_prefix) is not None:
                     continue
                 found.append(label)
     return found

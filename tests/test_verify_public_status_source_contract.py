@@ -161,6 +161,24 @@ class PublicStatusSourceContractTests(unittest.TestCase):
         with self.assertRaisesRegex(verifier.VerificationError, "promotional phrase"):
             self.verify_contract_copy(contract)
 
+    def test_unrelated_negation_before_conjunction_does_not_launder_customer_claim(
+        self,
+    ) -> None:
+        for prose in (
+            "not stale and customer deployed",
+            "does not claim runtime and customer deployed",
+            "does not claim runtime, but customer deployed",
+        ):
+            with self.subTest(prose=prose):
+                contract = self.load_contract()
+                contract["future_generated_status_v1_extraction"]["extension"] = {
+                    "note": prose
+                }
+                with self.assertRaisesRegex(
+                    verifier.VerificationError, "promotional phrase"
+                ):
+                    self.verify_contract_copy(contract)
+
     def test_rejects_case_folded_duplicate_json_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "duplicate.json"

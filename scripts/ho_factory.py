@@ -11887,29 +11887,79 @@ def hoxline_case_growth_string_promotions(value: str) -> list[str]:
         r")",
         re.IGNORECASE,
     )
+    local_boundary = re.compile(
+        r"(?:[,;:/\r\n—–]+|(?<=[.!?])\s+|"
+        r"\b(?:and|but|or|plus|though|because|therefore|meanwhile|"
+        r"furthermore|also|nevertheless|nonetheless|except|so|"
+        r"despite(?:\s+that)?|in\s+fact|consequently|moreover|then|"
+        r"still|however|although|yet|"
+        r"while|whereas)\b)",
+        re.IGNORECASE,
+    )
+
+    def match_is_locally_negated(clause: str, match_start: int) -> bool:
+        local_prefix = local_boundary.split(clause[:match_start])[-1]
+        return clause_negation.search(local_prefix) is not None
+
+    def is_bounded_negative_claim_list(
+        segment: str,
+        intro: re.Match[str],
+    ) -> bool:
+        tail = segment[intro.end():].strip(" \t,.;:")
+        items = [
+            item.strip(" \t,.;:")
+            for item in re.split(
+                r"\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+",
+                tail,
+                flags=re.IGNORECASE,
+            )
+            if item.strip(" \t,.;:")
+        ]
+        bounded_noun = re.compile(
+            r"(?:"
+            r"runtime(?:[- ]active)?(?:\s+(?:status|truth))?"
+            r"|signal(?:[- ]observed)?(?:\s+status)?"
+            r"|public[- ]safe(?:\s+(?:status|runtime\s+proof))?"
+            r"|production(?:[- ]ready)?(?:\s+(?:status|readiness))?"
+            r"|customer(?:\s+deployment)?"
+            r"|socaas(?:\s+deployment)?"
+            r"|ai(?:[- ]approved)?(?:\s+(?:status|authority|disposition))?"
+            r"|analyst(?:[- ]approved)?(?:\s+(?:status|authority|disposition))?"
+            r"|final\s+authori[sz]ation"
+            r"|case\s+closure"
+            r"|(?:website\s+)?rendering\s+as\s+proof"
+            r"|green\s+ci\s+as\s+approval"
+            r")",
+            re.IGNORECASE,
+        )
+        return bool(items) and all(bounded_noun.fullmatch(item) for item in items)
+
     for segment in strong_segments:
         intro = negative_list_intro.search(segment)
-        if intro is not None:
-            if affirmative_state_after_negative_list.search(segment[intro.end():]):
-                violations.append("negation-laundered authority promotion")
-            continue
+        bounded_negative_list = (
+            intro is not None
+            and is_bounded_negative_claim_list(segment, intro)
+        )
         clauses = segment.split(",")
         for clause in clauses:
             for match in affirmative_state_after_negative_list.finditer(clause):
-                if clause_negation.search(clause[:match.start()]) is None:
+                if (
+                    not bounded_negative_list
+                    and not match_is_locally_negated(clause, match.start())
+                ):
                     violations.append("explicit affirmative authority state")
-            bounded_clause = (
-                clause_negation.search(clause) is not None
-                or re.search(
-                    r"\bpublic[- ]safe\s+candidate\b",
-                    clause,
-                    re.IGNORECASE,
-                )
-                is not None
-            )
             for label, pattern in phrase_patterns.items():
-                for _match in re.finditer(pattern, clause, flags=re.IGNORECASE):
-                    if bounded_clause:
+                for match in re.finditer(pattern, clause, flags=re.IGNORECASE):
+                    if (
+                        bounded_negative_list
+                        or match_is_locally_negated(clause, match.start())
+                        or re.search(
+                            r"\bpublic[- ]safe\s+candidate\b",
+                            clause,
+                            re.IGNORECASE,
+                        )
+                        is not None
+                    ):
                         continue
                     violations.append(label)
     return violations
@@ -12747,7 +12797,7 @@ def hoxline_case_growth_parse_time(value: Any) -> datetime | None:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo is not None else None
 
 
 def hoxline_case_growth_convergence_verify(

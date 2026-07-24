@@ -1930,6 +1930,15 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.assertIn("WEBSITE_GENERATED_AT_FUTURE", codes)
         self.assertIn("PLATFORM_CONTRACT_GENERATED_AT_FUTURE", codes)
 
+    def test_timezone_naive_freshness_observations_fail_closed(self) -> None:
+        self.website["generated_at"] = "2026-07-22T12:00:00"
+        self.contract["generated_at"] = "2026-07-22T12:00:00"
+        self.write_sources()
+        result = self.verify()
+        codes = {item["code"] for item in result["contradictions"]}
+        self.assertIn("WEBSITE_FRESHNESS_UNRESOLVED", codes)
+        self.assertIn("PLATFORM_CONTRACT_FRESHNESS_UNRESOLVED", codes)
+
     def test_nested_authority_promotion_fails_closed(self) -> None:
         attacks = (
             ("ai-authority", True),
@@ -2346,6 +2355,9 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
                 "production is ready and not delayed",
                 "signal is observed and not inferred",
                 "customer deployment is active without ambiguity",
+                "not stale and customer deployed",
+                "does not claim runtime and customer deployed",
+                "does not claim runtime, but customer deployed",
             )
         )
         for attack in attacks:
