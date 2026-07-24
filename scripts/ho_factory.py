@@ -13478,12 +13478,8 @@ def hoxline_case_growth_convergence_verify(
             projection_paths = HOXLINE_CASE_GROWTH_OBSERVATION_PROJECTION_PATHS.get(
                 repo_name
             )
-            observed_projection_paths = (
-                hoxline_case_growth_changed_paths(
-                    repo_path, stated_sha, state["head"]
-                )
-                if projection_paths is not None
-                else None
+            observed_projection_paths = hoxline_case_growth_changed_paths(
+                repo_path, stated_sha, state["head"]
             )
             reviewed_tree_projection_selects_stated = (
                 projection_paths is not None
@@ -13498,6 +13494,13 @@ def hoxline_case_growth_convergence_verify(
                 or generated_pair_parent_selects_stated
                 or reviewed_tree_projection_selects_stated
             )
+            rewritten_current_is_exact_reviewed_tree = (
+                current_tree is not None
+                and current_tree == manifest_reviewed_tree
+                and reviewed_lineage_selects_stated
+                and observed_projection_paths is not None
+                and expected_source_path not in observed_projection_paths
+            )
             stated_is_reviewed_identity = (
                 not current_is_historical_ancestor
                 and reviewed_lineage_selects_stated
@@ -13505,6 +13508,7 @@ def hoxline_case_growth_convergence_verify(
                     stated_is_ancestor
                     or tree_is_reviewed_equivalent
                     or reviewed_tree_projection_selects_stated
+                    or rewritten_current_is_exact_reviewed_tree
                 )
             )
             stated_relationship = {
@@ -13532,6 +13536,9 @@ def hoxline_case_growth_convergence_verify(
                 ),
                 "reviewed_lineage_selects_stated": (
                     reviewed_lineage_selects_stated
+                ),
+                "rewritten_current_is_exact_reviewed_tree": (
+                    rewritten_current_is_exact_reviewed_tree
                 ),
             }
         if (

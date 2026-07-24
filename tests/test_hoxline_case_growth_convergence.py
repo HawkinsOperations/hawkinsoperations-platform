@@ -1472,6 +1472,58 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             {item["code"] for item in result["contradictions"]},
         )
 
+    def test_squash_rewrite_accepts_selected_lineage_observation(self) -> None:
+        stated_sha = "c" * 40
+        rewritten_head = "d" * 40
+        reviewed_tree = "f" * 40
+        self.snapshot["source_revisions"]["hawkinsoperations-proof"][
+            "current_observed_head_sha"
+        ] = stated_sha
+        for entry in self.review_manifest["repositories"]:
+            if "reviewed_tree_sha" in entry:
+                entry["reviewed_tree_sha"] = reviewed_tree
+        self.write_sources()
+        result = self.verify(
+            head=rewritten_head,
+            ancestor_pairs={(self.sha, stated_sha)},
+            tree_overrides={
+                stated_sha: "1" * 40,
+                rewritten_head: reviewed_tree,
+                self.sha: reviewed_tree,
+            },
+        )
+        self.assertEqual("pass", result["status"], result)
+        self.assertNotIn(
+            "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
+            {item["code"] for item in result["contradictions"]},
+        )
+
+    def test_squash_rewrite_rejects_observation_outside_selected_lineage(
+        self,
+    ) -> None:
+        stated_sha = "c" * 40
+        rewritten_head = "d" * 40
+        reviewed_tree = "f" * 40
+        self.snapshot["source_revisions"]["hawkinsoperations-proof"][
+            "current_observed_head_sha"
+        ] = stated_sha
+        for entry in self.review_manifest["repositories"]:
+            if "reviewed_tree_sha" in entry:
+                entry["reviewed_tree_sha"] = reviewed_tree
+        self.write_sources()
+        result = self.verify(
+            head=rewritten_head,
+            tree_overrides={
+                stated_sha: "1" * 40,
+                rewritten_head: reviewed_tree,
+                self.sha: reviewed_tree,
+            },
+        )
+        self.assertIn(
+            "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
+            {item["code"] for item in result["contradictions"]},
+        )
+
     def test_rewritten_command_center_accepts_exact_manifest_projection(self) -> None:
         stated_sha = "c" * 40
         rewritten_head = "d" * 40
