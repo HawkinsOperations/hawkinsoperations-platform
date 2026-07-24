@@ -986,10 +986,7 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         ).strip()
         self.assertRegex(command_center_head, r"^[0-9a-f]{40}$")
         self.assertRegex(current_blob, r"^[0-9a-f]{40}$")
-        reviewed = {
-            entry["repository"]: entry
-            for entry in command_center_manifest["repositories"]
-        }
+        reviewed = ho_factory.hoxline_case_growth_review_manifest(ROOT.parent)
         observations: dict[str, dict[str, str]] = {}
         for repository, entry in source_manifest["repositories"].items():
             if repository in {".github", "hawkinsoperations-platform"}:
@@ -1003,6 +1000,16 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             ]
             observations[repository] = {
                 "selected_revision": entry["revision"],
+                "selected_blob": subprocess.check_output(
+                    [
+                        "git",
+                        "-C",
+                        str(repository_root),
+                        "rev-parse",
+                        f"{entry['revision']}:{authority_path}",
+                    ],
+                    text=True,
+                ).strip(),
                 "checked_head": subprocess.check_output(
                     ["git", "-C", str(repository_root), "rev-parse", "HEAD"],
                     text=True,
@@ -1046,14 +1053,14 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         ) -> set[str]:
             findings: set[str] = set()
             for repository, value in values.items():
-                if value["selected_revision"] != value["reviewed_revision"]:
-                    findings.add(f"{repository}:selected_reviewed_head")
                 if value["checked_head"] != value["reviewed_revision"]:
                     findings.add(f"{repository}:checked_head")
                 if value["checked_tree"] != value["reviewed_tree"]:
                     findings.add(f"{repository}:reviewed_tree")
                 if value["reviewed_blob"] != value["content_blob"]:
                     findings.add(f"{repository}:authority_blob")
+                if value["selected_blob"] != value["reviewed_blob"]:
+                    findings.add(f"{repository}:selected_authority_blob")
             return findings
 
         self.assertEqual(set(), matrix_findings(observations))
@@ -1075,6 +1082,14 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         self.assertIn(
             "hawkinsoperations-detections:authority_blob",
             matrix_findings(wrong_blob),
+        )
+        wrong_selected_blob = json.loads(json.dumps(observations))
+        wrong_selected_blob["hawkinsoperations-detections"]["selected_blob"] = (
+            "c" * 40
+        )
+        self.assertIn(
+            "hawkinsoperations-detections:selected_authority_blob",
+            matrix_findings(wrong_selected_blob),
         )
 
         pinned_entries = ho_factory.hoxline_case_growth_validate_review_manifest(
