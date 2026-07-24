@@ -1666,6 +1666,76 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
             {item["code"] for item in result["contradictions"]},
         )
 
+    def test_git_state_rejects_ambient_instead_of_origin_laundering(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir) / "repo"
+            repo.mkdir()
+
+            def git(*args: str) -> str:
+                return subprocess.run(
+                    ["git", "-C", str(repo), *args],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+
+            git("init")
+            git("config", "user.name", "Platform Test")
+            git("config", "user.email", "platform-test@example.invalid")
+            stored_origin = "C:/hostile/local-platform"
+            canonical = (
+                "https://github.com/HawkinsOperations/"
+                "hawkinsoperations-platform.git"
+            )
+            git("remote", "add", "origin", stored_origin)
+            (repo / "tracked.txt").write_text("controlled\n", encoding="utf-8")
+            git("add", "tracked.txt")
+            git("commit", "-m", "fixture")
+            hostile_env = {
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": f"url.{canonical}.insteadOf",
+                "GIT_CONFIG_VALUE_0": stored_origin,
+            }
+            with mock.patch.dict(ho_factory.os.environ, hostile_env, clear=False):
+                self.assertEqual(git("remote", "get-url", "origin"), canonical)
+                state = ho_factory.hoxline_case_growth_git_state(repo)
+                self.assertEqual(state["origin"], stored_origin)
+
+    def test_git_state_rejects_empty_duplicate_origin_in_both_orders(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir) / "repo"
+            repo.mkdir()
+
+            def git(*args: str) -> None:
+                subprocess.run(
+                    ["git", "-C", str(repo), *args],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+
+            git("init")
+            git("config", "user.name", "Platform Test")
+            git("config", "user.email", "platform-test@example.invalid")
+            canonical = (
+                "https://github.com/HawkinsOperations/"
+                "hawkinsoperations-platform.git"
+            )
+            (repo / "tracked.txt").write_text("controlled\n", encoding="utf-8")
+            git("add", "tracked.txt")
+            git("commit", "-m", "fixture")
+            git("config", "--add", "remote.origin.url", canonical)
+
+            for origins in ((canonical, ""), ("", canonical)):
+                git("config", "--unset-all", "remote.origin.url")
+                for origin in origins:
+                    git("config", "--add", "remote.origin.url", origin)
+                with self.assertRaisesRegex(
+                    ho_factory.FactoryError,
+                    "exactly one nonempty origin URL",
+                ):
+                    ho_factory.hoxline_case_growth_git_state(repo)
+
     def test_dirty_authority_sources_fail_closed(self) -> None:
         result = self.verify(dirty=True)
         self.assertIn("SOURCE_WORKTREE_DIRTY", {item["code"] for item in result["contradictions"]})

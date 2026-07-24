@@ -11554,6 +11554,35 @@ def hoxline_case_growth_git_state(repo_path: Path) -> dict[str, Any]:
             raise FactoryError(f"unable to resolve git state for {repo_path.name}: {result.stderr.strip()}")
         return result.stdout.strip()
 
+    origin_result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_path),
+            "config",
+            "--local",
+            "--null",
+            "--get-all",
+            "remote.origin.url",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if origin_result.returncode != 0:
+        raise FactoryError(
+            f"unable to resolve stored origin for {repo_path.name}: "
+            f"{origin_result.stderr.strip()}"
+        )
+    stored_origins = origin_result.stdout.split("\0")
+    if stored_origins and stored_origins[-1] == "":
+        stored_origins.pop()
+    stored_origins = [origin.strip() for origin in stored_origins]
+    if len(stored_origins) != 1 or not stored_origins[0]:
+        raise FactoryError(
+            "authority repository must store exactly one nonempty origin URL"
+        )
+
     porcelain = run("status", "--porcelain")
     meaningful_status = [
         line for line in porcelain.splitlines()
@@ -11564,7 +11593,7 @@ def hoxline_case_growth_git_state(repo_path: Path) -> dict[str, Any]:
     return {
         "branch": run("branch", "--show-current"),
         "head": run("rev-parse", "HEAD"),
-        "origin": run("remote", "get-url", "origin"),
+        "origin": stored_origins[0],
         "dirty": bool(meaningful_status),
     }
 

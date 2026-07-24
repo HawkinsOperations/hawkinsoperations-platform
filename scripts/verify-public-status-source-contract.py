@@ -485,7 +485,36 @@ def semantic_fingerprint_yaml(raw: bytes) -> str:
 def verify_proof_source_identity(proof_count: dict[str, Any]) -> tuple[bytes, str]:
     if not PROOF_REPO.is_dir():
         fail("proof_record_count source repository is missing")
-    origin = normalized_origin(git_output(PROOF_REPO, "remote", "get-url", "origin"))
+    origin_result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(PROOF_REPO),
+            "config",
+            "--local",
+            "--null",
+            "--get-all",
+            "remote.origin.url",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if origin_result.returncode != 0:
+        fail(
+            "proof_record_count source repository stored origin is unavailable: "
+            f"{origin_result.stderr.strip()}"
+        )
+    stored_origins = origin_result.stdout.split("\0")
+    if stored_origins and stored_origins[-1] == "":
+        stored_origins.pop()
+    stored_origins = [origin.strip() for origin in stored_origins]
+    if len(stored_origins) != 1 or not stored_origins[0]:
+        fail(
+            "proof_record_count source repository must store exactly one "
+            "nonempty origin URL"
+        )
+    origin = normalized_origin(stored_origins[0])
     if origin != PROOF_CANONICAL_ORIGIN.casefold():
         fail("proof_record_count source repository origin is not canonical")
     tracked_dirty = git_output(PROOF_REPO, "status", "--porcelain", "--untracked-files=no")

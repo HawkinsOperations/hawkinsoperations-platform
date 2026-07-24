@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -227,6 +228,32 @@ class PublicStatusSourceContractTests(unittest.TestCase):
                 b"entries: []\nEntries: []\n",
                 source="proof-owned current status index",
             )
+
+    def test_proof_source_rejects_empty_duplicate_origin_in_both_orders(self) -> None:
+        proof_count = self.load_contract()["public_fields"]["proof_record_count"]
+        real_run = verifier.subprocess.run
+        canonical = "https://github.com/HawkinsOperations/hawkinsoperations-proof.git"
+
+        for raw_origins in ((canonical, ""), ("", canonical)):
+            nul_output = "\0".join(raw_origins) + "\0"
+
+            def fake_run(args: list[str], *call_args: object, **call_kwargs: object):
+                if args[-5:] == [
+                    "config",
+                    "--local",
+                    "--null",
+                    "--get-all",
+                    "remote.origin.url",
+                ]:
+                    return subprocess.CompletedProcess(args, 0, nul_output, "")
+                return real_run(args, *call_args, **call_kwargs)
+
+            with mock.patch.object(verifier.subprocess, "run", side_effect=fake_run):
+                with self.assertRaisesRegex(
+                    verifier.VerificationError,
+                    "exactly one nonempty origin URL",
+                ):
+                    verifier.verify_proof_source_identity(proof_count)
 
     def test_detached_historical_authority_is_rejected_even_with_same_blob(self) -> None:
         proof_count = self.load_contract()["public_fields"]["proof_record_count"]
