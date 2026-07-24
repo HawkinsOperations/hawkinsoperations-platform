@@ -283,17 +283,22 @@ def unnegated_promotional_phrases(value: str) -> list[str]:
         bounded_noun = re.compile(
             r"(?:"
             r"runtime(?:[- ]active)?(?:\s+(?:status|truth))?"
-            r"|signal(?:[- ]observed)?(?:\s+status)?"
+            r"|signal(?:[- ]observed)?(?:\s+(?:status|truth))?"
             r"|public[- ]safe(?:\s+(?:status|runtime\s+proof))?"
             r"|production(?:[- ]ready)?(?:\s+(?:status|readiness))?"
             r"|customer(?:\s+deployment)?"
             r"|socaas(?:\s+deployment)?"
-            r"|ai(?:[- ]approved)?(?:\s+(?:status|authority|disposition))?"
-            r"|analyst(?:[- ]approved)?(?:\s+(?:status|authority|disposition))?"
+            r"|ai(?:[- ]approved)?(?:\s+(?:status|authority|disposition|approval))?"
+            r"|analyst(?:[- ]approved)?(?:\s+(?:status|authority|disposition|approval))?"
+            r"|disposition\s+approval"
             r"|final\s+authori[sz]ation"
             r"|case\s+closure"
-            r"|(?:website\s+)?rendering\s+as\s+proof"
+            r"|(?:(?:website|product)\s+)?rendering\s+as\s+proof"
+            r"|(?:the\s+)?(?:source\s+)?manifest\s+as\s+proof"
             r"|green\s+ci\s+as\s+approval"
+            r"|approval"
+            r"|authori[sz]ation"
+            r"|closure"
             r")",
             flags=re.IGNORECASE,
         )
