@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
 import subprocess
@@ -21,6 +22,29 @@ spec.loader.exec_module(verifier)
 
 
 class PublicStatusSourceContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Exercise semantic attacks at a deterministic observation time; an aged
+        # checked-in fixture must not mask the branch each test intends to reach.
+        observed = datetime.fromisoformat(self.load_contract()["generated_at"].replace("Z", "+00:00"))
+        clock = mock.patch.object(verifier, "datetime", wraps=datetime)
+        self.clock = clock.start()
+        self.clock.now.return_value = observed + timedelta(hours=1)
+        self.addCleanup(clock.stop)
+
+    def test_expired_contract_still_fails_at_the_real_freshness_gate(self) -> None:
+        contract = self.load_contract()
+        observed = datetime.fromisoformat(contract["generated_at"].replace("Z", "+00:00"))
+        self.clock.now.return_value = observed + timedelta(days=contract["freshness_window_days"], seconds=1)
+        with self.assertRaisesRegex(verifier.VerificationError, "stale"):
+            self.verify_contract_copy(contract)
+
+    def test_nonfinite_or_boolean_freshness_window_rejected(self) -> None:
+        for value in (float("nan"), float("inf"), True):
+            contract = self.load_contract()
+            contract["freshness_window_days"] = value
+            with self.subTest(value=value), self.assertRaises(verifier.VerificationError):
+                self.verify_contract_copy(contract)
+
     def load_contract(self) -> dict:
         return json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
 

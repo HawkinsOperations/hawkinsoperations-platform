@@ -3,7 +3,7 @@
   "version": "public_status_source_contract_v1",
   "owner_repo": "hawkinsoperations-platform",
   "consumer": "hawkinsoperations-website",
-  "generated_at": "2026-07-23T05:37:58.8967051Z",
+  "generated_at": "2026-09-06T14:04:20.507653Z",
   "freshness_window_days": 14,
   "platform_role": {
     "source_contract": true,
@@ -282,7 +282,7 @@
       "owner_repo": "hawkinsoperations-platform",
       "source_path": "contracts/public-status-source-contract-v1.json",
       "source_json_pointer": "/generated_at",
-      "current_value": "2026-07-23T05:37:58.8967051Z",
+      "current_value": "2026-09-06T14:04:20.507653Z",
       "render_allowed": true,
       "source_status": "SOURCE_CAPTURED",
       "freshness_policy": "Generated status v1 must update this timestamp when it regenerates from source artifacts."

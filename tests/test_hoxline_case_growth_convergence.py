@@ -2417,5 +2417,43 @@ class HoxlineCaseGrowthConvergenceTests(unittest.TestCase):
         )
 
 
+
+
+class DetectionQualityHandoffTests(unittest.TestCase):
+    def test_concurrent_head_change_and_wrong_report_binding_block(self):
+        root = Path("org").resolve()
+        def state(repository, head):
+            return {"head": head, "origin": f"https://github.com/HawkinsOperations/{repository}.git", "dirty": False}
+        detections = state("hawkinsoperations-detections", "a" * 40)
+        validation = state("hawkinsoperations-validation", "b" * 40)
+        for changed in (True, False):
+            report = {"owner_repository": "HawkinsOperations/hawkinsoperations-validation", "status": "PASS", "sources": []}
+            states = [detections, validation, {**detections, "head": "c" * 40} if changed else detections]
+            calls = [mock.Mock(returncode=0, stdout=str(root / "hawkinsoperations-detections")), mock.Mock(returncode=0, stdout=str(root / "hawkinsoperations-validation")), mock.Mock(returncode=0, stdout=json.dumps(report))]
+            with self.subTest(changed=changed), mock.patch.object(ho_factory, "hoxline_case_growth_git_state", side_effect=states), mock.patch.object(ho_factory.subprocess, "run", side_effect=calls):
+                with self.assertRaises(ho_factory.FactoryError):
+                    ho_factory.detection_quality_run(root, "a" * 40, "b" * 40)
+
+    def test_mutable_source_revisions_fail_before_execution(self):
+        for revision in ("main", "HEAD", "../main", "a" * 39, "a" * 41):
+            with self.subTest(revision=revision), mock.patch.object(ho_factory.subprocess, "run") as run:
+                with self.assertRaises(ho_factory.FactoryError):
+                    ho_factory.detection_quality_run(Path("org"), revision, "b" * 40)
+                run.assert_not_called()
+
+    def test_wrong_authority_and_dirty_head_never_execute_validator(self):
+        root = Path("org").resolve()
+        valid = {"head": "a" * 40, "origin": "https://github.com/HawkinsOperations/hawkinsoperations-detections.git", "dirty": False}
+        for field, value in (("head", "b" * 40), ("origin", "https://github.com/HawkinsOperations/hoxline.git"), ("dirty", True)):
+            state = {**valid, field: value}
+            with self.subTest(field=field), mock.patch.object(ho_factory, "hoxline_case_growth_git_state", return_value=state), mock.patch.object(ho_factory.subprocess, "run") as run:
+                run.return_value.returncode = 0
+                run.return_value.stdout = str(root / "hawkinsoperations-detections")
+                with self.assertRaises(ho_factory.FactoryError):
+                    ho_factory.detection_quality_run(root, "a" * 40, "c" * 40)
+                self.assertEqual(run.call_count, 1)
+                self.assertEqual(run.call_args.args[0][0], "git")
+
+
 if __name__ == "__main__":
     unittest.main()

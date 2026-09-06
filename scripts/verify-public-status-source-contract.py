@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -843,7 +844,7 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
     generated_time = generated_time.astimezone(timezone.utc)
     if generated_time > now:
         fail("generated_at must not be in the future")
-    if not isinstance(freshness_window_days, (int, float)) or freshness_window_days <= 0:
+    if type(freshness_window_days) not in (int, float) or not math.isfinite(freshness_window_days) or freshness_window_days <= 0:
         fail("freshness_window_days must be a positive number")
     if (now - generated_time).total_seconds() > freshness_window_days * 86400:
         fail("public status source contract is stale")
