@@ -11617,6 +11617,40 @@ def hoxline_case_growth_org_root(repo_root: Path) -> Path:
     return resolved
 
 
+def detection_quality_run(org_root: Path, detections_ref: str, validation_ref: str) -> dict[str, Any]:
+    """Delegate controlled behavior to validation; platform cannot author its results."""
+    org_root = org_root.resolve()
+    for repository, revision in (("hawkinsoperations-detections", detections_ref), ("hawkinsoperations-validation", validation_ref)):
+        if not re.fullmatch(r"[0-9a-f]{40}", revision):
+            raise FactoryError("detection quality requires exact source and validator heads")
+        root = org_root / repository
+        state = hoxline_case_growth_git_state(root)
+        top = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"], capture_output=True, text=True, env=sanitized_git_env())
+        if top.returncode or Path(top.stdout.strip()).resolve() != root.resolve():
+            raise FactoryError("detection quality authority root is not its Git top level")
+        if state["origin"] not in (f"https://github.com/HawkinsOperations/{repository}.git", f"https://github.com/HawkinsOperations/{repository}", f"git@github.com:HawkinsOperations/{repository}.git"):
+            raise FactoryError("detection quality repository authority mismatch")
+        if state["head"] != revision or state["dirty"]:
+            raise FactoryError("detection quality source must be clean at the requested head")
+    validation_root = org_root / "hawkinsoperations-validation"
+    script = validation_root / "scripts" / "detection_quality.py"
+    # No shell, fixture-command execution, output files, or ledger access.
+    result = subprocess.run([sys.executable, "-E", "-B", str(script), "--detections-root", str(org_root / "hawkinsoperations-detections"), "--detections-ref", detections_ref], cwd=validation_root, capture_output=True, text=True, env=sanitized_git_env())
+    if result.returncode != 0:
+        raise FactoryError("validation-owned detection quality execution failed; run the owning command for diagnostics")
+    report = hoxline_case_growth_load_json_bytes(result.stdout.encode("utf-8"), "validation quality output")
+    if not isinstance(report, dict) or report.get("owner_repository") != "HawkinsOperations/hawkinsoperations-validation" or report.get("status") != "PASS":
+        raise FactoryError("validation did not return an owner-bound successful quality report")
+    for repository, revision in (("hawkinsoperations-detections", detections_ref), ("hawkinsoperations-validation", validation_ref)):
+        state = hoxline_case_growth_git_state(org_root / repository)
+        if state["head"] != revision or state["dirty"]:
+            raise FactoryError("detection quality authority changed during execution")
+        matching = [source for source in report.get("sources", []) if source.get("repository") == f"HawkinsOperations/{repository}"]
+        if len(matching) != 1 or matching[0].get("head") != revision:
+            raise FactoryError("validation report does not bind the requested source heads")
+    return report
+
+
 def hoxline_case_growth_git_state(repo_path: Path) -> dict[str, Any]:
     def run(*args: str) -> str:
         result = subprocess.run(
@@ -14564,6 +14598,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub = subparsers.add_parser("hoxline-evidence-product-convergence-self-test")
     sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("detection-quality-run")
+    sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+    sub.add_argument("--detections-ref", required=True)
+    sub.add_argument("--validation-ref", required=True)
     sub = subparsers.add_parser("hoxline-case-growth-convergence-verify")
     sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
     sub.add_argument("--format", default="json", choices=("json",))
@@ -14684,6 +14722,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
+
+    if args.mode == "detection-quality-run":
+        print(json.dumps(detection_quality_run(Path(args.repo_root), args.detections_ref, args.validation_ref), indent=2, sort_keys=True))
+        return 0
 
     if args.mode in {"ledger-init-sample", "ledger-verify", "ledger-metrics"}:
         repo_root = Path(args.repo_root).resolve()

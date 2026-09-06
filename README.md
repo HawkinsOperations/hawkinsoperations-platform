@@ -45,6 +45,19 @@ The append-ready candidate count is operationally useful but authority-blocked: 
 
 ## What This Repo Owns
 
+### Source-executed detection quality handoff
+
+```powershell
+python -B scripts/ho_factory.py detection-quality-run --repo-root .. --detections-ref <exact-detection-commit> --validation-ref <exact-validation-commit>
+```
+
+The controller verifies clean, exact, canonical detection and validation
+checkouts, then delegates source-predicate execution and mutation measurements to
+validation's `scripts/detection_quality.py`. It returns that owner's report
+without reauthoring metrics. Hoxline's `detection-quality` command consumes this
+handoff for review. This path prints to stdout, never opens a ledger, and never
+executes event commands, endpoint actions, AI disposition, or proof promotion.
+
 Platform owns enforceable interface mechanics for HawkinsOperations:
 
 - **Contracts and schemas** for detection artifacts, validation reports, proof records, runtime receipts, case packets, SOAR packets, collector eligibility, telemetry coverage, and reviewer metrics.
