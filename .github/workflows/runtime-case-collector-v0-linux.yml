@@ -60,10 +60,6 @@ jobs:
       - name: Collect and verify this execution only
         env:
           COLLECTOR_LANE: linux
-          COLLECTOR_OUTPUT_ROUTE: ${{ inputs.collector_output_route }}
-          RECEIPT_PATH: ${{ inputs.receipt_path }}
-          EVIDENCE_PATH: ${{ inputs.evidence_path }}
-          EXECUTION_ID: ${{ inputs.execution_id }}
           SELECTED_SOURCE_REF: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -77,23 +73,38 @@ jobs:
           lane = os.environ["COLLECTOR_LANE"]
           script = Path("scripts/ho_factory.py").resolve()
           def invoke(*arguments):
-              result = subprocess.run([sys.executable, "-B", str(script), *arguments, "--format", "json"],
-                                      capture_output=True, text=True, timeout=120)
+              try:
+                  result = subprocess.run([sys.executable, "-B", str(script), *arguments, "--format", "json"],
+                                          capture_output=True, text=True, timeout=120)
+                  payload = json.loads(result.stdout) if result.returncode == 0 else None
+              except (OSError, subprocess.SubprocessError, ValueError):
+                  raise SystemExit("Collector stage failed; private details withheld") from None
               if result.returncode:
                   raise SystemExit("Collector stage failed; private details withheld")
-              return json.loads(result.stdout)
-          route = os.environ["COLLECTOR_OUTPUT_ROUTE"]
-          execution = os.environ["EXECUTION_ID"]
+              return payload
+          # Read dispatch inputs from the event file: step env values are logged.
+          try:
+              with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as event_file:
+                  inputs = json.load(event_file)["inputs"]
+              route = inputs["collector_output_route"]
+              execution = inputs["execution_id"]
+              receipt_path = inputs["receipt_path"]
+              evidence_path = inputs["evidence_path"]
+          except (OSError, ValueError, KeyError, TypeError):
+              raise SystemExit("Collector inputs invalid; private details withheld") from None
           source = os.environ["SELECTED_SOURCE_REF"]
           invoke("collector-" + lane + "-preflight", "--output-route", route)
           result = invoke("collector-" + lane + "-run-once", "--collect", "--output-route", route,
-                          "--receipt", os.environ["RECEIPT_PATH"], "--evidence", os.environ["EVIDENCE_PATH"],
+                          "--receipt", receipt_path, "--evidence", evidence_path,
                           "--execution-id", execution, "--source-ref", source)
           candidate = str(Path(route) / result["output_name"])
           for action in ("verify", "dedupe-check"):
               invoke("collector-" + lane + "-" + action, "--candidate", candidate,
                      "--execution-id", execution, "--source-ref", source, "--packet-hash", result["packet_hash"])
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-              summary.write("Receipt intake and current-output verification completed. "
-                            "AI unavailable; human review required. No ledger append or proof promotion.\n")
+          try:
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                  summary.write("Receipt intake and current-output verification completed. "
+                                "AI unavailable; human review required. No ledger append or proof promotion.\n")
+          except OSError:
+              raise SystemExit("Collector summary unavailable; private details withheld") from None
           PY

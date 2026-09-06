@@ -12,6 +12,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import traceback
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest import mock
@@ -402,6 +403,55 @@ class CollectorRestartTests(unittest.TestCase):
         self.assertEqual(len({row["packet_hash"] for row in results}), 1)
         with closing(sqlite3.connect(self.route / "collector-restart.sqlite")) as connection:
             self.assertEqual(connection.execute("SELECT count(*) FROM restart_receipts").fetchone()[0], 1)
+
+    def test_actual_workflow_wrappers_stop_without_leaking_subprocess_details(self):
+        import yaml
+
+        private_marker = "private-receipt-path-must-not-leak"
+        success = subprocess.CompletedProcess([], 0, json.dumps({"output_name": "current.json", "packet_hash": "a" * 64}), "")
+        failures = [
+            subprocess.TimeoutExpired([private_marker], 120, output=private_marker),
+            OSError(private_marker),
+            subprocess.CompletedProcess([], 9, private_marker, private_marker),
+            subprocess.CompletedProcess([], 0, "{" + private_marker, ""),
+        ]
+        for lane in ("windows", "linux"):
+            workflow = yaml.safe_load((ROOT / ".github" / "workflows" / f"runtime-case-collector-v0-{lane}.yml").read_text(encoding="utf-8"))
+            steps = workflow["jobs"][f"collect-{lane}-candidates"]["steps"]
+            for step in steps:
+                self.assertNotIn("inputs.", json.dumps(step.get("env", {})))
+                self.assertNotIn("${{ inputs.", step.get("run", ""))
+            wrapper = next(step["run"] for step in steps if step["name"] == "Collect and verify this execution only")
+            start, end = ("@'\n", "\n'@ | python -") if lane == "windows" else ("python - <<'PY'\n", "\nPY")
+            code = wrapper.split(start, 1)[1].split(end, 1)[0]
+            environment = {"COLLECTOR_LANE": lane, "SELECTED_SOURCE_REF": self.head,
+                           "GITHUB_EVENT_PATH": private_marker, "GITHUB_STEP_SUMMARY": private_marker}
+            event = json.dumps({"inputs": {"collector_output_route": private_marker, "execution_id": self.execution,
+                                           "receipt_path": private_marker, "evidence_path": private_marker}})
+            for stage in range(4):
+                for failure in failures:
+                    with self.subTest(lane=lane, stage=stage, failure=type(failure).__name__):
+                        with mock.patch.dict(os.environ, environment), mock.patch("subprocess.run", side_effect=[success] * stage + [failure]) as run, mock.patch("builtins.open", mock.mock_open(read_data=event)) as files:
+                            try:
+                                exec(compile(code, "collector-workflow-wrapper", "exec"), {})
+                            except SystemExit as exc:
+                                rendered = "".join(traceback.format_exception(exc))
+                                self.assertEqual(str(exc), "Collector stage failed; private details withheld")
+                                self.assertNotIn(private_marker, rendered)
+                            else:
+                                self.fail("failed stage reached downstream success")
+                            self.assertEqual(run.call_count, stage + 1)
+                            files.assert_called_once_with(private_marker, encoding="utf-8")
+            with mock.patch.dict(os.environ, environment), mock.patch("subprocess.run", return_value=success) as run, mock.patch("builtins.open", mock.mock_open(read_data=event)) as files:
+                exec(compile(code, "collector-workflow-wrapper", "exec"), {})
+                self.assertEqual(run.call_count, 4)
+                for call in run.call_args_list[2:]:
+                    arguments = call.args[0]
+                    self.assertEqual(arguments[arguments.index("--candidate") + 1], str(Path(private_marker) / "current.json"))
+                    self.assertEqual(arguments[arguments.index("--packet-hash") + 1], "a" * 64)
+                    self.assertEqual(arguments[arguments.index("--source-ref") + 1], self.head)
+                self.assertEqual(files.call_count, 2)
+                files().write.assert_called_once()
 
 
 if __name__ == "__main__":
