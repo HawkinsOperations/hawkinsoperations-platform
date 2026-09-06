@@ -4,15 +4,44 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
+import os
 import re
+import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - cross-repo value check is unavailable without PyYAML.
+    yaml = None
+
+
+def sanitized_git_env() -> dict[str, str]:
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.casefold().startswith("git_")
+    }
+    env["GIT_NO_REPLACE_OBJECTS"] = "1"
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "contracts" / "public-status-source-contract-v1.json"
+SOURCE_MANIFEST_PATH = ROOT / "contracts" / "hoxline-case-growth-source-manifest-v1.json"
+PROOF_CURRENT_STATUS_INDEX = ROOT.parent / "hawkinsoperations-proof" / "proof" / "indexes" / "DETECTION_PROOF_STATUS_INDEX.yml"
+PROOF_REPO = Path(
+    os.environ.get("HAWKINS_PROOF_REPO", ROOT.parent / "hawkinsoperations-proof")
+).resolve()
+PROOF_INDEX_GIT_PATH = "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml"
+PROOF_CANONICAL_ORIGIN = "github.com/HawkinsOperations/hawkinsoperations-proof"
 UNKNOWN = "UNKNOWN_SOURCE_NOT_CAPTURED"
 HOXLINE_SOURCE_MANIFEST_PATH = "../hoxline/examples/gauntlet/ho-det-001-gauntlet-v1-source-manifest.json"
 ALLOWED_SOURCE_STATUSES = {
@@ -158,6 +187,7 @@ REQUIRED_CANDIDATE_PROMOTION_BLOCKERS = {
 }
 
 REQUIRED_SOURCE_PATH_KEYS = {
+    "proof_current_status_index",
     "hoxline_v1_source_manifest",
     "hoxline_gauntlet_run_v1",
     "hoxline_gauntlet_run_v1_overclaim",
@@ -195,52 +225,107 @@ DENIED_TEXT = [
     ),
 ]
 
-PROMOTION_PHRASES = [
-    "runtime active",
-    "runtime proven",
-    "signal observed",
-    "runtime-active",
-    "signal-observed",
-    "public-safe approved",
-    "public-safe proof",
-    "public-safe runtime proof",
-    "public-safe status",
-    "production ready",
-    "production SOC",
-    "production readiness",
-    "production deployment",
-    "SOC deployed",
-    "SOCaaS deployed",
-    "customer deployed",
-    "customer validated",
-    "customer deployment",
-    "SOCaaS deployment",
-    "AI approved",
-    "analyst approved",
-    "AI-approved disposition",
-    "analyst-approved disposition",
-    "autonomous approval",
-    "final human authorization",
-    "final authorization",
-    "case closed",
-    "case closure",
-    "green CI as approval",
-    "website rendering as proof",
-    "GitHub rendering as proof",
-]
-NEGATIVE_BOUNDARY_MARKERS = [
-    "not ",
-    "no ",
-    "never ",
-    "does not",
-    "must not",
-    "blocked",
-    "without",
-    "unless",
-    "false",
-    "UNKNOWN_SOURCE_NOT_CAPTURED",
-    "boundary",
-]
+def unnegated_promotional_phrases(value: str) -> list[str]:
+    """Find claim promotions without letting a distant negation launder them."""
+    phrase_patterns = {
+        "runtime active": r"\bruntime[\s_-]+active\b",
+        "runtime proven": r"\bruntime[\s_-]+proven\b",
+        "signal observed": r"\bsignal[\s_-]+observed\b",
+        "public safe": r"\bpublic\s+safe\b",
+        "public-safe promotion": r"\bpublic[\s_-]+safe[\s_-]+(?:approved|proof|status)\b",
+        "production": r"\bproduction[\s_-]+(?:ready|readiness|deployment|status|soc)\b",
+        "customer": r"\bcustomer[\s_-]+(?:deployed|deployment|validated)\b",
+        "SOC deployment": r"\b(?:soc|socaas)[\s_-]+(?:deployed|deployment)\b",
+        "AI authority": r"\bai[\s_-]+(?:approved|authority)\b",
+        "analyst authority": r"\banalyst[\s_-]+(?:approved|authority)\b",
+        "autonomous approval": r"\bautonomous[\s_-]+approval\b",
+        "final authorization": r"\bfinal(?:[\s_-]+human)?[\s_-]+authorization\b",
+        "case closure": r"\bcase[\s_-]+(?:closed|closure)\b",
+        "green CI as approval": r"\bgreen[\s_-]+ci[\s_-]+(?:as|is)[\s_-]+approval\b",
+        "website as proof": r"\bwebsite(?:[\s_-]+rendering)?[\s_-]+(?:as|is)[\s_-]+proof\b",
+        "GitHub as proof": r"\bgithub(?:[\s_-]+rendering)?[\s_-]+(?:as|is)[\s_-]+proof\b",
+    }
+    clause_negation = re.compile(
+        r"(?:"
+        r"\b(?:not|never|no|without|missing|blocked)\b"
+        r"|\b(?:does|do|must|is|are|was|were|can|cannot|could|should|will|would)\s+not\b"
+        r"|\bnot\s+(?:authorized|approved|promoted)\b"
+        r")",
+        flags=re.IGNORECASE,
+    )
+    negative_claim_intro = re.compile(
+        r"\b(?:does|do|did|must|is|are|was|were|can|cannot|could|should|will|would)\s+not\s+"
+        r"(?:prove|establish|claim|promote|authorize|assert|treat|render)\b"
+        r"|\bnever\s+(?:prove|establish|claim|promote|authorize|assert|treat|render)\b"
+        r"|\bwithout\s+claiming\b",
+        flags=re.IGNORECASE,
+    )
+    local_boundary = re.compile(
+        r"(?:[,;:/\r\n—–]+|(?<=[.!?])\s+|"
+        r"\b(?:and|but|or|plus|though|because|therefore|meanwhile|"
+        r"furthermore|also|nevertheless|nonetheless|except|so|"
+        r"despite(?:\s+that)?|in\s+fact|consequently|moreover|then|"
+        r"still|however|although|yet|"
+        r"while|whereas)\b)",
+        flags=re.IGNORECASE,
+    )
+
+    def is_bounded_negative_claim_list(clause: str, intro: re.Match[str]) -> bool:
+        tail = clause[intro.end():].strip(" \t,.;:")
+        items = [
+            item.strip(" \t,.;:")
+            for item in re.split(
+                r"\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+",
+                tail,
+                flags=re.IGNORECASE,
+            )
+            if item.strip(" \t,.;:")
+        ]
+        bounded_noun = re.compile(
+            r"(?:"
+            r"runtime(?:[- ]active)?(?:\s+(?:status|truth))?"
+            r"|signal(?:[- ]observed)?(?:\s+(?:status|truth))?"
+            r"|public[- ]safe(?:\s+(?:status|runtime\s+proof))?"
+            r"|production(?:[- ]ready)?(?:\s+(?:status|readiness))?"
+            r"|customer(?:\s+deployment)?"
+            r"|socaas(?:\s+deployment)?"
+            r"|ai(?:[- ]approved)?(?:\s+(?:status|authority|disposition|approval))?"
+            r"|analyst(?:[- ]approved)?(?:\s+(?:status|authority|disposition|approval))?"
+            r"|disposition\s+approval"
+            r"|final\s+authori[sz]ation"
+            r"|case\s+closure"
+            r"|(?:(?:website|product)\s+)?rendering\s+as\s+proof"
+            r"|(?:the\s+)?(?:source\s+)?manifest\s+as\s+proof"
+            r"|green\s+ci\s+as\s+approval"
+            r"|approval"
+            r"|authori[sz]ation"
+            r"|closure"
+            r")",
+            flags=re.IGNORECASE,
+        )
+        return bool(items) and all(bounded_noun.fullmatch(item) for item in items)
+
+    found: list[str] = []
+    clauses = re.split(
+        r"(?:[.;!?\r\n]+|\b(?:but|however|although|yet)\b)",
+        value,
+        flags=re.IGNORECASE,
+    )
+    for clause in clauses:
+        claim_intro = negative_claim_intro.search(clause)
+        bounded_negative_list = (
+            claim_intro is not None
+            and is_bounded_negative_claim_list(clause, claim_intro)
+        )
+        for label, pattern in phrase_patterns.items():
+            for match in re.finditer(pattern, clause, flags=re.IGNORECASE):
+                if bounded_negative_list:
+                    continue
+                local_prefix = local_boundary.split(clause[:match.start()])[-1]
+                if clause_negation.search(local_prefix) is not None:
+                    continue
+                found.append(label)
+    return found
 
 
 class VerificationError(Exception):
@@ -251,16 +336,55 @@ def fail(message: str) -> None:
     raise VerificationError(message)
 
 
+def _reject_duplicate_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        folded = key.casefold()
+        if any(existing.casefold() == folded for existing in result):
+            fail(f"duplicate JSON key is not allowed: {key}")
+        result[key] = value
+    return result
+
+
 def load_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         fail(f"missing public status source contract: {path}")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_pairs)
     except json.JSONDecodeError as exc:
         fail(f"malformed public status source contract: {exc}")
     if not isinstance(data, dict):
         fail("contract root must be an object")
     return data
+
+
+def load_yaml_bytes(raw: bytes, *, source: str) -> dict[str, Any]:
+    if yaml is None:
+        fail("PyYAML is required")
+
+    class UniqueKeyLoader(yaml.SafeLoader):
+        pass
+
+    def construct_mapping(loader: Any, node: Any, deep: bool = False) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in loader.construct_pairs(node, deep=deep):
+            if not isinstance(key, str):
+                fail(f"{source} mapping keys must be strings")
+            if key.casefold() in {existing.casefold() for existing in result}:
+                fail(f"{source} contains duplicate YAML key: {key}")
+            result[key] = value
+        return result
+
+    UniqueKeyLoader.add_constructor(
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, construct_mapping
+    )
+    try:
+        value = yaml.load(raw.decode("utf-8"), Loader=UniqueKeyLoader)
+    except (UnicodeDecodeError, yaml.YAMLError) as exc:
+        fail(f"{source} is malformed YAML: {exc}")
+    if not isinstance(value, dict):
+        fail(f"{source} root must be an object")
+    return value
 
 
 def iter_strings(value: Any) -> list[str]:
@@ -277,6 +401,77 @@ def iter_strings(value: Any) -> list[str]:
     return strings
 
 
+def iter_leaves(value: Any, path: tuple[str, ...] = ()) -> list[tuple[tuple[str, ...], Any]]:
+    leaves: list[tuple[tuple[str, ...], Any]] = []
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            leaves.extend(iter_leaves(nested, (*path, str(key))))
+    elif isinstance(value, list):
+        for index, nested in enumerate(value):
+            leaves.extend(iter_leaves(nested, (*path, str(index))))
+    else:
+        leaves.append((path, value))
+    return leaves
+
+
+def normalized_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.casefold())
+
+
+PROMOTION_KEY_EXPECTATIONS = {
+    "runtimeactive": False,
+    "runtimeproven": False,
+    "signalobserved": False,
+    "publicsafe": False,
+    "publicsafeapproved": False,
+    "productionready": False,
+    "customerdeployed": False,
+    "customerdeployment": False,
+    "socaasdeployed": False,
+    "socaasdeployment": False,
+    "aiauthority": False,
+    "aidispositionauthority": False,
+    "analystapproved": False,
+    "finalauthorization": False,
+    "caseclosed": False,
+    "caseclosure": False,
+    "websiterenderingisproof": False,
+    "greenciisapproval": False,
+}
+ALLOWED_PUBLIC_FIELD_KEYS = {
+    "owner_repo",
+    "source_path",
+    "upstream_source_path",
+    "source_json_pointer",
+    "source_revision",
+    "source_observed_head_sha",
+    "current_observed_head_sha",
+    "source_observation_kind",
+    "source_git_blob_sha",
+    "source_fingerprint_sha256",
+    "source_semantic_fingerprint_sha256",
+    "derivation_method",
+    "historical_snapshot",
+    "current_authority",
+    "current_value",
+    "render_allowed",
+    "source_status",
+    "source_pr",
+    "source_branch",
+    "freshness_policy",
+}
+
+NEGATIVE_POLICY_PATHS = {
+    "blockedclaims",
+    "explicitlyblockedclaims",
+    "extractormustnot",
+    "mustnotsource",
+    "promotionblockers",
+    "websitemustnotsourcefromwebsiteonlydata",
+    "sourcejsonpointer",
+}
+
+
 def scan_denied_text(data: dict[str, Any]) -> None:
     for text in iter_strings(data):
         for name, pattern in DENIED_TEXT:
@@ -286,15 +481,233 @@ def scan_denied_text(data: dict[str, Any]) -> None:
 
 def verify_no_promotional_claims(data: dict[str, Any]) -> None:
     blocked_policy_strings = {claim.lower() for claim in REQUIRED_CANDIDATE_BLOCKED_CLAIMS}
-    for text in iter_strings(data):
-        lowered = text.lower()
-        if lowered in blocked_policy_strings:
+    for path, value in iter_leaves(data):
+        if path:
+            key = normalized_key(path[-1])
+            expected = PROMOTION_KEY_EXPECTATIONS.get(key)
+            if expected is False and value not in (False, None, "NOT_PUBLIC_SAFE", "BLOCKED", "UNKNOWN"):
+                fail(f"authority field must remain blocked at {'/'.join(path)}")
+        if not isinstance(value, str):
             continue
-        for phrase in PROMOTION_PHRASES:
-            if phrase.lower() not in lowered:
-                continue
-            if not any(marker.lower() in lowered for marker in NEGATIVE_BOUNDARY_MARKERS):
-                fail(f"promotional phrase appears outside negative boundary context: {phrase}")
+        text = value
+        lowered = text.lower()
+        policy_context = any(normalized_key(part) in NEGATIVE_POLICY_PATHS for part in path)
+        if policy_context and lowered in blocked_policy_strings:
+            continue
+        if policy_context:
+            continue
+        promotions = unnegated_promotional_phrases(text)
+        if promotions:
+            fail(
+                "promotional phrase appears outside negative boundary context: "
+                + promotions[0]
+            )
+
+
+def git_output(repo: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        capture_output=True,
+        check=False,
+        text=True,
+        env=sanitized_git_env(),
+    )
+    if result.returncode != 0:
+        fail(f"git {' '.join(args)} failed for {repo.name}: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def git_is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
+    result = subprocess.run(
+        ["git", "-C", str(repo), "merge-base", "--is-ancestor", ancestor, descendant],
+        capture_output=True,
+        check=False,
+        text=True,
+        env=sanitized_git_env(),
+    )
+    if result.returncode not in (0, 1):
+        fail(
+            "git merge-base authority relationship check failed for "
+            f"{repo.name}: {result.stderr.strip()}"
+        )
+    return result.returncode == 0
+
+
+def git_tree_sha(repo: Path, revision: str) -> str:
+    return git_output(repo, "rev-parse", f"{revision}^{{tree}}")
+
+
+def normalized_origin(value: str) -> str:
+    origin = value.strip().replace("\\", "/")
+    origin = re.sub(r"^git@", "", origin)
+    origin = origin.replace(":", "/", 1) if origin.startswith("github.com:") else origin
+    origin = re.sub(r"^(?:https?|ssh)://", "", origin, flags=re.IGNORECASE)
+    origin = origin.removesuffix(".git").rstrip("/")
+    return origin.casefold()
+
+
+def semantic_fingerprint_yaml(raw: bytes) -> str:
+    try:
+        parsed = yaml.safe_load(raw.decode("utf-8"))
+    except (UnicodeDecodeError, yaml.YAMLError) as exc:
+        fail(f"proof-owned index is not valid UTF-8 YAML: {exc}")
+    canonical = json.dumps(parsed, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def verify_proof_source_identity(proof_count: dict[str, Any]) -> tuple[bytes, str]:
+    if not PROOF_REPO.is_dir():
+        fail("proof_record_count source repository is missing")
+    origin_result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(PROOF_REPO),
+            "config",
+            "--local",
+            "--null",
+            "--get-all",
+            "remote.origin.url",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        env=sanitized_git_env(),
+    )
+    if origin_result.returncode != 0:
+        fail(
+            "proof_record_count source repository stored origin is unavailable: "
+            f"{origin_result.stderr.strip()}"
+        )
+    stored_origins = origin_result.stdout.split("\0")
+    if stored_origins and stored_origins[-1] == "":
+        stored_origins.pop()
+    stored_origins = [origin.strip() for origin in stored_origins]
+    if len(stored_origins) != 1 or not stored_origins[0]:
+        fail(
+            "proof_record_count source repository must store exactly one "
+            "nonempty origin URL"
+        )
+    origin = normalized_origin(stored_origins[0])
+    if origin != PROOF_CANONICAL_ORIGIN.casefold():
+        fail("proof_record_count source repository origin is not canonical")
+    tracked_dirty = git_output(PROOF_REPO, "status", "--porcelain", "--untracked-files=no")
+    if tracked_dirty:
+        fail("proof_record_count authority source has tracked dirty state")
+
+    current_head = git_output(PROOF_REPO, "rev-parse", "HEAD")
+    current_ref = git_output(PROOF_REPO, "branch", "--show-current")
+    source_manifest = load_json(SOURCE_MANIFEST_PATH)
+    entries = source_manifest.get("repositories")
+    if not isinstance(entries, dict) or set(entries) != {
+        ".github",
+        "hawkinsoperations-detections",
+        "hawkinsoperations-validation",
+        "hawkinsoperations-platform",
+        "hawkinsoperations-proof",
+        "hawkinsoperations-website",
+        "hoxline",
+    }:
+        fail("immutable source manifest must enumerate exactly seven canonical repositories")
+    proof_manifest_entry = entries.get("hawkinsoperations-proof")
+    if (
+        not isinstance(proof_manifest_entry, dict)
+        or set(proof_manifest_entry) != {"repository", "revision"}
+        or proof_manifest_entry.get("repository")
+        != "HawkinsOperations/hawkinsoperations-proof"
+        or re.fullmatch(
+            r"[0-9a-f]{40}", str(proof_manifest_entry.get("revision", ""))
+        )
+        is None
+    ):
+        fail("proof source manifest entry must contain the canonical owner and immutable revision")
+    immutable_manifest_sha = proof_manifest_entry["revision"]
+    immutable_manifest_commit = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(PROOF_REPO),
+            "cat-file",
+            "-e",
+            f"{immutable_manifest_sha}^{{commit}}",
+        ],
+        capture_output=True,
+        check=False,
+        env=sanitized_git_env(),
+    )
+    if immutable_manifest_commit.returncode != 0:
+        fail("proof source manifest revision is unreachable in the canonical proof repository")
+    if not current_ref and immutable_manifest_sha != current_head:
+        current_is_historical_ancestor = git_is_ancestor(
+            PROOF_REPO, current_head, immutable_manifest_sha
+        )
+        if current_is_historical_ancestor:
+            fail(
+                "detached proof authority is an older historical ancestor of "
+                "the immutable manifest selection"
+            )
+        reviewed_is_ancestor = git_is_ancestor(
+            PROOF_REPO, immutable_manifest_sha, current_head
+        )
+        tree_is_reviewed_equivalent = (
+            git_tree_sha(PROOF_REPO, immutable_manifest_sha)
+            == git_tree_sha(PROOF_REPO, current_head)
+        )
+        if not (reviewed_is_ancestor or tree_is_reviewed_equivalent):
+            fail(
+                "detached proof authority requires the reviewed revision as an "
+                "ancestor or an exact reviewed repository tree"
+            )
+
+    current_blob = git_output(PROOF_REPO, "rev-parse", f"HEAD:{PROOF_INDEX_GIT_PATH}")
+    blob_bytes = subprocess.run(
+        ["git", "-C", str(PROOF_REPO), "cat-file", "blob", current_blob],
+        capture_output=True,
+        check=False,
+        env=sanitized_git_env(),
+    )
+    if blob_bytes.returncode != 0:
+        fail("current proof authority blob cannot be read")
+
+    expected_blob = proof_count.get("source_git_blob_sha")
+    if expected_blob != current_blob:
+        fail("proof_record_count source_git_blob_sha does not match the authoritative path in the checked current tree")
+    semantic = semantic_fingerprint_yaml(blob_bytes.stdout)
+    if proof_count.get("source_semantic_fingerprint_sha256") != semantic:
+        fail("proof_record_count semantic fingerprint does not match the checked current authority")
+
+    observed_sha = proof_count.get("source_observed_head_sha") or proof_count.get("source_revision")
+    if re.fullmatch(r"[0-9a-f]{40}", str(observed_sha or "")) is None:
+        fail("proof_record_count must record a full source_observed_head_sha")
+    observed_commit = subprocess.run(
+        ["git", "-C", str(PROOF_REPO), "cat-file", "-e", f"{observed_sha}^{{commit}}"],
+        capture_output=True,
+        check=False,
+        env=sanitized_git_env(),
+    )
+    if observed_sha != immutable_manifest_sha:
+        fail("proof observation must equal the separately reviewed immutable source manifest revision")
+    if observed_commit.returncode != 0:
+        fail("proof observation is unreachable in the canonical proof repository")
+    observed_blob = subprocess.run(
+        ["git", "-C", str(PROOF_REPO), "rev-parse", f"{observed_sha}:{PROOF_INDEX_GIT_PATH}"],
+        capture_output=True,
+        check=False,
+        text=True,
+        env=sanitized_git_env(),
+    )
+    if observed_blob.returncode != 0 or observed_blob.stdout.strip() != current_blob:
+        fail("recorded proof observation does not carry the checked current authority blob")
+    if proof_count.get("source_observation_kind") != "reviewed_immutable_commit":
+        fail("proof observation must declare reviewed_immutable_commit")
+
+    if proof_count.get("source_revision") != observed_sha:
+        fail("legacy source_revision must equal source_observed_head_sha")
+    if proof_count.get("current_observed_head_sha") != observed_sha:
+        fail("recorded current_observed_head_sha must equal the reviewed observation")
+    if proof_count.get("source_fingerprint_sha256") != hashlib.sha256(blob_bytes.stdout).hexdigest():
+        fail("proof_record_count source fingerprint does not match the current authoritative blob bytes")
+    return blob_bytes.stdout, current_head
 
 
 def require_owner(public_fields: dict[str, Any], field: str, owner: str) -> None:
@@ -399,6 +812,8 @@ def verify_public_safe_candidate_reviews(contract: dict[str, Any]) -> None:
 
 
 def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
+    if yaml is None:
+        fail("PyYAML is required; proof-owned count parity cannot be skipped")
     contract = load_json(path)
     scan_denied_text(contract)
     verify_no_promotional_claims(contract)
@@ -406,6 +821,9 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
     missing = REQUIRED_TOP_LEVEL_FIELDS - set(contract)
     if missing:
         fail(f"contract missing top-level fields: {sorted(missing)}")
+    unknown_top_level = set(contract) - REQUIRED_TOP_LEVEL_FIELDS
+    if unknown_top_level:
+        fail(f"contract contains unknown top-level fields: {sorted(unknown_top_level)}")
     if contract.get("manifest_id") != "PUBLIC_STATUS_SOURCE_CONTRACT_V1":
         fail("manifest_id must be PUBLIC_STATUS_SOURCE_CONTRACT_V1")
     if contract.get("version") != "public_status_source_contract_v1":
@@ -414,6 +832,22 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
         fail("owner_repo must be hawkinsoperations-platform")
     if contract.get("consumer") != "hawkinsoperations-website":
         fail("consumer must be hawkinsoperations-website")
+    generated_at = contract.get("generated_at")
+    freshness_window_days = contract.get("freshness_window_days")
+    try:
+        generated_time = datetime.fromisoformat(str(generated_at).replace("Z", "+00:00"))
+    except ValueError:
+        fail("generated_at must be a parseable UTC timestamp")
+    if generated_time.tzinfo is None:
+        fail("generated_at must include a timezone")
+    now = datetime.now(timezone.utc)
+    generated_time = generated_time.astimezone(timezone.utc)
+    if generated_time > now:
+        fail("generated_at must not be in the future")
+    if type(freshness_window_days) not in (int, float) or not math.isfinite(freshness_window_days) or freshness_window_days <= 0:
+        fail("freshness_window_days must be a positive number")
+    if (now - generated_time).total_seconds() > freshness_window_days * 86400:
+        fail("public status source contract is stale")
 
     platform_role = contract.get("platform_role")
     if not isinstance(platform_role, dict):
@@ -423,6 +857,38 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
     for key in ("website_rendering_authority", "proof_authority", "runtime_authority", "signal_authority"):
         if platform_role.get(key) is not False:
             fail(f"platform_role.{key} must be false")
+
+    source_repos = contract.get("source_repos")
+    expected_source_repos = {
+        ".github",
+        "hawkinsoperations-detections",
+        "hawkinsoperations-validation",
+        "hawkinsoperations-platform",
+        "hawkinsoperations-proof",
+        "hawkinsoperations-website",
+        "hoxline",
+    }
+    if not isinstance(source_repos, list) or len(source_repos) != 7:
+        fail("source_repos must contain exactly seven canonical owner records")
+    observed_source_repos: list[str] = []
+    for entry in source_repos:
+        if not isinstance(entry, dict):
+            fail("source_repos entries must be objects")
+        repo = entry.get("repo")
+        if not isinstance(repo, str):
+            fail("source_repos entry missing canonical repo")
+        observed_source_repos.append(repo)
+        if not isinstance(entry.get("role"), str) or not entry["role"]:
+            fail(f"source_repos role missing for {repo}")
+        if not isinstance(entry.get("authority_boundary"), str) or not entry["authority_boundary"]:
+            fail(f"source_repos authority boundary missing for {repo}")
+    if set(observed_source_repos) != expected_source_repos:
+        fail(
+            "source_repos must name exactly the seven canonical repositories: "
+            f"{sorted(observed_source_repos)}"
+        )
+    if len(observed_source_repos) != len(set(observed_source_repos)):
+        fail("source_repos contains duplicate canonical owners")
 
     rendering = contract.get("public_rendering_contract")
     if not isinstance(rendering, dict):
@@ -444,6 +910,9 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
     for field, entry in public_fields.items():
         if not isinstance(entry, dict):
             fail(f"public field {field} must be an object")
+        unknown_keys = set(entry) - ALLOWED_PUBLIC_FIELD_KEYS
+        if unknown_keys:
+            fail(f"public field {field} contains unknown fields: {sorted(unknown_keys)}")
         if not entry.get("owner_repo"):
             fail(f"public field {field} missing owner_repo")
         status = entry.get("source_status")
@@ -522,8 +991,40 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
         fail("public_safe_count field must remain 0")
     if public_fields["public_safe_state"].get("current_value") != "NOT_PUBLIC_SAFE":
         fail("public_safe_state field must remain NOT_PUBLIC_SAFE")
+    proof_count = public_fields["proof_record_count"]
+    if proof_count.get("source_path") != "../hawkinsoperations-proof/proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml":
+        fail("proof_record_count must source from the proof-owned current status index")
+    if proof_count.get("source_json_pointer") != "/current_authority/derived_counts/proof_record_count":
+        fail("proof_record_count must use the proof-owned derived count pointer")
+    if re.fullmatch(r"[0-9a-f]{40}", str(proof_count.get("source_revision", ""))) is None:
+        fail("proof_record_count must record a full proof source revision")
+    proof_blob, proof_head = verify_proof_source_identity(proof_count)
+    if proof_count.get("derivation_method") != "count non-null unique proof_record_path values":
+        fail("proof_record_count must declare its deterministic derivation method")
+    if proof_count.get("historical_snapshot") is not False or proof_count.get("current_authority") is not True:
+        fail("proof_record_count must be classified as current authority, not historical")
+    if not isinstance(proof_count.get("current_value"), int) or proof_count["current_value"] < 0:
+        fail("proof_record_count current_value must be a non-negative integer")
+    proof_index = load_yaml_bytes(proof_blob, source="proof-owned current status index")
+    proof_entries = proof_index.get("entries") if isinstance(proof_index, dict) else None
+    if not isinstance(proof_entries, list):
+        fail("proof-owned current status index entries must be a list")
+    record_paths = [
+        entry.get("proof_record_path")
+        for entry in proof_entries
+        if isinstance(entry, dict) and entry.get("proof_record_path") is not None
+    ]
+    normalized_record_paths = {str(Path(value)).replace("\\", "/").casefold() for value in record_paths}
+    if len(record_paths) != len(normalized_record_paths):
+        fail("proof-owned current status index contains duplicate proof_record_path ownership")
+    if proof_count.get("current_value") != len(record_paths):
+        fail("proof_record_count must match the current proof-owned derived count")
     if public_fields["proof_ceiling"].get("current_value") != "SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY":
         fail("proof_ceiling field must remain SCHEMA_CONTRACT_VERIFIER_EXISTS_ONLY")
+    if public_fields["generated_at"].get("current_value") != generated_at:
+        fail("public_fields.generated_at must equal the root generated_at observation")
+    if public_fields["freshness_window_days"].get("current_value") != freshness_window_days:
+        fail("public_fields.freshness_window_days must equal the root freshness_window_days")
 
     source_paths = contract.get("source_paths")
     if not isinstance(source_paths, dict):
@@ -531,13 +1032,53 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
     missing_source_path_keys = REQUIRED_SOURCE_PATH_KEYS - set(source_paths)
     if missing_source_path_keys:
         fail(f"source_paths missing Hoxline/bridge routes: {sorted(missing_source_path_keys)}")
-    if source_paths.get("hoxline_v1_source_manifest") != HOXLINE_SOURCE_MANIFEST_PATH:
-        fail("source_paths.hoxline_v1_source_manifest must point to the Hoxline v1 source manifest")
     for key, value in source_paths.items():
         if not isinstance(value, str) or not value:
             fail(f"source path {key} must be a string")
-        if re.match(r"^[A-Za-z]:\\", value):
-            fail(f"source path {key} must not be an absolute local path")
+        decoded = value
+        for _ in range(3):
+            next_decoded = unquote(decoded)
+            if next_decoded == decoded:
+                break
+            decoded = next_decoded
+        normalized = decoded.replace("\\", "/")
+        parts = normalized.split("/")
+        sibling_route = (
+            len(parts) >= 3
+            and parts[0] == ".."
+            and parts[1]
+            in {
+                ".github",
+                "hawkinsoperations-detections",
+                "hawkinsoperations-validation",
+                "hawkinsoperations-platform",
+                "hawkinsoperations-proof",
+                "hawkinsoperations-website",
+                "hoxline",
+            }
+            and ".." not in parts[2:]
+        )
+        local_route = ".." not in parts
+        if (
+            re.match(r"^[A-Za-z]:", decoded)
+            or decoded.startswith("\\\\")
+            or normalized.startswith("/")
+            or "\x00" in decoded
+            or ("/" in decoded and "\\" in decoded)
+            or not (local_route or sibling_route)
+        ):
+            fail(f"source path {key} must be a safe repository-relative route")
+    if source_paths.get("hoxline_v1_source_manifest") != HOXLINE_SOURCE_MANIFEST_PATH:
+        fail("source_paths.hoxline_v1_source_manifest must point to the Hoxline v1 source manifest")
+    if source_paths.get("proof_current_status_index") != "../hawkinsoperations-proof/proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml":
+        fail("source_paths.proof_current_status_index must point to the proof-owned current index")
+    if source_paths.get("website_generated_status_consumer") != (
+        "../hawkinsoperations-website/schemas/public-status-v0.schema.json"
+    ):
+        fail(
+            "source_paths.website_generated_status_consumer must point to the "
+            "website rendering schema, never generated consumer output"
+        )
 
     extraction = contract.get("future_generated_status_v1_extraction")
     if not isinstance(extraction, dict):
@@ -593,6 +1134,11 @@ def verify_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
         ),
         "proof_ceiling": public_fields["proof_ceiling"]["current_value"],
         "public_safe_state": public_fields["public_safe_state"]["current_value"],
+        "proof_source_identity": {
+            "current_observed_head_sha": proof_head,
+            "authoritative_git_blob_sha": proof_count["source_git_blob_sha"],
+            "authoritative_content_fingerprint": proof_count["source_semantic_fingerprint_sha256"],
+        },
         "candidate_reviews_verified": [
             review["artifact_id"] for review in contract["public_safe_candidate_reviews"]
         ],

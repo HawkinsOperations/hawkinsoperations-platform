@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +22,29 @@ spec.loader.exec_module(verifier)
 
 
 class PublicStatusSourceContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Exercise semantic attacks at a deterministic observation time; an aged
+        # checked-in fixture must not mask the branch each test intends to reach.
+        observed = datetime.fromisoformat(self.load_contract()["generated_at"].replace("Z", "+00:00"))
+        clock = mock.patch.object(verifier, "datetime", wraps=datetime)
+        self.clock = clock.start()
+        self.clock.now.return_value = observed + timedelta(hours=1)
+        self.addCleanup(clock.stop)
+
+    def test_expired_contract_still_fails_at_the_real_freshness_gate(self) -> None:
+        contract = self.load_contract()
+        observed = datetime.fromisoformat(contract["generated_at"].replace("Z", "+00:00"))
+        self.clock.now.return_value = observed + timedelta(days=contract["freshness_window_days"], seconds=1)
+        with self.assertRaisesRegex(verifier.VerificationError, "stale"):
+            self.verify_contract_copy(contract)
+
+    def test_nonfinite_or_boolean_freshness_window_rejected(self) -> None:
+        for value in (float("nan"), float("inf"), True):
+            contract = self.load_contract()
+            contract["freshness_window_days"] = value
+            with self.subTest(value=value), self.assertRaises(verifier.VerificationError):
+                self.verify_contract_copy(contract)
+
     def load_contract(self) -> dict:
         return json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
 
@@ -74,6 +100,302 @@ class PublicStatusSourceContractTests(unittest.TestCase):
 
         with self.assertRaises(verifier.VerificationError):
             self.verify_contract_copy(contract)
+
+    def test_rejects_forged_current_proof_count(self) -> None:
+        contract = self.load_contract()
+        contract["public_fields"]["proof_record_count"]["current_value"] = 99
+
+        with self.assertRaises(verifier.VerificationError):
+            self.verify_contract_copy(contract)
+
+    def test_rejects_historical_proof_summary_as_current_source(self) -> None:
+        contract = self.load_contract()
+        contract["public_fields"]["proof_record_count"]["source_path"] = (
+            "../hawkinsoperations-proof/proof/records/reviewer-metrics-pipeline-v1-summary.json"
+        )
+
+        with self.assertRaises(verifier.VerificationError):
+            self.verify_contract_copy(contract)
+
+    def test_rejects_forged_source_revision(self) -> None:
+        contract = self.load_contract()
+        contract["public_fields"]["proof_record_count"]["source_revision"] = "f" * 40
+        with self.assertRaisesRegex(verifier.VerificationError, "legacy source_revision"):
+            self.verify_contract_copy(contract)
+
+    def test_rejects_forged_source_fingerprint(self) -> None:
+        contract = self.load_contract()
+        contract["public_fields"]["proof_record_count"]["source_fingerprint_sha256"] = "0" * 64
+        with self.assertRaisesRegex(verifier.VerificationError, "fingerprint"):
+            self.verify_contract_copy(contract)
+
+    def test_rejects_future_generated_at(self) -> None:
+        contract = self.load_contract()
+        contract["generated_at"] = "2999-01-01T00:00:00Z"
+        with self.assertRaisesRegex(verifier.VerificationError, "future"):
+            self.verify_contract_copy(contract)
+
+    def test_rejects_nested_alternate_authority_field(self) -> None:
+        contract = self.load_contract()
+        contract["future_generated_status_v1_extraction"]["extension"] = {
+            "nested": [{"ai-authority": True}]
+        }
+        with self.assertRaisesRegex(verifier.VerificationError, "authority field must remain blocked"):
+            self.verify_contract_copy(contract)
+
+    def test_negative_boundary_sibling_cannot_launder_promotion(self) -> None:
+        contract = self.load_contract()
+        contract["future_generated_status_v1_extraction"]["extension"] = {
+            "note": "blocked",
+            "claim": "customer deployment complete",
+        }
+        with self.assertRaisesRegex(verifier.VerificationError, "promotional phrase"):
+            self.verify_contract_copy(contract)
+
+    def test_blocked_claim_text_is_not_allowed_outside_blocked_claims(self) -> None:
+        for prose in ("customer deployed", "public safe", "AI authority enabled"):
+            with self.subTest(prose=prose):
+                contract = self.load_contract()
+                contract["future_generated_status_v1_extraction"]["extension"] = {
+                    "note": prose
+                }
+                with self.assertRaisesRegex(
+                    verifier.VerificationError, "promotional phrase"
+                ):
+                    self.verify_contract_copy(contract)
+
+    def test_clause_local_negative_claim_text_remains_bounded(self) -> None:
+        for prose in (
+            "does not prove customer deployed",
+            "missing production ready",
+        ):
+            with self.subTest(prose=prose):
+                contract = self.load_contract()
+                contract["future_generated_status_v1_extraction"]["extension"] = {
+                    "note": prose
+                }
+                result = self.verify_contract_copy(contract)
+                self.assertEqual(result["status"], "pass")
+
+    def test_distant_negation_does_not_launder_later_public_safe_claim(self) -> None:
+        contract = self.load_contract()
+        contract["future_generated_status_v1_extraction"]["extension"] = {
+            "note": "does not prove customer deployed, but public safe"
+        }
+        with self.assertRaisesRegex(verifier.VerificationError, "promotional phrase"):
+            self.verify_contract_copy(contract)
+
+    def test_unrelated_negation_before_conjunction_does_not_launder_customer_claim(
+        self,
+    ) -> None:
+        for prose in (
+            "not stale and customer deployed",
+            "does not claim runtime and customer deployed",
+            "does not claim runtime, but customer deployed",
+        ):
+            with self.subTest(prose=prose):
+                contract = self.load_contract()
+                contract["future_generated_status_v1_extraction"]["extension"] = {
+                    "note": prose
+                }
+                with self.assertRaisesRegex(
+                    verifier.VerificationError, "promotional phrase"
+                ):
+                    self.verify_contract_copy(contract)
+
+    def test_rejects_case_folded_duplicate_json_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "duplicate.json"
+            path.write_text('{"manifest_id":"A","Manifest_ID":"B"}', encoding="utf-8")
+            with self.assertRaisesRegex(verifier.VerificationError, "duplicate JSON key"):
+                verifier.load_json(path)
+
+    def test_rejects_duplicate_canonical_source_owner(self) -> None:
+        contract = self.load_contract()
+        contract["source_repos"][0]["repo"] = "hawkinsoperations-platform"
+        with self.assertRaisesRegex(
+            verifier.VerificationError, "exactly the seven canonical repositories"
+        ):
+            self.verify_contract_copy(contract)
+
+    def test_rejects_encoded_source_path_traversal(self) -> None:
+        contract = self.load_contract()
+        contract["source_paths"]["website_generated_status_consumer"] = (
+            "..%252f..%252fprivate%252fevidence.json"
+        )
+        with self.assertRaisesRegex(
+            verifier.VerificationError, "safe repository-relative route"
+        ):
+            self.verify_contract_copy(contract)
+
+    def test_rejects_mixed_separator_source_path(self) -> None:
+        contract = self.load_contract()
+        contract["source_paths"]["website_generated_status_consumer"] = (
+            "..\\hawkinsoperations-website/public\\data/status.json"
+        )
+        with self.assertRaisesRegex(
+            verifier.VerificationError, "safe repository-relative route"
+        ):
+                self.verify_contract_copy(contract)
+
+    def test_rejects_nested_generated_at_pointer_drift(self) -> None:
+        contract = self.load_contract()
+        contract["public_fields"]["generated_at"]["current_value"] = (
+            "2026-06-16T22:06:47.5510594-05:00"
+        )
+        with self.assertRaisesRegex(verifier.VerificationError, "must equal the root generated_at"):
+            self.verify_contract_copy(contract)
+
+    def test_rejects_generated_website_consumer_as_authority_source(self) -> None:
+        contract = self.load_contract()
+        contract["source_paths"]["website_generated_status_consumer"] = (
+            "../hawkinsoperations-website/public/data/public-status.json"
+        )
+        with self.assertRaisesRegex(verifier.VerificationError, "website rendering schema"):
+            self.verify_contract_copy(contract)
+
+    def test_rejects_unknown_public_field_shape(self) -> None:
+        contract = self.load_contract()
+        contract["public_fields"]["proof_record_count"]["opaque_extension"] = {
+            "looks_harmless": True
+        }
+        with self.assertRaisesRegex(verifier.VerificationError, "contains unknown fields"):
+            self.verify_contract_copy(contract)
+
+    def test_rejects_duplicate_keys_in_proof_yaml(self) -> None:
+        with self.assertRaisesRegex(
+            verifier.VerificationError, "duplicate YAML key"
+        ):
+            verifier.load_yaml_bytes(
+                b"entries: []\nEntries: []\n",
+                source="proof-owned current status index",
+            )
+
+    def test_proof_source_rejects_empty_duplicate_origin_in_both_orders(self) -> None:
+        proof_count = self.load_contract()["public_fields"]["proof_record_count"]
+        real_run = verifier.subprocess.run
+        canonical = "https://github.com/HawkinsOperations/hawkinsoperations-proof.git"
+
+        for raw_origins in ((canonical, ""), ("", canonical)):
+            nul_output = "\0".join(raw_origins) + "\0"
+
+            def fake_run(args: list[str], *call_args: object, **call_kwargs: object):
+                if args[-5:] == [
+                    "config",
+                    "--local",
+                    "--null",
+                    "--get-all",
+                    "remote.origin.url",
+                ]:
+                    return subprocess.CompletedProcess(args, 0, nul_output, "")
+                return real_run(args, *call_args, **call_kwargs)
+
+            with mock.patch.object(verifier.subprocess, "run", side_effect=fake_run):
+                with self.assertRaisesRegex(
+                    verifier.VerificationError,
+                    "exactly one nonempty origin URL",
+                ):
+                    verifier.verify_proof_source_identity(proof_count)
+
+    def test_proof_source_ignores_ambient_git_dir_decoy(self) -> None:
+        proof_count = self.load_contract()["public_fields"]["proof_record_count"]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            decoy = Path(temp_dir) / "decoy"
+            decoy.mkdir()
+            for args in (
+                ("init",),
+                ("config", "user.name", "Platform Test"),
+                ("config", "user.email", "platform-test@example.invalid"),
+                ("remote", "add", "origin", "C:/hostile/decoy"),
+            ):
+                subprocess.run(
+                    ["git", "-C", str(decoy), *args],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            (decoy / "tracked.txt").write_text("decoy\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(decoy), "add", "tracked.txt"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(decoy), "commit", "-m", "fixture"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            with mock.patch.dict(
+                verifier.os.environ,
+                {
+                    "GIT_DIR": str(decoy / ".git"),
+                    "GIT_WORK_TREE": str(decoy),
+                    "GIT_INDEX_FILE": str(decoy / ".git" / "index"),
+                    "GIT_CONFIG_COUNT": "1",
+                    "GIT_CONFIG_KEY_0": "core.repositoryformatversion",
+                    "GIT_CONFIG_VALUE_0": "0",
+                },
+                clear=False,
+            ):
+                raw, observed_head = verifier.verify_proof_source_identity(proof_count)
+        self.assertTrue(raw)
+        self.assertRegex(observed_head, r"^[0-9a-f]{40}$")
+
+    def test_detached_historical_authority_is_rejected_even_with_same_blob(self) -> None:
+        proof_count = self.load_contract()["public_fields"]["proof_record_count"]
+        real_git_output = verifier.git_output
+
+        def fake_git_output(repo: Path, *args: str) -> str:
+            if args == ("branch", "--show-current"):
+                return ""
+            if args == ("rev-parse", "HEAD"):
+                return "f" * 40
+            return real_git_output(repo, *args)
+
+        with mock.patch.object(
+            verifier, "git_output", side_effect=fake_git_output
+        ), mock.patch.object(
+            verifier,
+            "git_is_ancestor",
+            side_effect=lambda _repo, ancestor, descendant: ancestor == "f" * 40,
+        ):
+            with self.assertRaisesRegex(verifier.VerificationError, "older historical ancestor"):
+                verifier.verify_proof_source_identity(proof_count)
+
+    def test_detached_rewritten_authority_accepts_exact_reviewed_tree(self) -> None:
+        proof_count = self.load_contract()["public_fields"]["proof_record_count"]
+        real_git_output = verifier.git_output
+
+        def fake_git_output(repo: Path, *args: str) -> str:
+            if args == ("branch", "--show-current"):
+                return ""
+            if args == ("rev-parse", "HEAD"):
+                return "f" * 40
+            return real_git_output(repo, *args)
+
+        with mock.patch.object(
+            verifier, "git_output", side_effect=fake_git_output
+        ), mock.patch.object(
+            verifier, "git_is_ancestor", return_value=False
+        ), mock.patch.object(
+            verifier, "git_tree_sha", return_value="e" * 40
+        ):
+            raw, observed_head = verifier.verify_proof_source_identity(proof_count)
+        self.assertTrue(raw)
+        self.assertEqual("f" * 40, observed_head)
+
+    def test_reviewed_classification_cannot_launder_unreachable_observation(self) -> None:
+        proof_count = self.load_contract()["public_fields"]["proof_record_count"]
+        proof_count["source_revision"] = "f" * 40
+        proof_count["source_observed_head_sha"] = "f" * 40
+        proof_count["current_observed_head_sha"] = "f" * 40
+        manifest = json.loads(verifier.SOURCE_MANIFEST_PATH.read_text(encoding="utf-8"))
+        manifest["repositories"]["hawkinsoperations-proof"]["revision"] = "f" * 40
+        with mock.patch.object(verifier, "load_json", return_value=manifest):
+            with self.assertRaisesRegex(verifier.VerificationError, "unreachable"):
+                verifier.verify_proof_source_identity(proof_count)
 
 
 if __name__ == "__main__":

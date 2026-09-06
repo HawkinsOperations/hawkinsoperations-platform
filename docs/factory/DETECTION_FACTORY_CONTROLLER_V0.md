@@ -580,7 +580,7 @@ requires separate non-source-controlled route approval.
 Allowed `truth_class` values:
 
 - `FORWARD_GOVERNED_CASE`
-- `SYNTHETIC_TEST_CASE`
+- `CONTROLLED_TEST_CASE`
 - `RECOVERED_HISTORICAL_IMPORT`
 - `PRIVATE_RUNTIME_EVIDENCE`
 - `PUBLIC_PROOF_CANDIDATE`
@@ -625,7 +625,7 @@ remains limited to the repository seed ledger and must not initialize or append
 to the runtime ledger.
 
 The sample insert path reads the sanitized HO-DET-001 case-factory packet from
-the validation repo and inserts one `SYNTHETIC_TEST_CASE` seed event. It does not
+the validation repo and inserts one `CONTROLLED_TEST_CASE` seed event. It does not
 copy raw event fields, private paths, hostnames, LAN IPs, usernames, VM IDs, MAC
 addresses, raw model output, secrets, private evidence filenames, or internal
 service details.

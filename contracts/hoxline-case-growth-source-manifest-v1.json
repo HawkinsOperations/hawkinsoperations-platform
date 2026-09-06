@@ -1,0 +1,48 @@
+{
+  "manifest_id": "HOXLINE_CASE_GROWTH_SOURCE_MANIFEST_V1",
+  "version": 1,
+  "owner_repo": "hawkinsoperations-platform",
+  "purpose": "Immutable sibling-source selection for read-only seven-repository convergence verification.",
+  "proof_ceiling": "CONTROLLED_REPO_CONVERGENCE_AND_LOCAL_FIXTURE_REVIEW_ONLY",
+  "repositories": {
+    ".github": {
+      "repository": "HawkinsOperations/.github",
+      "revision": "18a2e00505f4df4e895bf8d9ecc97052d4d03a61",
+      "authoritative_path": "governance/CONVERGENCE_SOURCE_MANIFEST.json",
+      "authoritative_git_blob_sha": "e75eb4593485be728327784480c9d3b988265e10"
+    },
+    "hawkinsoperations-detections": {
+      "repository": "HawkinsOperations/hawkinsoperations-detections",
+      "revision": "56cad4f726c0d3988c9464693ce7c127c8f63cad"
+    },
+    "hawkinsoperations-validation": {
+      "repository": "HawkinsOperations/hawkinsoperations-validation",
+      "revision": "c8f3f08995d78fa103115610e5c6a2b85ee61701"
+    },
+    "hawkinsoperations-proof": {
+      "repository": "HawkinsOperations/hawkinsoperations-proof",
+      "revision": "77b7874dd753369792330508fa3438cf397cd050"
+    },
+    "hawkinsoperations-website": {
+      "repository": "HawkinsOperations/hawkinsoperations-website",
+      "revision": "a18a196d4336e088f94c0cec0305c8ae8ebbe0cf"
+    },
+    "hoxline": {
+      "repository": "HawkinsOperations/hoxline",
+      "revision": "be2cd4f08aa5fe04fff89435de47e20abef9f96e"
+    },
+    "hawkinsoperations-platform": {
+      "repository": "HawkinsOperations/hawkinsoperations-platform",
+      "revision_source": "checked_platform_observation"
+    }
+  },
+  "constraints": {
+    "exact_repository_count": 7,
+    "read_only": true,
+    "allow_default_branch_substitution": false,
+    "allow_detached_authority_substitution": false,
+    "allow_dirty_authority_source": false,
+    "website_is_authority": false,
+    "hoxline_is_cross_domain_authority": false
+  }
+}

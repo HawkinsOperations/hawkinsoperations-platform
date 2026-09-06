@@ -13,35 +13,35 @@ jobs:
     name: Main/push governance checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/.github
           path: hawkinsoperations-github
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/hawkinsoperations-detections
           path: hawkinsoperations-detections
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/hawkinsoperations-validation
           path: hawkinsoperations-validation
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/hawkinsoperations-proof
           path: hawkinsoperations-proof
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/hoxline
           path: hoxline
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: HawkinsOperations/hawkinsoperations-website
           path: hawkinsoperations-website

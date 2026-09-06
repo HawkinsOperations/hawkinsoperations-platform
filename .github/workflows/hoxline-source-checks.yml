@@ -14,28 +14,248 @@ jobs:
     name: PR/source checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout platform event revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          path: source-set/hawkinsoperations-platform
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
 
+      - name: Resolve immutable source manifest
+        id: sources
+        working-directory: source-set/hawkinsoperations-platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="contracts/hoxline-case-growth-source-manifest-v1.json"
+          test -f "$manifest"
+          for repo in .github hawkinsoperations-detections hawkinsoperations-validation hawkinsoperations-proof hawkinsoperations-website hoxline; do
+            key="${repo//./_}"
+            key="${key//-/_}"
+            revision="$(python - "$manifest" "$repo" <<'PY'
+          import json
+          import sys
+          manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+          entry = manifest["repositories"][sys.argv[2]]
+          revision = entry.get("revision")
+          if not isinstance(revision, str) or len(revision) != 40:
+              raise SystemExit(f"invalid immutable revision for {sys.argv[2]}")
+          print(revision)
+          PY
+          )"
+            printf '%s=%s\n' "$key" "$revision" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Checkout command-center authority
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: HawkinsOperations/.github
+          path: source-set/.github
+          ref: ${{ steps.sources.outputs._github }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout detection authority
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: HawkinsOperations/hawkinsoperations-detections
+          path: source-set/hawkinsoperations-detections
+          ref: ${{ steps.sources.outputs.hawkinsoperations_detections }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout validation authority
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: HawkinsOperations/hawkinsoperations-validation
+          path: source-set/hawkinsoperations-validation
+          ref: ${{ steps.sources.outputs.hawkinsoperations_validation }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout proof authority
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: HawkinsOperations/hawkinsoperations-proof
+          path: source-set/hawkinsoperations-proof
+          ref: ${{ steps.sources.outputs.hawkinsoperations_proof }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout website consumer
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: HawkinsOperations/hawkinsoperations-website
+          path: source-set/hawkinsoperations-website
+          ref: ${{ steps.sources.outputs.hawkinsoperations_website }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout Hoxline consumer
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: HawkinsOperations/hoxline
+          path: source-set/hoxline
+          ref: ${{ steps.sources.outputs.hoxline }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact seven-source selection
+        working-directory: source-set/hawkinsoperations-platform
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          python - "$GITHUB_WORKSPACE/source-set" "$EVENT_SHA" <<'PY'
+          import json
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          source_root = Path(sys.argv[1])
+          event_sha = sys.argv[2]
+          platform = source_root / "hawkinsoperations-platform"
+          manifest = json.loads(
+              (platform / "contracts/hoxline-case-growth-source-manifest-v1.json").read_text(encoding="utf-8")
+          )
+          expected = manifest["repositories"]
+          actual_names = sorted(path.name for path in source_root.iterdir() if (path / ".git").exists())
+          if actual_names != sorted(expected):
+              raise SystemExit(f"seven-source set mismatch: expected={sorted(expected)} actual={actual_names}")
+          for name, entry in expected.items():
+              expected_sha = event_sha if entry.get("revision_source") == "checked_platform_observation" else entry["revision"]
+              actual_sha = subprocess.check_output(
+                  ["git", "-C", str(source_root / name), "rev-parse", "HEAD"], text=True
+              ).strip()
+              if actual_sha != expected_sha:
+                  raise SystemExit(f"revision mismatch for {name}: expected={expected_sha} actual={actual_sha}")
+              print(json.dumps({"repository": name, "checked_sha": actual_sha}, sort_keys=True))
+          PY
+
       - name: Compile controller
+        working-directory: source-set/hawkinsoperations-platform
         run: python -B -m py_compile scripts/ho_factory.py
 
+      - name: Reject retired fixture vocabulary
+        working-directory: source-set/hawkinsoperations-platform
+        run: |
+          python - <<'PY'
+          import subprocess
+          import hashlib
+          import sqlite3
+          import unicodedata
+          from pathlib import Path, PurePosixPath
+
+          retired = "".join(("syn", "thetic"))
+          immutable_sqlite_blobs = {
+              "evidence/autosoc-case-ledger-v0.sqlite": (
+                  "5b2107512570dc5a2e1377b62ea1a689c9056c3f"
+              ),
+          }
+          binary_extensions = frozenset({
+              ".7z", ".avif", ".avi", ".bz2", ".dll", ".dylib", ".eot", ".exe", ".gif",
+              ".gz", ".ico", ".jpeg", ".jpg", ".mov", ".mp3", ".mp4", ".pdf",
+              ".png", ".pyc", ".so", ".tar", ".tgz", ".ttf", ".wasm", ".webp",
+              ".sqlite", ".woff", ".woff2", ".xz", ".zip",
+          })
+          paths = subprocess.run(
+              ["git", "ls-files", "-z"],
+              check=True,
+              capture_output=True,
+          ).stdout.decode("utf-8").split("\0")
+          findings = []
+          for relative in filter(None, paths):
+              if retired in unicodedata.normalize("NFKC", relative).casefold():
+                  findings.append(f"tracked filename: {relative}")
+              blob = subprocess.run(
+                  ["git", "show", f":{relative}"],
+                  check=True,
+                  capture_output=True,
+              ).stdout
+              suffix = PurePosixPath(relative).suffix.casefold()
+              if suffix == ".sqlite":
+                  expected_blob = immutable_sqlite_blobs.get(relative)
+                  if expected_blob is None:
+                      findings.append(f"unapproved tracked SQLite path: {relative}")
+                      continue
+                  if not blob.startswith(b"SQLite format 3\0"):
+                      findings.append(
+                          f"tracked SQLite content has invalid file signature: {relative}"
+                      )
+                      continue
+                  actual_blob = hashlib.sha1(
+                      f"blob {len(blob)}\0".encode("ascii") + blob
+                  ).hexdigest()
+                  if actual_blob != expected_blob:
+                      findings.append(
+                          f"tracked SQLite blob identity is not approved: {relative}"
+                      )
+                      continue
+                  if Path(relative).read_bytes() != blob:
+                      findings.append(
+                          f"tracked SQLite worktree content differs from the staged blob: {relative}"
+                      )
+                      continue
+                  try:
+                      connection = sqlite3.connect(
+                          f"file:{Path(relative).resolve().as_posix()}?mode=ro",
+                          uri=True,
+                      )
+                      try:
+                          integrity = connection.execute("PRAGMA quick_check").fetchall()
+                      finally:
+                          connection.close()
+                  except sqlite3.DatabaseError:
+                      integrity = []
+                  if integrity != [("ok",)]:
+                      findings.append(
+                          f"tracked SQLite content is not a valid database: {relative}"
+                      )
+                  continue
+              searchable = unicodedata.normalize(
+                  "NFKC",
+                  blob.decode("utf-8", errors="ignore").replace("\0", ""),
+              ).casefold()
+              if retired in searchable:
+                  findings.append(f"tracked content: {relative}")
+              if suffix in binary_extensions:
+                  continue
+              if b"\0" in blob:
+                  findings.append(f"tracked non-binary content contains NUL: {relative}")
+                  continue
+              try:
+                  text = blob.decode("utf-8")
+              except UnicodeDecodeError:
+                  findings.append(f"tracked non-binary content is not UTF-8: {relative}")
+                  continue
+              # The permissive scan above is authoritative for the retired
+              # token; strict UTF-8 decoding here keeps unknown text formats
+              # fail closed.
+          if findings:
+              raise SystemExit(
+                  "retired fixture vocabulary found:\n- " + "\n- ".join(findings)
+              )
+          PY
+
       - name: Runtime collector self-tests
+        working-directory: source-set/hawkinsoperations-platform
         run: |
           python -B scripts/ho_factory.py collector-linux-self-test --format json >/dev/null
           python -B scripts/ho_factory.py collector-normalizer-self-test --format json >/dev/null
           python -B scripts/ho_factory.py hoxline-runtime-canary --controlled-count 3 --format json >/dev/null
           python -B scripts/ho_factory.py hoxline-runtime-schedule-gate --event-name schedule --format json >/dev/null
-          python -B scripts/ho_factory.py hoxline-runtime-ops-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
-          python -B scripts/ho_factory.py hoxline-control-plane-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
-          python -B scripts/ho_factory.py hoxline-schedule-readiness-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
-          python -B scripts/ho_factory.py hoxline-schedule-pilot-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-runtime-ops-self-test --repo-root "$GITHUB_WORKSPACE/source-set/hawkinsoperations-platform" --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-control-plane-self-test --repo-root "$GITHUB_WORKSPACE/source-set/hawkinsoperations-platform" --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-schedule-readiness-self-test --repo-root "$GITHUB_WORKSPACE/source-set/hawkinsoperations-platform" --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-schedule-pilot-self-test --repo-root "$GITHUB_WORKSPACE/source-set/hawkinsoperations-platform" --format json >/dev/null
           python -B scripts/ho_factory.py hoxline-multi-detection-runtime-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
           python -B scripts/ho_factory.py hoxline-sanitized-live-receipt-intake-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
           python -B scripts/ho_factory.py hoxline-operator-receipt-collection-self-test --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
 
       - name: Schema parse checks
+        working-directory: source-set/hawkinsoperations-platform
         run: |
           python -m json.tool contracts/schemas/runtime-case-collector-v0-linux.schema.json >/dev/null
           python -m json.tool contracts/schemas/runtime-case-collector-v0-normalizer.schema.json >/dev/null
@@ -53,23 +273,26 @@ jobs:
           python -m json.tool contracts/examples/hoxline-operator-receipt-packet-v0.ho-det-012.sample.json >/dev/null
 
       - name: Claim-boundary checks
+        working-directory: source-set/hawkinsoperations-platform
+        env:
+          HAWKINS_PROOF_REPO: ${{ github.workspace }}/source-set/hawkinsoperations-proof
+          HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           python -B scripts/ho_factory.py public-status-source-contract-verify --format json
+          python -B scripts/ho_factory.py hoxline-case-growth-convergence-verify --repo-root "$GITHUB_WORKSPACE/source-set" --format json
 
       - name: Workflow safety checks
+        working-directory: source-set/hawkinsoperations-platform
         run: |
-          python -B scripts/ho_factory.py hoxline-workflow-safety-verify --repo-root "$GITHUB_WORKSPACE" --format json >/dev/null
+          python -B scripts/ho_factory.py hoxline-workflow-safety-verify --repo-root "$GITHUB_WORKSPACE/source-set/hawkinsoperations-platform" --format json >/dev/null
 
       - name: Python unit tests
+        working-directory: source-set/hawkinsoperations-platform
+        env:
+          HAWKINS_PROOF_REPO: ${{ github.workspace }}/source-set/hawkinsoperations-proof
         run: |
-          python -B -m unittest tests/test_hoxline_runtime_ops.py
-          python -B -m unittest tests/test_hoxline_control_plane.py
-          python -B -m unittest tests/test_hoxline_schedule_readiness.py
-          python -B -m unittest tests/test_hoxline_controlled_schedule_pilot.py
-          python -B -m unittest tests/test_hoxline_multi_detection_runtime.py
-          python -B -m unittest tests/test_hoxline_sanitized_live_receipt_intake.py
-          python -B -m unittest tests/test_hoxline_operator_receipt_collection.py
-          python -B -m unittest tests/test_verify_public_status_source_contract.py
+          python -B -m unittest discover -s tests
 
       - name: Git whitespace check
+        working-directory: source-set/hawkinsoperations-platform
         run: git diff --check

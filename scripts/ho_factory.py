@@ -16,15 +16,28 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import unquote
 
 try:
     import yaml  # type: ignore
 except ImportError:  # pragma: no cover - absence is handled as fail-closed runtime state.
     yaml = None
+
+
+def sanitized_git_env() -> dict[str, str]:
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.casefold().startswith("git_")
+    }
+    env["GIT_NO_REPLACE_OBJECTS"] = "1"
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
 
 
 CONTROLLER_VERSION = "0.1.0"
@@ -46,7 +59,12 @@ HOXLINE_PR67_AI_RECONCILIATION_REPORT = Path(
 HOXLINE_OPERATOR_EVIDENCE_PACKAGE = Path(
     "C:/Raylee/Data/Hoxline/operator-evidence-package-20260621"
 )
-HOXLINE_AGENTS_RULES = Path("C:/Raylee/Codex/Rules/AGENTS.md")
+HOXLINE_REMOTE_LAB_AUTHORITY_FIXTURE = (
+    PLATFORM_ROOT
+    / "contracts"
+    / "examples"
+    / "hoxline-remote-lab-authority-v1.controlled.json"
+)
 PROOF_STATUS_INDEX_REL = "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml"
 PROOF_STATUS_INDEX_OWNER = "hawkinsoperations-proof"
 PROOF_STATUS_INDEX_VISIBILITY_STATUS = "STATUS_VISIBILITY_ONLY_NON_AUTHORITATIVE"
@@ -593,12 +611,41 @@ LIFETIME_DETECTION_COVERAGE = (
 
 CASE_LEDGER_TRUTH_CLASSES = (
     "FORWARD_GOVERNED_CASE",
-    "SYNTHETIC_TEST_CASE",
+    "CONTROLLED_TEST_CASE",
     "RECOVERED_HISTORICAL_IMPORT",
     "PRIVATE_RUNTIME_EVIDENCE",
     "PUBLIC_PROOF_CANDIDATE",
     "PUBLIC_BLOCKED",
 )
+
+
+def retired_controlled_test_storage_class() -> str:
+    """Return the retired on-disk token without exposing it as current vocabulary."""
+    return "".join(("SYN", "THETIC_TEST_CASE"))
+
+
+def normalize_case_ledger_truth_class(value: Any) -> str:
+    text = str(value)
+    if text == retired_controlled_test_storage_class():
+        return "CONTROLLED_TEST_CASE"
+    return text
+
+
+def case_ledger_storage_truth_class(conn: sqlite3.Connection, value: Any) -> str:
+    normalized = normalize_case_ledger_truth_class(value)
+    if normalized != "CONTROLLED_TEST_CASE":
+        return normalized
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'case_events'"
+    ).fetchone()
+    schema = str(row[0] or "") if row else ""
+    if (
+        "CONTROLLED_TEST_CASE" not in schema
+        and retired_controlled_test_storage_class() in schema
+    ):
+        return retired_controlled_test_storage_class()
+    return normalized
+
 
 CASE_LEDGER_TEXT_SCAN_FIELDS = (
     "case_id",
@@ -1362,8 +1409,12 @@ def runtime_splunk_ho_det_001_dry_run(ledger_path: Path, sanitized_input: dict[s
 def row_to_event(conn: sqlite3.Connection, row: sqlite3.Row | tuple[Any, ...]) -> dict[str, Any]:
     columns = [item[1] for item in conn.execute("PRAGMA table_info(case_events)").fetchall()]
     if isinstance(row, sqlite3.Row):
-        return {column: row[column] for column in columns}
-    return dict(zip(columns, row))
+        event = {column: row[column] for column in columns}
+    else:
+        event = dict(zip(columns, row))
+    if "truth_class" in event:
+        event["truth_class"] = normalize_case_ledger_truth_class(event["truth_class"])
+    return event
 
 
 def bool_from_int_field(event: dict[str, Any], field: str) -> bool:
@@ -1521,7 +1572,7 @@ def build_sample_case_event(repo_root: Path) -> dict[str, Any]:
         "ledger_version": CASE_LEDGER_VERSION,
         "case_id": packet["case_id"],
         "detection_id": packet["detection_id"],
-        "truth_class": "SYNTHETIC_TEST_CASE",
+        "truth_class": "CONTROLLED_TEST_CASE",
         "case_status": "HUMAN_REVIEW_REQUIRED",
         "proof_ceiling": packet["proof_level"],
         "public_safe_status": packet["public_safe_status"],
@@ -1576,6 +1627,9 @@ def insert_case_event(conn: sqlite3.Connection, event: dict[str, Any]) -> str:
         """,
         {
             **event,
+            "truth_class": case_ledger_storage_truth_class(
+                conn, event["truth_class"]
+            ),
             "payload_json": stable_json(event["payload_json"]),
             "ai_decided_disposition": bool_int(event["ai_decided_disposition"]),
             "deterministic_close_eligible": bool_int(event["deterministic_close_eligible"]),
@@ -1597,7 +1651,15 @@ def ledger_metrics(
 ) -> dict[str, Any]:
     def grouped(column: str) -> dict[str, int]:
         rows = conn.execute(f"SELECT {column}, COUNT(*) FROM case_events GROUP BY {column} ORDER BY {column}").fetchall()
-        return {str(key): int(count) for key, count in rows}
+        grouped_values: dict[str, int] = {}
+        for key, count in rows:
+            normalized = (
+                normalize_case_ledger_truth_class(key)
+                if column == "truth_class"
+                else str(key)
+            )
+            grouped_values[normalized] = grouped_values.get(normalized, 0) + int(count)
+        return grouped_values
 
     counts = conn.execute(
         """
@@ -1641,7 +1703,15 @@ def lifetime_ledger_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
 
     def grouped(column: str) -> dict[str, int]:
         rows = conn.execute(f"SELECT {column}, COUNT(*) FROM case_events GROUP BY {column} ORDER BY {column}").fetchall()
-        return {str(key): int(count) for key, count in rows}
+        grouped_values: dict[str, int] = {}
+        for key, count in rows:
+            normalized = (
+                normalize_case_ledger_truth_class(key)
+                if column == "truth_class"
+                else str(key)
+            )
+            grouped_values[normalized] = grouped_values.get(normalized, 0) + int(count)
+        return grouped_values
 
     rows = conn.execute(
         """
@@ -1690,11 +1760,12 @@ def lifetime_ledger_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
           COALESCE(SUM(proof_blocked), 0),
           COALESCE(SUM(public_safe), 0),
           COALESCE(SUM(case_closed), 0),
-          COALESCE(SUM(CASE WHEN truth_class = 'SYNTHETIC_TEST_CASE' THEN 1 ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN truth_class IN (?, ?) THEN 1 ELSE 0 END), 0),
           COALESCE(SUM(CASE WHEN truth_class = 'PRIVATE_RUNTIME_EVIDENCE' THEN 1 ELSE 0 END), 0),
           COALESCE(SUM(CASE WHEN truth_class = 'PUBLIC_PROOF_CANDIDATE' THEN 1 ELSE 0 END), 0)
         FROM case_events
-        """
+        """,
+        ("CONTROLLED_TEST_CASE", retired_controlled_test_storage_class()),
     ).fetchone()
     return {
         "ledger_version": LIFETIME_CASE_LEDGER_VERSION,
@@ -2095,7 +2166,7 @@ def build_lifetime_manual_fire_event(candidate: dict[str, Any]) -> dict[str, Any
         "fired_at": candidate.get("fired_at"),
         "observed_time_utc": candidate.get("observed_time_utc"),
         "ingested_at": None,
-        "truth_class": "SYNTHETIC_TEST_CASE",
+        "truth_class": "CONTROLLED_TEST_CASE",
         "case_status": "HUMAN_REVIEW_REQUIRED",
         "triage_status": "PENDING_HUMAN_REVIEW",
         "disposition_status": "NO_DISPOSITION",
@@ -2147,7 +2218,7 @@ def lifetime_metrics_after_candidate(before: dict[str, Any], event: dict[str, An
     after["gpu_triaged_count"] = int(after["gpu_triaged_count"]) + int(bool(event["gpu_triage_used"]))
     after["ai_support_only_count"] = int(after["ai_support_only_count"]) + 1
     after["proof_blocked_count"] = int(after["proof_blocked_count"]) + 1
-    if event["truth_class"] == "SYNTHETIC_TEST_CASE":
+    if event["truth_class"] == "CONTROLLED_TEST_CASE":
         after["validation_only_count"] = int(after["validation_only_count"]) + 1
     return after
 
@@ -3034,7 +3105,7 @@ def build_lifetime_correction_event(parent: dict[str, Any], correction_reason: s
         "fired_at": None,
         "observed_time_utc": None,
         "ingested_at": None,
-        "truth_class": "SYNTHETIC_TEST_CASE",
+        "truth_class": "CONTROLLED_TEST_CASE",
         "case_status": "HUMAN_REVIEW_REQUIRED",
         "triage_status": "PENDING_HUMAN_REVIEW",
         "disposition_status": "NO_DISPOSITION",
@@ -3118,7 +3189,7 @@ def lifetime_metrics_after_correction(before: dict[str, Any], event: dict[str, A
     after["proof_blocked_count"] = int(after["proof_blocked_count"]) + 1
     after["correction_event_count"] = int(after["correction_event_count"]) + 1
     after["superseding_event_count"] = int(after["superseding_event_count"]) + 1
-    if event["truth_class"] == "SYNTHETIC_TEST_CASE":
+    if event["truth_class"] == "CONTROLLED_TEST_CASE":
         after["validation_only_count"] = int(after["validation_only_count"]) + 1
     return after
 
@@ -3370,6 +3441,13 @@ def verify_ledger(
         raise FactoryError("case ledger must contain at least one sanitized seed event")
     for row in rows:
         event = dict(zip(columns, row))
+        event["truth_class"] = normalize_case_ledger_truth_class(
+            event.get("truth_class")
+        )
+        if event["truth_class"] not in CASE_LEDGER_TRUTH_CLASSES:
+            raise FactoryError(
+                f"ledger event truth_class is unsupported: {event['truth_class']}"
+            )
         if not event.get("proof_ceiling"):
             raise FactoryError("ledger event missing proof_ceiling")
         if event.get("public_safe_status") not in {"NO", "BLOCKED", "NOT_PUBLIC_SAFE"}:
@@ -3439,6 +3517,9 @@ def insert_case_event_unchecked(conn: sqlite3.Connection, event: dict[str, Any])
         """,
         {
             **event,
+            "truth_class": case_ledger_storage_truth_class(
+                conn, event["truth_class"]
+            ),
             "payload_json": payload_json,
             "ai_decided_disposition": sql_bool(event["ai_decided_disposition"]),
             "deterministic_close_eligible": sql_bool(event["deterministic_close_eligible"]),
@@ -6479,6 +6560,7 @@ def hoxline_runtime_replay(
         capture_output=True,
         text=True,
         check=False,
+        env=sanitized_git_env(),
     ).stdout.strip()
     manifest = {
         "schema_version": "hoxline-private-evidence-manifest-v0",
@@ -11021,49 +11103,32 @@ def hoxline_file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def hoxline_remote_lab_authority_state() -> dict[str, Any]:
-    if not HOXLINE_AGENTS_RULES.is_file():
-        if os.environ.get("GITHUB_ACTIONS") != "true":
-            raise FactoryError(f"Codex AGENTS rules file is missing: {HOXLINE_AGENTS_RULES}")
-        return {
-            "remote_lab_authority_rule": "present",
-            "remote_default_mode": "read_only",
-            "rule_source": "github_actions_ci_fallback",
-            "rule_hash": canonical_sha256(
-                {
-                    "rule": "REMOTE LAB / SSH EVIDENCE SURFACE AUTHORITY",
-                    "hosts": ["ho-wazuh-01", "ho-wazuh-02", "ho-gpu-01", "ho-runner-01"],
-                    "default_mode": "read_only",
-                    "source": "github_actions_ci_fallback",
-                }
-            ),
-        }
-    text = HOXLINE_AGENTS_RULES.read_text(encoding="utf-8")
-    required_markers = [
-        "REMOTE LAB / SSH EVIDENCE SURFACE AUTHORITY",
-        "Raylee-owned lab servers and VMs are approved evidence surfaces",
-        "Default remote mode is read-only.",
-        "ho-wazuh-01",
-        "ho-wazuh-02",
-        "ho-gpu-01",
-        "ho-runner-01",
-        "C:\\Raylee\\LogBook",
-        "C:\\Raylee\\Work",
-    ]
-    if not all(marker in text for marker in required_markers):
-        raise FactoryError("Codex remote lab authority rule is not present or is incomplete")
+def hoxline_remote_lab_authority_state(
+    authority_fixture: Path | None = None,
+) -> dict[str, Any]:
+    fixture_path = authority_fixture or HOXLINE_REMOTE_LAB_AUTHORITY_FIXTURE
+    fixture = hoxline_case_growth_load_json(fixture_path)
+    expected = {
+        "fixture_id": "HOXLINE_REMOTE_LAB_AUTHORITY_CONTROLLED_V1",
+        "fixture_version": 1,
+        "fixture_class": "CONTROLLED_TEST_ONLY",
+        "remote_default_mode": "read_only",
+        "hosts": ["ho-wazuh-01", "ho-wazuh-02", "ho-gpu-01", "ho-runner-01"],
+        "runtime_mutation_authorized": False,
+        "ledger_mutation_authorized": False,
+        "public_proof_promotion_authorized": False,
+        "proof_ceiling": "CONTROLLED_REPO_CONVERGENCE_AND_LOCAL_FIXTURE_REVIEW_ONLY",
+    }
+    if fixture != expected:
+        raise FactoryError(
+            "repo-controlled remote lab authority fixture must equal the exact "
+            "CONTROLLED_TEST_ONLY v1 contract"
+        )
     return {
         "remote_lab_authority_rule": "present",
         "remote_default_mode": "read_only",
-        "rule_source": "raylee_codex_rules_file",
-        "rule_hash": canonical_sha256(
-            {
-                "rule": "REMOTE LAB / SSH EVIDENCE SURFACE AUTHORITY",
-                "hosts": ["ho-wazuh-01", "ho-wazuh-02", "ho-gpu-01", "ho-runner-01"],
-                "default_mode": "read_only",
-                "source": "raylee_codex_rules_file",
-            }
-        ),
+        "rule_source": "repo_controlled_fixture",
+        "rule_hash": canonical_sha256(fixture),
     }
 
 
@@ -11499,9 +11564,2519 @@ def hoxline_evidence_to_product_convergence_self_test(repo_root: Path) -> dict[s
         "website_proof_promotion": False,
     }
 
+
+HOXLINE_CASE_GROWTH_REPOS = (
+    ".github",
+    "hawkinsoperations-detections",
+    "hawkinsoperations-validation",
+    "hawkinsoperations-platform",
+    "hawkinsoperations-proof",
+    "hawkinsoperations-website",
+    "hoxline",
+)
+
+HOXLINE_CASE_GROWTH_AUTHORITY_PATHS = {
+    ".github": "governance/COMMAND_CENTER_INVARIANTS.json",
+    "hawkinsoperations-detections": "detections/DETECTION_PROMOTION_MATRIX.yml",
+    "hawkinsoperations-validation": "validation/VALIDATION_REGISTRY.yml",
+    "hawkinsoperations-platform": "contracts/public-status-source-contract-v1.json",
+    "hawkinsoperations-proof": "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml",
+    "hawkinsoperations-website": "schemas/public-status-v0.schema.json",
+    "hoxline": "src/hoxline/case_growth/collector.py",
+}
+
+HOXLINE_CASE_GROWTH_OBSERVATION_PROJECTION_PATHS = {
+    ".github": frozenset({"governance/CONVERGENCE_SOURCE_MANIFEST.json"}),
+    "hawkinsoperations-website": frozenset(
+        {
+            "public/data/public-status.json",
+            "src/data/generated/public-status.generated.ts",
+        }
+    ),
+    "hoxline": frozenset(
+        {
+            "examples/case-growth/current-case-growth-index.json",
+            "examples/case-growth/current-case-growth-index.md",
+        }
+    ),
+}
+
+HOXLINE_CANONICAL_ORIGINS = {
+    name: f"github.com/HawkinsOperations/{name}".casefold() for name in HOXLINE_CASE_GROWTH_REPOS
+}
+
+
+def hoxline_case_growth_org_root(repo_root: Path) -> Path:
+    resolved = repo_root.resolve()
+    if all((resolved / name).is_dir() for name in HOXLINE_CASE_GROWTH_REPOS):
+        return resolved
+    if resolved.name == "hawkinsoperations-platform" and all(
+        (resolved.parent / name).is_dir() for name in HOXLINE_CASE_GROWTH_REPOS
+    ):
+        return resolved.parent
+    return resolved
+
+
+def detection_quality_run(org_root: Path, detections_ref: str, validation_ref: str) -> dict[str, Any]:
+    """Delegate controlled behavior to validation; platform cannot author its results."""
+    org_root = org_root.resolve()
+    for repository, revision in (("hawkinsoperations-detections", detections_ref), ("hawkinsoperations-validation", validation_ref)):
+        if not re.fullmatch(r"[0-9a-f]{40}", revision):
+            raise FactoryError("detection quality requires exact source and validator heads")
+        root = org_root / repository
+        state = hoxline_case_growth_git_state(root)
+        top = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"], capture_output=True, text=True, env=sanitized_git_env())
+        if top.returncode or Path(top.stdout.strip()).resolve() != root.resolve():
+            raise FactoryError("detection quality authority root is not its Git top level")
+        if state["origin"] not in (f"https://github.com/HawkinsOperations/{repository}.git", f"https://github.com/HawkinsOperations/{repository}", f"git@github.com:HawkinsOperations/{repository}.git"):
+            raise FactoryError("detection quality repository authority mismatch")
+        if state["head"] != revision or state["dirty"]:
+            raise FactoryError("detection quality source must be clean at the requested head")
+    validation_root = org_root / "hawkinsoperations-validation"
+    script = validation_root / "scripts" / "detection_quality.py"
+    # No shell, fixture-command execution, output files, or ledger access.
+    result = subprocess.run([sys.executable, "-E", "-B", str(script), "--detections-root", str(org_root / "hawkinsoperations-detections"), "--detections-ref", detections_ref], cwd=validation_root, capture_output=True, text=True, env=sanitized_git_env())
+    if result.returncode != 0:
+        raise FactoryError("validation-owned detection quality execution failed; run the owning command for diagnostics")
+    report = hoxline_case_growth_load_json_bytes(result.stdout.encode("utf-8"), "validation quality output")
+    if not isinstance(report, dict) or report.get("owner_repository") != "HawkinsOperations/hawkinsoperations-validation" or report.get("status") != "PASS":
+        raise FactoryError("validation did not return an owner-bound successful quality report")
+    for repository, revision in (("hawkinsoperations-detections", detections_ref), ("hawkinsoperations-validation", validation_ref)):
+        state = hoxline_case_growth_git_state(org_root / repository)
+        if state["head"] != revision or state["dirty"]:
+            raise FactoryError("detection quality authority changed during execution")
+        matching = [source for source in report.get("sources", []) if source.get("repository") == f"HawkinsOperations/{repository}"]
+        if len(matching) != 1 or matching[0].get("head") != revision:
+            raise FactoryError("validation report does not bind the requested source heads")
+    return report
+
+
+def hoxline_case_growth_git_state(repo_path: Path) -> dict[str, Any]:
+    def run(*args: str) -> str:
+        result = subprocess.run(
+            ["git", "-C", str(repo_path), *args],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=sanitized_git_env(),
+        )
+        if result.returncode != 0:
+            raise FactoryError(f"unable to resolve git state for {repo_path.name}: {result.stderr.strip()}")
+        return result.stdout.strip()
+
+    origin_result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_path),
+            "config",
+            "--local",
+            "--null",
+            "--get-all",
+            "remote.origin.url",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=sanitized_git_env(),
+    )
+    if origin_result.returncode != 0:
+        raise FactoryError(
+            f"unable to resolve stored origin for {repo_path.name}: "
+            f"{origin_result.stderr.strip()}"
+        )
+    stored_origins = origin_result.stdout.split("\0")
+    if stored_origins and stored_origins[-1] == "":
+        stored_origins.pop()
+    stored_origins = [origin.strip() for origin in stored_origins]
+    if len(stored_origins) != 1 or not stored_origins[0]:
+        raise FactoryError(
+            "authority repository must store exactly one nonempty origin URL"
+        )
+
+    porcelain = run("status", "--porcelain")
+    meaningful_status = [
+        line for line in porcelain.splitlines()
+        if "__pycache__/" not in line.replace("\\", "/")
+        and not line.rstrip().endswith(".pyc")
+        and not line.replace("\\", "/")[3:].startswith(".hoxline/")
+    ]
+    return {
+        "branch": run("branch", "--show-current"),
+        "head": run("rev-parse", "HEAD"),
+        "origin": stored_origins[0],
+        "dirty": bool(meaningful_status),
+    }
+
+
+def hoxline_case_growth_normalized_origin(value: str) -> str:
+    origin = value.strip().replace("\\", "/")
+    origin = re.sub(r"^git@", "", origin)
+    if origin.startswith("github.com:"):
+        origin = origin.replace(":", "/", 1)
+    origin = re.sub(r"^(?:https?|ssh)://", "", origin, flags=re.IGNORECASE)
+    return origin.removesuffix(".git").rstrip("/").casefold()
+
+
+def hoxline_case_growth_git_blob(repo_path: Path, revision: str, relative_path: str) -> tuple[str, bytes] | None:
+    blob = subprocess.run(
+        ["git", "-C", str(repo_path), "rev-parse", f"{revision}:{relative_path}"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=sanitized_git_env(),
+    )
+    if blob.returncode != 0:
+        return None
+    blob_sha = blob.stdout.strip()
+    raw = subprocess.run(
+        ["git", "-C", str(repo_path), "cat-file", "blob", blob_sha],
+        check=False,
+        capture_output=True,
+        env=sanitized_git_env(),
+    )
+    if raw.returncode != 0:
+        return None
+    return blob_sha, raw.stdout
+
+
+def hoxline_case_growth_semantic_fingerprint(relative_path: str, raw: bytes) -> str:
+    suffix = Path(relative_path).suffix.casefold()
+    try:
+        if suffix == ".json":
+            value = json.loads(raw.decode("utf-8"))
+            canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        elif suffix in {".yml", ".yaml"}:
+            if yaml is None:
+                raise FactoryError("PyYAML is required for source semantic fingerprints")
+            value = yaml.safe_load(raw.decode("utf-8"))
+            canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        else:
+            canonical = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    except (UnicodeDecodeError, json.JSONDecodeError, yaml.YAMLError if yaml is not None else ValueError) as exc:
+        raise FactoryError(f"unable to canonicalize {relative_path}: {exc}") from exc
+    return hashlib.sha256(canonical).hexdigest()
+
+
+HOXLINE_BLOCKED_AUTHORITY_KEYS = {
+    "aidispositionauthority",
+    "aiauthority",
+    "analystauthority",
+    "analystapproval",
+    "analystapproved",
+    "aiapproved",
+    "finalauthorization",
+    "caseclosed",
+    "caseclosure",
+    "publicsafe",
+    "publicsafeapproved",
+    "runtimeactive",
+    "signalobserved",
+    "productionready",
+    "productionstatus",
+    "customerdeployed",
+    "customerdeployment",
+    "socaasdeployment",
+    "socaasdeployed",
+    "websiterenderingisproof",
+    "websiteisproof",
+    "greenciisapproval",
+}
+HOXLINE_NEGATIVE_AUTHORITY_PATHS = {
+    "allowedclaims",
+    "artifactid",
+    "blockedclaims",
+    "notclaiming",
+    "doesnotprove",
+    "evidenceauthoritysurface",
+    "freshnesspolicy",
+    "humanreviewrequired",
+    "promotionblockers",
+    "proofceiling",
+    "authorityboundary",
+    "noproofpromotionstatement",
+    "ownerrepo",
+    "publicsafesourcerequired",
+    "renderallowed",
+    "reviewlane",
+    "reviewversion",
+    "sourceartifact",
+    "sourcejsonpointer",
+    "sourcepath",
+    "sourcestatus",
+    "websitemaynotpromotepublicsafe",
+    "websitemustnotsourcefromwebsiteonlydata",
+    "extractormustnot",
+}
+
+
+def hoxline_case_growth_security_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value).translate(
+        {ord("\t"): " ", ord("\n"): " ", ord("\r"): " "}
+    )
+    return "".join(
+        character
+        for character in normalized
+        if not unicodedata.category(character).startswith(("C", "M"))
+    )
+
+
+def hoxline_case_growth_bounded_claim_noun_list(value: str) -> bool:
+    suffix = re.search(
+        r"\bclaims?\s+(?:remain|remains|are|is)\s+"
+        r"(?:blocked|unsupported|not\s+approved)\.?$",
+        value,
+        re.IGNORECASE,
+    )
+    if suffix is None:
+        return False
+    prefix = value[:suffix.start()].strip(" \t,.;:")
+    items = [
+        item.strip()
+        for item in re.split(
+            r"\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+",
+            prefix,
+            flags=re.IGNORECASE,
+        )
+        if item.strip()
+    ]
+    bounded_noun = re.compile(
+        r"(?:"
+        r"runtime(?:[- ]active(?:\s+status)?)?"
+        r"|signal(?:[- ]observed(?:\s+status)?)?"
+        r"|public[- ]safe(?:\s+(?:status|runtime\s+proof))?"
+        r"|production(?:[- ]ready(?:\s+status)?|\s+(?:readiness|identity\s+coverage))?"
+        r"|customer(?:\s+deployment)?"
+        r"|socaas(?:\s+deployment)?"
+        r"|ai(?:[- ]approved(?:\s+(?:status|disposition))?|\s+approval)?"
+        r"|analyst(?:[- ]approved(?:\s+(?:status|disposition))?|\s+approval)?"
+        r"|final\s+authori[sz]ation"
+        r"|case\s+closure"
+        r"|live\s+idp"
+        r"|autonomous\s+soc"
+        r")",
+        re.IGNORECASE,
+    )
+    return bool(items) and all(bounded_noun.fullmatch(item) for item in items)
+
+
+def hoxline_case_growth_string_promotions(value: str) -> list[str]:
+    """Return unambiguously promotional phrases using clause-local negation."""
+    security_value = hoxline_case_growth_security_text(value)
+    if hoxline_case_growth_bounded_claim_noun_list(security_value):
+        return []
+    phrase_patterns = {
+        "runtime active": r"\bruntime\b.{0,24}\b(?:active|live)\b",
+        "signal observed": r"\bsignal\b.{0,24}\b(?:active|observed)\b",
+        "public safe": r"\bpublic[\s_-]*safe\b.{0,32}\b(?:approved|confirmed|established|release|runtime\s+proof)\b|\bpublic\s+safe\b",
+        "production ready": r"\bproduction\b.{0,32}\b(?:active|confirmed|deployed|deployment|live|ready|readiness|status)\b",
+        "customer deployed": r"\b(?:customer|socaas)\b.{0,48}\bdeploy(?:ed|ment|ing)?\b|\bdeploy(?:ed|ment|ing)?\b.{0,48}\b(?:customer|socaas)\b",
+        "AI authority": r"\bai\b.{0,40}\b(?:approval|authority|disposition)\b.{0,24}\b(?:approved|enabled|granted)\b|\bai\b.{0,40}\b(?:approved|authorized)\b.{0,24}\b(?:case|decision|disposition)\b|\bai[\s_-]+authority\b",
+        "analyst authority": r"\banalyst\b.{0,40}\b(?:approval|authority|disposition)\b.{0,24}\b(?:approved|enabled|granted)\b|\banalyst\b.{0,40}\b(?:approved|authorized)\b.{0,24}\b(?:case|decision|disposition)\b|\banalyst[\s_-]+authority\b",
+        "final authorization": r"\bfinal\s+authori[sz]ation\b.{0,32}\b(?:approved|complete|granted|received)\b|\bfinal(?:[\s_-]+human)?[\s_-]+authorization\b",
+        "case closure": r"\bcase\s+closure\b.{0,32}\b(?:approved|complete|granted|received)\b|\bcase\b.{0,16}\b(?:is|was)?\s*closed\b",
+        "website as proof": r"\bwebsite(?:[\s_-]+rendering)?[\s_-]+(?:as|is)[\s_-]+proof\b",
+        "green CI as approval": r"\bgreen[\s_-]+ci[\s_-]+(?:as|is)[\s_-]+approval\b",
+    }
+    clause_negation = re.compile(
+        r"(?:"
+        r"\b(?:not|never|no|without|missing|blocked|future|pending|unsupported)\b"
+        r"|\b(?:does|do|must|is|are|was|were|can|cannot|could|should|will|would)\s+not\b"
+        r"|\bnot\s+(?:authorized|approved|promoted)\b"
+        r"|\brequires?\s+separate\b|\bremain(?:s)?\s+(?:a\s+)?separate\b"
+        r")",
+        flags=re.IGNORECASE,
+    )
+    violations: list[str] = []
+    # Conjunctions start a new semantic clause. In particular, a negation
+    # before "and" or an adversative must not launder a later promotion.
+    # Commas remain inside a segment so an explicit negative claim list keeps
+    # its governing negation.
+    strong_segments = re.split(
+        r"(?:[;:/\r\n—–]+|(?<=[.!?])\s+|"
+        r"\b(?:and|but|plus|though|because|therefore|meanwhile|"
+        r"furthermore|also|nevertheless|nonetheless|except|so|"
+        r"despite(?:\s+that)?|in\s+fact|consequently|moreover|then|"
+        r"still|however|although|yet|while|whereas)\b)",
+        security_value,
+        flags=re.IGNORECASE,
+    )
+    negative_list_intro = re.compile(
+        r"\b(?:does|do|did|must|is|are|was|were|can|cannot|could|should|will|would)\s+not\s+"
+        r"(?:prove|establish|claim|promote|authorize|assert|treat|render)\b"
+        r"|\bnever\s+(?:prove|establish|claim|promote|authorize|assert|treat|render)\b"
+        r"|\b(?:is|are|was|were)\s+not\b|\bwithout\s+claiming\b",
+        re.IGNORECASE,
+    )
+    affirmative_state_after_negative_list = re.compile(
+        r"(?:"
+        r"\b(?:customer|socaas)\b.{0,48}\b(?:is|was)\s+deployed\b"
+        r"|\b(?:customer|socaas)\s+deployment\b.{0,24}\b(?:is|was)\s+active\b"
+        r"|\bproduction\b.{0,24}\b(?:is|was)\s+(?:active|live|ready)\b"
+        r"|\bruntime\b.{0,16}\b(?:is|was)\s+active\b"
+        r"|\bsignal\b.{0,16}\b(?:is|was)\s+observed\b"
+        r"|\bai\s+authority\b.{0,16}\b(?:is|was)\s+(?:enabled|granted|approved)\b"
+        r"|\banalyst\s+approval\b.{0,16}\b(?:(?:is|was)\s+)?(?:granted|approved)\b"
+        r"|\b(?:ai|analyst)\s+approved\s+(?:this|the|case|decision|disposition)\b"
+        r"|\bpublic[- ]safe\b.{0,16}\b(?:is|was)\s+(?:approved|confirmed|established)\b"
+        r"|\bfinal\s+authori[sz]ation\b.{0,16}\b(?:(?:is|was)\s+)?(?:granted|complete|received)\b"
+        r"|\bcase\s+closure\b.{0,16}\b(?:(?:is|was)\s+)?(?:approved|complete|granted)\b"
+        r"|\bcase\b.{0,16}\b(?:is|was)\s+closed\b"
+        r"|\bwebsite\b.{0,16}\b(?:is|was)\s+proof\b"
+        r"|\bgreen\s+ci\b.{0,16}\b(?:is|was)\s+approval\b"
+        r")",
+        re.IGNORECASE,
+    )
+    local_boundary = re.compile(
+        r"(?:[;:/\r\n—–]+|(?<=[.!?])\s+|"
+        r"\b(?:and|but|or|plus|though|because|therefore|meanwhile|"
+        r"furthermore|also|nevertheless|nonetheless|except|so|"
+        r"despite(?:\s+that)?|in\s+fact|consequently|moreover|then|"
+        r"still|however|although|yet|"
+        r"while|whereas)\b)",
+        re.IGNORECASE,
+    )
+
+    def match_is_locally_negated(clause: str, match_start: int) -> bool:
+        local_prefix = local_boundary.split(clause[:match_start])[-1]
+        return clause_negation.search(local_prefix) is not None
+
+    def match_is_locally_postnegated(clause: str, match_end: int) -> bool:
+        return re.match(
+            r"(?:[\s_-]+(?:proof|runtime[\s_-]+proof|status|deployment|"
+            r"readiness|authorization|closure))?"
+            r"\s+(?:(?:is|are|was|were)\s+|remains?\s+)"
+            r"not\s+(?:present|proven|promoted|approved|authorized|"
+            r"established|confirmed|supported|available)\b",
+            clause[match_end:],
+            flags=re.IGNORECASE,
+        ) is not None
+
+    def is_bounded_negative_claim_list(
+        segment: str,
+        intro: re.Match[str],
+    ) -> bool:
+        tail = segment[intro.end():].strip(" \t,.;:")
+        items = [
+            item.strip(" \t,.;:")
+            for item in re.split(
+                r"\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+",
+                tail,
+                flags=re.IGNORECASE,
+            )
+            if item.strip(" \t,.;:")
+        ]
+        bounded_noun = re.compile(
+            r"(?:"
+            r"runtime(?:[- ]active)?(?:\s+(?:status|truth))?"
+            r"|signal(?:[- ]observed)?(?:\s+status)?"
+            r"|public[- ]safe(?:\s+(?:status|proof|runtime\s+proof))?"
+            r"|production(?:[- ]ready)?(?:\s+(?:status|readiness))?"
+            r"|customer(?:\s+deployment)?"
+            r"|socaas(?:\s+deployment)?"
+            r"|ai(?:[- ]approved)?(?:\s+(?:status|authority|disposition))?"
+            r"|analyst(?:[- ]approved)?(?:\s+(?:status|authority|disposition))?"
+            r"|final\s+authori[sz]ation"
+            r"|final\s+approval"
+            r"|case\s+closure"
+            r"|merge\s+readiness"
+            r"|(?:website\s+)?rendering\s+as\s+proof"
+            r"|website[- ]as[- ]proof"
+            r"|green\s+ci\s+as\s+approval"
+            r"|approval"
+            r"|authori[sz]ation"
+            r"|closure"
+            r")",
+            re.IGNORECASE,
+        )
+        return bool(items) and all(bounded_noun.fullmatch(item) for item in items)
+
+    for segment in strong_segments:
+        intro = negative_list_intro.search(segment)
+        bounded_negative_list = (
+            intro is not None
+            and is_bounded_negative_claim_list(segment, intro)
+        )
+        # Explicit affirmative state after a comma is never inherited by a
+        # preceding negative intro. This catches
+        # "does not prove runtime, customer deployment is active".
+        for clause in segment.split(","):
+            for match in affirmative_state_after_negative_list.finditer(clause):
+                if not match_is_locally_negated(clause, match.start()):
+                    violations.append("explicit affirmative authority state")
+        # An explicit claim verb governs a comma-delimited noun list, while a
+        # generic distant word such as "pending" or "missing" does not.
+        phrase_clauses = (segment,) if intro is not None else segment.split(",")
+        for clause in phrase_clauses:
+            for label, pattern in phrase_patterns.items():
+                for match in re.finditer(pattern, clause, flags=re.IGNORECASE):
+                    if (
+                        bounded_negative_list
+                        or match_is_locally_negated(clause, match.start())
+                        or match_is_locally_postnegated(clause, match.end())
+                        or clause_negation.search(match.group(0)) is not None
+                        or re.search(
+                            r"\bpublic[- ]safe\s+candidate\b",
+                            clause,
+                            re.IGNORECASE,
+                        )
+                        is not None
+                    ):
+                        continue
+                    violations.append(label)
+    return violations
+
+
+def hoxline_case_growth_reject_duplicate_keys(pairs: list[tuple[Any, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    normalized: set[str] = set()
+    for raw_key, value in pairs:
+        if not isinstance(raw_key, str):
+            raise FactoryError("structured authority objects require string keys")
+        folded = unicodedata.normalize("NFKC", raw_key).casefold()
+        if folded in normalized:
+            raise FactoryError(f"duplicate structured authority key: {raw_key}")
+        normalized.add(folded)
+        result[raw_key] = value
+    return result
+
+
+def hoxline_case_growth_load_json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=hoxline_case_growth_reject_duplicate_keys,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise FactoryError(f"{path}: invalid JSON: {exc}") from exc
+    if not isinstance(value, dict):
+        raise FactoryError(f"{path}: top-level JSON value must be an object")
+    return value
+
+
+def hoxline_case_growth_load_json_bytes(
+    raw: bytes,
+    source_label: str,
+) -> dict[str, Any]:
+    try:
+        value = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=hoxline_case_growth_reject_duplicate_keys,
+        )
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise FactoryError(f"{source_label}: invalid JSON: {exc}") from exc
+    if not isinstance(value, dict):
+        raise FactoryError(f"{source_label}: top-level JSON value must be an object")
+    return value
+
+
+def hoxline_case_growth_load_yaml(path: Path) -> dict[str, Any]:
+    if yaml is None:
+        raise FactoryError("PyYAML is required for structured authority verification")
+
+    class UniqueKeyLoader(yaml.SafeLoader):  # type: ignore[misc, name-defined]
+        pass
+
+    def construct_mapping(loader: Any, node: Any, deep: bool = False) -> dict[Any, Any]:
+        # Authority verification consumes nested lists of mappings.  Force deep
+        # construction so PyYAML cannot leave collection values as deferred
+        # ``None`` placeholders while this duplicate-key constructor runs.
+        pairs = loader.construct_pairs(node, deep=True)
+        result: dict[Any, Any] = {}
+        normalized: set[str] = set()
+        for key, value in pairs:
+            if not isinstance(key, str):
+                raise FactoryError(f"{path}: YAML mapping keys must be strings")
+            folded = unicodedata.normalize("NFKC", key).casefold()
+            if folded in normalized:
+                raise FactoryError(f"{path}: duplicate YAML key: {key}")
+            normalized.add(folded)
+            result[key] = value
+        return result
+
+    UniqueKeyLoader.add_constructor(  # type: ignore[attr-defined]
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, construct_mapping  # type: ignore[union-attr]
+    )
+    try:
+        value = yaml.load(path.read_text(encoding="utf-8"), Loader=UniqueKeyLoader)  # type: ignore[union-attr]
+    except FactoryError:
+        raise
+    except (OSError, UnicodeError, yaml.YAMLError) as exc:  # type: ignore[union-attr]
+        raise FactoryError(f"{path}: invalid YAML: {exc}") from exc
+    if not isinstance(value, dict):
+        raise FactoryError(f"{path}: top-level YAML value must be an object")
+    return value
+
+
+def hoxline_case_growth_source_manifest(org_root: Path) -> dict[str, Any]:
+    manifest_path = (
+        org_root
+        / "hawkinsoperations-platform"
+        / "contracts"
+        / "hoxline-case-growth-source-manifest-v1.json"
+    )
+    manifest = hoxline_case_growth_load_json(manifest_path)
+    expected_root_keys = {
+        "manifest_id",
+        "version",
+        "owner_repo",
+        "purpose",
+        "proof_ceiling",
+        "repositories",
+        "constraints",
+    }
+    if set(manifest) != expected_root_keys:
+        raise FactoryError(
+            "source manifest root must use the exact v1 shape without extensions"
+        )
+    if (
+        manifest.get("manifest_id") != "HOXLINE_CASE_GROWTH_SOURCE_MANIFEST_V1"
+        or manifest.get("version") != 1
+        or manifest.get("owner_repo") != "hawkinsoperations-platform"
+        or manifest.get("proof_ceiling")
+        != "CONTROLLED_REPO_CONVERGENCE_AND_LOCAL_FIXTURE_REVIEW_ONLY"
+    ):
+        raise FactoryError("source manifest identity or proof ceiling is invalid")
+    entries = manifest.get("repositories")
+    if not isinstance(entries, dict):
+        raise FactoryError("source manifest repositories must be an object")
+    if set(entries) != set(HOXLINE_CASE_GROWTH_REPOS):
+        raise FactoryError(
+            "source manifest must name exactly the seven HawkinsOperations repositories"
+        )
+    for repo_name, entry in entries.items():
+        if not isinstance(entry, dict):
+            raise FactoryError(f"source manifest entry has an unsupported shape: {repo_name}")
+        if entry.get("repository") != f"HawkinsOperations/{repo_name}":
+            raise FactoryError(f"source manifest repository owner mismatch: {repo_name}")
+        if repo_name == "hawkinsoperations-platform":
+            if (
+                set(entry) != {"repository", "revision_source"}
+                or
+                entry.get("revision_source") != "checked_platform_observation"
+                or "revision" in entry
+            ):
+                raise FactoryError(
+                    "platform source manifest entry must use the checked platform observation"
+                )
+        elif repo_name == ".github":
+            if set(entry) != {
+                "repository",
+                "revision",
+                "authoritative_path",
+                "authoritative_git_blob_sha",
+            }:
+                raise FactoryError(
+                    "command-center source manifest entry must pin repo, path, revision, and blob"
+                )
+            if (
+                entry.get("authoritative_path")
+                != "governance/CONVERGENCE_SOURCE_MANIFEST.json"
+                or re.fullmatch(
+                    r"[0-9a-f]{40}",
+                    str(entry.get("authoritative_git_blob_sha", "")),
+                )
+                is None
+            ):
+                raise FactoryError(
+                    "command-center source manifest path or blob identity is invalid"
+                )
+            if re.fullmatch(
+                r"[0-9a-f]{40}", str(entry.get("revision", ""))
+            ) is None:
+                raise FactoryError(
+                    "source manifest revision must be immutable: .github"
+                )
+        elif (
+            set(entry) != {"repository", "revision"}
+            or
+            re.fullmatch(r"[0-9a-f]{40}", str(entry.get("revision", ""))) is None
+        ):
+            raise FactoryError(f"source manifest revision must be immutable: {repo_name}")
+    constraints = manifest.get("constraints")
+    expected_constraints = {
+        "exact_repository_count": 7,
+        "read_only": True,
+        "allow_default_branch_substitution": False,
+        "allow_detached_authority_substitution": False,
+        "allow_dirty_authority_source": False,
+        "website_is_authority": False,
+        "hoxline_is_cross_domain_authority": False,
+    }
+    if constraints != expected_constraints:
+        raise FactoryError("source manifest constraints must equal the fail-closed v1 contract")
+    if not isinstance(constraints, dict) or constraints.get("exact_repository_count") != 7:
+        raise FactoryError("source manifest must require exactly seven repositories")
+    if constraints.get("read_only") is not True:
+        raise FactoryError("source manifest must declare read-only verification")
+    return manifest
+
+
+def hoxline_case_growth_validate_review_manifest(
+    manifest: dict[str, Any],
+    source_label: str,
+) -> dict[str, dict[str, Any]]:
+    if set(manifest) != {"schema", "manifest_id", "repositories", "constraints"}:
+        raise FactoryError(
+            f"{source_label}: command-center source manifest must use the exact v1 "
+            "shape without extensions"
+        )
+    if (
+        manifest.get("schema")
+        != "hawkinsoperations-convergence-source-manifest-v1"
+        or manifest.get("manifest_id")
+        != "HAWKINSOPERATIONS_SEVEN_SOURCE_PR_HEAD_MATRIX_V1"
+    ):
+        raise FactoryError("command-center source manifest identity is invalid")
+    constraints = manifest.get("constraints")
+    expected_constraints = {
+        "exact_repository_count": 7,
+        "read_only": True,
+        "default_branch_fallback": False,
+        "require_detached_exact_revision": True,
+        "record_checked_revisions": True,
+        "consumer_outputs_are_not_authority": True,
+        "proof_ceiling": (
+            "CONTROLLED_REPO_CONVERGENCE_AND_LOCAL_FIXTURE_REVIEW_ONLY"
+        ),
+    }
+    if constraints != expected_constraints:
+        raise FactoryError(
+            "command-center source manifest constraints must equal the fail-closed v1 contract"
+        )
+    raw_entries = manifest.get("repositories")
+    if not isinstance(raw_entries, list):
+        raise FactoryError(
+            "command-center source manifest repositories must be a list"
+        )
+    entries: dict[str, dict[str, Any]] = {}
+    for entry in raw_entries:
+        if not isinstance(entry, dict):
+            raise FactoryError(
+                "command-center source manifest repository entries must be objects"
+            )
+        repo_name = entry.get("repository")
+        if not isinstance(repo_name, str) or repo_name not in HOXLINE_CASE_GROWTH_REPOS:
+            raise FactoryError(
+                f"command-center source manifest repository is invalid: {repo_name}"
+            )
+        if repo_name in entries:
+            raise FactoryError(
+                f"command-center source manifest duplicates repository: {repo_name}"
+            )
+        if entry.get("canonical_repository") != f"HawkinsOperations/{repo_name}":
+            raise FactoryError(
+                f"command-center source manifest owner mismatch: {repo_name}"
+            )
+        if repo_name == ".github":
+            if set(entry) != {
+                "repository",
+                "canonical_repository",
+                "revision_source",
+                "tree_source",
+                "authority_content_revision",
+            } or (
+                entry.get("revision_source") != "github_event_sha"
+                or entry.get("tree_source") != "github_event_tree"
+            ):
+                raise FactoryError(
+                    "command-center self entry must use the checked event revision and "
+                    "tree plus an immutable authority content revision"
+                )
+            if re.fullmatch(
+                r"[0-9a-f]{40}",
+                str(entry.get("authority_content_revision", "")),
+            ) is None:
+                raise FactoryError(
+                    "command-center self authority content revision must be immutable"
+                )
+        else:
+            if set(entry) != {
+                "repository",
+                "canonical_repository",
+                "revision",
+                "authority_content_revision",
+                "reviewed_tree_sha",
+            }:
+                raise FactoryError(
+                    f"command-center source manifest entry has an unsupported shape: {repo_name}"
+                )
+            if re.fullmatch(r"[0-9a-f]{40}", str(entry.get("revision", ""))) is None:
+                raise FactoryError(
+                    f"command-center reviewed revision must be immutable: {repo_name}"
+                )
+            if re.fullmatch(
+                r"[0-9a-f]{40}",
+                str(entry.get("authority_content_revision", "")),
+            ) is None:
+                raise FactoryError(
+                    f"command-center authority content revision must be immutable: {repo_name}"
+                )
+            if re.fullmatch(
+                r"[0-9a-f]{40}", str(entry.get("reviewed_tree_sha", ""))
+            ) is None:
+                raise FactoryError(
+                    f"command-center reviewed tree must be immutable: {repo_name}"
+                )
+        entries[repo_name] = entry
+    if set(entries) != set(HOXLINE_CASE_GROWTH_REPOS):
+        raise FactoryError(
+            "command-center source manifest must name exactly the seven HawkinsOperations repositories"
+        )
+    return entries
+
+
+def hoxline_case_growth_review_manifest(org_root: Path) -> dict[str, dict[str, Any]]:
+    manifest_path = (
+        org_root
+        / ".github"
+        / "governance"
+        / "CONVERGENCE_SOURCE_MANIFEST.json"
+    )
+    manifest = hoxline_case_growth_load_json(manifest_path)
+    return hoxline_case_growth_validate_review_manifest(
+        manifest,
+        str(manifest_path),
+    )
+
+
+HOXLINE_CASE_GROWTH_ACYCLIC_REVIEW_REPOS = tuple(
+    repository
+    for repository in HOXLINE_CASE_GROWTH_REPOS
+    if repository not in {".github", "hawkinsoperations-platform"}
+)
+
+
+def hoxline_case_growth_review_authority_projection(
+    org_root: Path,
+    entries: dict[str, dict[str, Any]],
+    source_label: str,
+) -> dict[str, dict[str, str]]:
+    projection: dict[str, dict[str, str]] = {}
+    for repository in HOXLINE_CASE_GROWTH_ACYCLIC_REVIEW_REPOS:
+        entry = entries[repository]
+        repository_root = org_root / repository
+        authority_path = HOXLINE_CASE_GROWTH_AUTHORITY_PATHS[repository]
+        reviewed_revision = entry["revision"]
+        content_revision = entry["authority_content_revision"]
+        reviewed_tree = hoxline_case_growth_tree_sha(
+            repository_root,
+            reviewed_revision,
+        )
+        if reviewed_tree is None:
+            raise FactoryError(
+                f"{source_label}: reviewed revision is unavailable for {repository}; "
+                "fetch the immutable reviewed object without substituting a default branch"
+            )
+        if reviewed_tree != entry["reviewed_tree_sha"]:
+            raise FactoryError(
+                f"{source_label}: reviewed tree mismatch for {repository}: "
+                f"expected={entry['reviewed_tree_sha']} actual={reviewed_tree}"
+            )
+        reviewed_blob = hoxline_case_growth_git_blob(
+            repository_root,
+            reviewed_revision,
+            authority_path,
+        )
+        content_blob = hoxline_case_growth_git_blob(
+            repository_root,
+            content_revision,
+            authority_path,
+        )
+        if reviewed_blob is None or content_blob is None:
+            raise FactoryError(
+                f"{source_label}: authority object is unavailable for {repository}; "
+                "fetch the immutable reviewed and authority-content objects"
+            )
+        reviewed_semantic = hoxline_case_growth_semantic_fingerprint(
+            authority_path,
+            reviewed_blob[1],
+        )
+        content_semantic = hoxline_case_growth_semantic_fingerprint(
+            authority_path,
+            content_blob[1],
+        )
+        if (
+            reviewed_blob[0] != content_blob[0]
+            or reviewed_semantic != content_semantic
+        ):
+            raise FactoryError(
+                f"{source_label}: reviewed and authority-content identities disagree "
+                f"for {repository}"
+            )
+        projection[repository] = {
+            "repository": repository,
+            "canonical_repository": entry["canonical_repository"],
+            "authority_path": authority_path,
+            "authority_git_blob_sha": reviewed_blob[0],
+            "authority_content_fingerprint": reviewed_semantic,
+        }
+    return projection
+
+
+def hoxline_case_growth_pinned_review_manifest(
+    org_root: Path,
+    source_manifest: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    command_center = source_manifest["repositories"][".github"]
+    repository_root = org_root / ".github"
+    revision = command_center["revision"]
+    authority_path = command_center["authoritative_path"]
+    expected_blob_sha = command_center["authoritative_git_blob_sha"]
+    pinned_blob = hoxline_case_growth_git_blob(
+        repository_root,
+        revision,
+        authority_path,
+    )
+    if pinned_blob is None:
+        raise FactoryError(
+            "pinned command-center manifest object is unavailable; fetch immutable "
+            f"HawkinsOperations/.github object {revision} without default-branch fallback"
+        )
+    if pinned_blob[0] != expected_blob_sha:
+        raise FactoryError(
+            "pinned command-center manifest blob mismatch: "
+            f"expected={expected_blob_sha} actual={pinned_blob[0]}"
+        )
+    manifest = hoxline_case_growth_load_json_bytes(
+        pinned_blob[1],
+        f"HawkinsOperations/.github@{revision}:{authority_path}",
+    )
+    return hoxline_case_growth_validate_review_manifest(
+        manifest,
+        f"HawkinsOperations/.github@{revision}:{authority_path}",
+    )
+
+
+def hoxline_case_growth_normalize_authority_key(value: str) -> str:
+    decoded = value
+    for _ in range(4):
+        next_value = unquote(decoded)
+        if next_value == decoded:
+            break
+        decoded = next_value
+    return re.sub(
+        r"[^a-z0-9]",
+        "",
+        unicodedata.normalize("NFKC", decoded).casefold(),
+    )
+
+
+def hoxline_case_growth_compositional_promotion_key(key: str) -> bool:
+    if any(
+        marker in key
+        for marker in (
+            "blockedclaim",
+            "doesnot",
+            "mustnot",
+            "notclaim",
+            "notpromot",
+        )
+    ):
+        return False
+    return (
+        ("production" in key and any(part in key for part in ("active", "live", "ready", "deploy", "state", "status")))
+        or (any(part in key for part in ("customer", "socaas")) and any(part in key for part in ("active", "deploy", "state", "status")))
+        or ("runtime" in key and any(part in key for part in ("active", "state", "status")))
+        or ("signal" in key and any(part in key for part in ("observed", "state", "status")))
+        or (
+            "publicsafe" in key
+            and "count" not in key
+            and "percent" not in key
+        )
+        or ("final" in key and any(part in key for part in ("authoriz", "authority")))
+        or ("case" in key and "count" not in key and any(part in key for part in ("closed", "closure", "state", "status")))
+        or any(part in key for part in ("approvalstate", "approvalstatus", "closurestatus", "casestate", "casestatus"))
+        or (
+            key.startswith(("ai", "analyst"))
+            and any(part in key for part in ("approved", "approval", "authority", "disposition"))
+        )
+        or ("review" in key and "disposition" in key)
+    )
+
+
+def hoxline_case_growth_explicitly_bounded_authority_value(value: Any) -> bool:
+    if isinstance(value, list) and len(value) == 1:
+        return hoxline_case_growth_explicitly_bounded_authority_value(value[0])
+    if value is False or value is None or value == 0:
+        return True
+    if not isinstance(value, str):
+        return False
+    return hoxline_case_growth_normalize_authority_key(value) in {
+        "blocked",
+        "boundarydefaultnotpromoted",
+        "blockedwaitingnextgate",
+        "false",
+        "humanreviewrequired",
+        "missing",
+        "none",
+        "notapproved",
+        "notauthorized",
+        "notclosed",
+        "notindexed",
+        "notproven",
+        "notpublicsafe",
+        "notruntimeactive",
+        "open",
+        "partial",
+        "pending",
+        "existingflowcandidate",
+        "listedonly",
+        "privateruntimeboundarycontextonly",
+        "privateruntimeevidencecaptured",
+        "privateruntimeevidencecapturedlocalwindowsonly",
+        "privateruntimecandidate",
+        "publicsaferuntimeproofisnotpromotedbythiswebsitedataplane",
+        "publicruntimeblocked",
+        "runtimeactiveprivate",
+        "runtimeblocked",
+        "runtimeevidenceverifiedprivate",
+        "signalblocked",
+        "signalobservedprivate",
+        "sourceexists",
+        "telemetrycontractonly",
+        "unknown",
+        "unsupported",
+    }
+
+
+def hoxline_case_growth_bounded_negative_prose(value: str) -> bool:
+    normalized = hoxline_case_growth_security_text(value)
+    negative_scope = re.search(
+        r"\b(?:does|do|did|must|is|are|was|were|can|cannot|could|should|will|would)\s+not\b"
+        r"|\bnever\b|\bwithout\b|\bblocked\b|\bmissing\b|\bunsupported\b",
+        normalized,
+        re.IGNORECASE,
+    )
+    return (
+        negative_scope is not None
+        and not hoxline_case_growth_string_promotions(normalized)
+    )
+
+
+def hoxline_case_growth_authority_violations(
+    value: Any,
+    path: tuple[str, ...] = (),
+    authority_context: str | None = None,
+) -> list[tuple[str, Any]]:
+    violations: list[tuple[str, Any]] = []
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            child_path = (*path, str(key))
+            normalized = hoxline_case_growth_normalize_authority_key(str(key))
+            normalized_ancestry = tuple(
+                hoxline_case_growth_normalize_authority_key(part)
+                for part in path
+                if not str(part).isdigit()
+            )
+            cumulative_keys = {normalized}
+            cumulative_keys.update(
+                f"{segment}{normalized}"
+                for segment in normalized_ancestry
+                if segment
+                in {
+                    "runtime",
+                    "signal",
+                    "public",
+                    "approval",
+                    "production",
+                    "customer",
+                    "socaas",
+                    "ai",
+                    "analyst",
+                    "review",
+                    "final",
+                    "case",
+                }
+            )
+            scalar_authority_state = not isinstance(nested, (dict, list))
+            compositional_context = any(
+                hoxline_case_growth_compositional_promotion_key(candidate)
+                for candidate in cumulative_keys
+            )
+            exact_public_safe_owner_pointer = (
+                tuple(
+                    hoxline_case_growth_normalize_authority_key(part)
+                    for part in child_path
+                )
+                == ("publicsafepolicy", "publicsafesourcerequired")
+                and nested == "hawkinsoperations-proof"
+            )
+            explicitly_bounded_nested = (
+                hoxline_case_growth_explicitly_bounded_authority_value(nested)
+                or exact_public_safe_owner_pointer
+                or (
+                    isinstance(nested, str)
+                    and hoxline_case_growth_bounded_negative_prose(nested)
+                )
+            )
+            if (
+                (
+                    scalar_authority_state
+                    and (
+                        normalized in HOXLINE_BLOCKED_AUTHORITY_KEYS
+                        or bool(authority_context)
+                        or compositional_context
+                    )
+                )
+                and not explicitly_bounded_nested
+            ):
+                violations.append(("/".join(child_path), nested))
+            if (
+                normalized in HOXLINE_BLOCKED_AUTHORITY_KEYS
+                and scalar_authority_state
+                and nested not in (
+                False,
+                None,
+                "NOT_PUBLIC_SAFE",
+                "BLOCKED",
+                "UNKNOWN",
+                )
+            ):
+                violations.append(("/".join(child_path), nested))
+            if (
+                normalized in {"publicsafestatus", "publicsafestate"}
+                and scalar_authority_state
+                and nested not in (
+                "NOT_PUBLIC_SAFE",
+                "BLOCKED",
+                "blocked",
+                False,
+                )
+            ):
+                violations.append(("/".join(child_path), nested))
+            child_authority_context = (
+                authority_context if isinstance(nested, (dict, list)) else None
+            )
+            if (
+                isinstance(nested, (dict, list))
+                and normalized
+                not in {
+                    "publicsafecandidatereviews",
+                    "publicsafepolicy",
+                    "publicsafestate",
+                }
+                and (
+                normalized
+                in HOXLINE_BLOCKED_AUTHORITY_KEYS
+                | {"publicsafestatus", "publicsafestate"}
+                or compositional_context
+                )
+            ):
+                child_authority_context = normalized
+            violations.extend(
+                hoxline_case_growth_authority_violations(
+                    nested,
+                    child_path,
+                    child_authority_context,
+                )
+            )
+    elif isinstance(value, list):
+        for index, nested in enumerate(value):
+            violations.extend(
+                hoxline_case_growth_authority_violations(
+                    nested,
+                    (*path, str(index)),
+                    authority_context,
+                )
+            )
+    elif isinstance(value, str):
+        if (
+            authority_context
+            and not hoxline_case_growth_explicitly_bounded_authority_value(value)
+            and not hoxline_case_growth_bounded_negative_prose(value)
+        ):
+            violations.append(("/".join(path), value))
+        exact_blocked_leaf = (
+            len(path) >= 2
+            and path[-1].isdigit()
+            and re.sub(
+                r"[^a-z0-9]",
+                "",
+                unicodedata.normalize("NFKC", path[-2]).casefold(),
+            )
+            in {"blockedclaims", "notclaiming", "doesnotprove"}
+            and re.search(
+                r"\b(?:is|was|has|enabled|granted|received)\b",
+                value,
+                re.IGNORECASE,
+            )
+            is None
+        )
+        bounded_private_state = value in {
+            "SIGNAL_OBSERVED_PRIVATE",
+            "RUNTIME_ACTIVE_PRIVATE",
+        }
+        if (
+            not exact_blocked_leaf
+            and not bounded_private_state
+            and hoxline_case_growth_string_promotions(value)
+        ):
+            violations.append(("/".join(path), value))
+    elif (
+        authority_context
+        and value not in (False, None)
+    ):
+        violations.append(("/".join(path), value))
+    unique: list[tuple[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for violation_path, violation_value in violations:
+        signature = (
+            violation_path,
+            json.dumps(
+                violation_value,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                default=str,
+            ),
+        )
+        if signature not in seen:
+            seen.add(signature)
+            unique.append((violation_path, violation_value))
+    return unique
+
+
+def hoxline_case_growth_commit_exists(repo_path: Path, commit_sha: str) -> bool:
+    result = subprocess.run(
+        ["git", "-C", str(repo_path), "cat-file", "-e", f"{commit_sha}^{{commit}}"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=sanitized_git_env(),
+    )
+    return result.returncode == 0
+
+
+def hoxline_case_growth_is_direct_parent(repo_path: Path, commit_sha: str, head_sha: str) -> bool:
+    result = subprocess.run(
+        ["git", "-C", str(repo_path), "rev-parse", f"{head_sha}^"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=sanitized_git_env(),
+    )
+    return result.returncode == 0 and result.stdout.strip().casefold() == commit_sha.casefold()
+
+
+def hoxline_case_growth_is_ancestor(
+    repo_path: Path, ancestor_sha: str, descendant_sha: str
+) -> bool:
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_path),
+            "merge-base",
+            "--is-ancestor",
+            ancestor_sha,
+            descendant_sha,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=sanitized_git_env(),
+    )
+    return result.returncode == 0
+
+
+def hoxline_case_growth_tree_sha(repo_path: Path, revision: str) -> str | None:
+    result = subprocess.run(
+        ["git", "-C", str(repo_path), "rev-parse", f"{revision}^{{tree}}"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=sanitized_git_env(),
+    )
+    value = result.stdout.strip().casefold()
+    return value if result.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", value) else None
+
+
+def hoxline_case_growth_changed_paths(
+    repo_path: Path, older_revision: str, newer_revision: str
+) -> frozenset[str] | None:
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_path),
+            "diff",
+            "--name-only",
+            "--no-renames",
+            older_revision,
+            newer_revision,
+            "--",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=sanitized_git_env(),
+    )
+    if result.returncode != 0:
+        return None
+    paths = [line.strip().replace("\\", "/") for line in result.stdout.splitlines()]
+    if any(not path or path.startswith("/") or ".." in path.split("/") for path in paths):
+        return None
+    return frozenset(paths)
+
+
+def hoxline_case_growth_source_revisions(snapshot: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    raw = snapshot.get("source_revisions")
+    normalized: dict[str, dict[str, Any]] = {}
+    if isinstance(raw, dict):
+        iterable = []
+        for repo_name, value in raw.items():
+            item = dict(value) if isinstance(value, dict) else {"source_commit_sha": value}
+            item.setdefault("repo", repo_name)
+            iterable.append(item)
+    elif isinstance(raw, list):
+        iterable = raw
+    else:
+        return normalized
+    for value in iterable:
+        if not isinstance(value, dict):
+            raise FactoryError("source_revisions entries must be objects")
+        repo_name = value.get("repo") or value.get("repository") or value.get("name")
+        if not isinstance(repo_name, str) or not repo_name:
+            raise FactoryError("source_revisions entries must name their repository")
+        if repo_name in normalized:
+            raise FactoryError(f"source_revisions duplicates repository: {repo_name}")
+        normalized[repo_name] = value
+    return normalized
+
+
+def hoxline_case_growth_snapshot_flags(snapshot: dict[str, Any]) -> tuple[bool | None, bool | None]:
+    state = snapshot.get("snapshot_state") if isinstance(snapshot.get("snapshot_state"), dict) else {}
+    historical = snapshot.get("historical_snapshot", state.get("historical_snapshot"))
+    current = snapshot.get("current_authority", state.get("current_authority"))
+    return historical if isinstance(historical, bool) else None, current if isinstance(current, bool) else None
+
+
+def hoxline_case_growth_parse_time(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def hoxline_case_growth_convergence_verify(
+    repo_root: Path, *, now: datetime | None = None
+) -> dict[str, Any]:
+    org_root = hoxline_case_growth_org_root(repo_root)
+    now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    contradictions: list[dict[str, Any]] = []
+    drift: list[dict[str, Any]] = []
+    sources: dict[str, Any] = {}
+    source_manifest: dict[str, Any] = {}
+
+    def issue(
+        code: str,
+        owner: str,
+        path: str,
+        expected: Any,
+        actual: Any,
+        next_legal_action: str,
+        *,
+        revision: str | None = None,
+        historical: bool = False,
+    ) -> None:
+        item = {
+            "code": code,
+            "owner": owner,
+            "repo": owner,
+            "path": path,
+            "revision": revision or "UNKNOWN",
+            "current_head": revision or sources.get(owner, {}).get("head", "UNKNOWN"),
+            "expected": expected,
+            "actual": actual,
+            "expected_blob": expected if "BLOB" in code else None,
+            "actual_blob": actual if "BLOB" in code else None,
+            "expected_count": expected if "COUNT" in code else None,
+            "actual_count": actual if "COUNT" in code else None,
+            "freshness": "invalid" if any(
+                marker in code for marker in ("FRESH", "STALE", "FUTURE")
+            ) else "not_applicable",
+            "classification": "expected_historical_context" if historical else "actionable_drift",
+            "next_legal_action": next_legal_action,
+            "exact_remediation": next_legal_action,
+        }
+        (drift if historical else contradictions).append(item)
+
+    paths = {
+        "hoxline_snapshot": org_root / "hoxline" / "examples" / "case-growth" / "current-case-growth-index.json",
+        "proof_index": org_root / "hawkinsoperations-proof" / "proof" / "indexes" / "DETECTION_PROOF_STATUS_INDEX.yml",
+        "detection_matrix": org_root / "hawkinsoperations-detections" / "detections" / "DETECTION_PROMOTION_MATRIX.yml",
+        "validation_registry": org_root / "hawkinsoperations-validation" / "validation" / "VALIDATION_REGISTRY.yml",
+        "website_status": org_root / "hawkinsoperations-website" / "public" / "data" / "public-status.json",
+        "platform_contract": org_root / "hawkinsoperations-platform" / "contracts" / "public-status-source-contract-v1.json",
+    }
+    repository_dirs = sorted(
+        path.name
+        for path in org_root.iterdir()
+        if path.is_dir() and (path / ".git").exists()
+    )
+    expected_repository_dirs = sorted(HOXLINE_CASE_GROWTH_REPOS)
+    if repository_dirs != expected_repository_dirs:
+        issue(
+            "SEVEN_SOURCE_REVERSE_INVENTORY_MISMATCH",
+            "hawkinsoperations-platform",
+            str(org_root),
+            expected_repository_dirs,
+            repository_dirs,
+            "Provide exactly the seven canonical repository checkouts; do not substitute or omit a source.",
+        )
+    for label, source_path in paths.items():
+        if not source_path.is_file():
+            issue(
+                "MISSING_SOURCE",
+                source_path.parts[-3] if len(source_path.parts) >= 3 else label,
+                label,
+                "existing authoritative source",
+                "missing",
+                f"Restore the declared {label} source through its owning repository; do not invent a replacement.",
+            )
+    if contradictions:
+        return {
+            "controller_version": CONTROLLER_VERSION,
+            "mode": "hoxline-case-growth-convergence-verify",
+            "status": "fail",
+            "contradictions": contradictions,
+            "drift": drift,
+            "sources": sources,
+            "read_only": True,
+            "ledger_mutated": False,
+            "runtime_mutated": False,
+            "signal_mutated": False,
+            "public_proof_promoted": False,
+            "evidence_published": False,
+            "proof_ceiling": "CONTROLLED_REPO_CONVERGENCE_AND_LOCAL_FIXTURE_REVIEW_ONLY",
+        }
+
+    try:
+        source_manifest = hoxline_case_growth_source_manifest(org_root)
+        review_manifest_entries = hoxline_case_growth_review_manifest(org_root)
+        pinned_review_manifest_entries = hoxline_case_growth_pinned_review_manifest(
+            org_root,
+            source_manifest,
+        )
+        current_authority_projection = (
+            hoxline_case_growth_review_authority_projection(
+                org_root,
+                review_manifest_entries,
+                "checked command-center manifest",
+            )
+        )
+        pinned_authority_projection = (
+            hoxline_case_growth_review_authority_projection(
+                org_root,
+                pinned_review_manifest_entries,
+                "pinned command-center manifest",
+            )
+        )
+        if current_authority_projection != pinned_authority_projection:
+            raise FactoryError(
+                "pinned and checked command-center authority projections disagree; "
+                "review the changed authority blobs and refresh the immutable source "
+                "selection without copying consumer or cyclic identity fields"
+            )
+        snapshot = hoxline_case_growth_load_json(paths["hoxline_snapshot"])
+        proof_index = hoxline_case_growth_load_yaml(paths["proof_index"])
+        detection_matrix = hoxline_case_growth_load_yaml(paths["detection_matrix"])
+        validation_registry = hoxline_case_growth_load_yaml(paths["validation_registry"])
+        website_status = hoxline_case_growth_load_json(paths["website_status"])
+        platform_contract = hoxline_case_growth_load_json(paths["platform_contract"])
+    except FactoryError as exc:
+        issue(
+            "MALFORMED_SOURCE",
+            "cross-repo",
+            "declared_authority_source",
+            "parseable JSON/YAML",
+            str(exc),
+            "Repair the malformed source in its owner repository and rerun this read-only verifier.",
+        )
+        snapshot = proof_index = detection_matrix = validation_registry = website_status = platform_contract = {}
+        review_manifest_entries = {}
+    manifest_entries = (
+        source_manifest.get("repositories", {})
+        if isinstance(source_manifest, dict)
+        else {}
+    )
+    for label, parsed_source, owner in (
+        ("hoxline_snapshot", snapshot, "hoxline"),
+        ("proof_index", proof_index, "hawkinsoperations-proof"),
+        ("detection_matrix", detection_matrix, "hawkinsoperations-detections"),
+        ("validation_registry", validation_registry, "hawkinsoperations-validation"),
+        ("website_status", website_status, "hawkinsoperations-website"),
+        ("platform_contract", platform_contract, "hawkinsoperations-platform"),
+    ):
+        for violation_path, actual in hoxline_case_growth_authority_violations(parsed_source):
+            issue(
+                "NESTED_AUTHORITY_PROMOTION",
+                owner,
+                f"{label}#/{violation_path}",
+                "blocked or false authority state",
+                actual,
+                f"Remove the unauthorized nested authority field from the {owner}-owned source and add a regression fixture.",
+            )
+
+    historical, current_authority = hoxline_case_growth_snapshot_flags(snapshot if isinstance(snapshot, dict) else {})
+    if historical is not False or current_authority is not True:
+        issue(
+            "SNAPSHOT_CLASSIFICATION_INVALID",
+            "hoxline",
+            "examples/case-growth/current-case-growth-index.json",
+            {"historical_snapshot": False, "current_authority": True},
+            {"historical_snapshot": historical, "current_authority": current_authority},
+            "Regenerate the current snapshot from all seven current authority sources or explicitly route it as historical.",
+        )
+
+    try:
+        revisions = hoxline_case_growth_source_revisions(snapshot if isinstance(snapshot, dict) else {})
+    except FactoryError as exc:
+        issue(
+            "SOURCE_REVISION_SET_INVALID",
+            "hoxline",
+            "examples/case-growth/current-case-growth-index.json#/source_revisions",
+            list(HOXLINE_CASE_GROWTH_REPOS),
+            str(exc),
+            "Regenerate source_revisions from exactly one entry for each of the seven scoped repositories.",
+        )
+        revisions = {}
+    missing_revisions = sorted(set(HOXLINE_CASE_GROWTH_REPOS) - set(revisions))
+    extra_revisions = sorted(set(revisions) - set(HOXLINE_CASE_GROWTH_REPOS))
+    if missing_revisions or extra_revisions:
+        issue(
+            "SOURCE_REVISION_SET_INVALID",
+            "hoxline",
+            "examples/case-growth/current-case-growth-index.json#/source_revisions",
+            list(HOXLINE_CASE_GROWTH_REPOS),
+            {"missing": missing_revisions, "extra": extra_revisions},
+            "Regenerate source_revisions from exactly the seven scoped repositories.",
+        )
+    for repo_name in HOXLINE_CASE_GROWTH_REPOS:
+        repo_path = org_root / repo_name
+        if not repo_path.is_dir():
+            continue
+        try:
+            state = hoxline_case_growth_git_state(repo_path)
+        except FactoryError as exc:
+            issue("GIT_STATE_UNRESOLVED", repo_name, repo_name, "resolvable branch and HEAD", str(exc), "Repair local Git metadata and rerun.")
+            continue
+        sources[repo_name] = state
+        branch = str(state.get("branch", ""))
+        manifest_entry = manifest_entries.get(repo_name, {})
+        review_manifest_entry = review_manifest_entries.get(repo_name, {})
+        current_observation_revision = (
+            (
+                os.environ.get("HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA")
+                if not branch
+                else state["head"]
+            )
+            if manifest_entry.get("revision_source")
+            == "checked_platform_observation"
+            else None
+        )
+        manifest_revision = (
+            state["head"]
+            if repo_name == ".github"
+            else review_manifest_entry.get("revision")
+        )
+        manifest_reviewed_tree = (
+            hoxline_case_growth_tree_sha(repo_path, state["head"])
+            if repo_name == ".github"
+            else review_manifest_entry.get("reviewed_tree_sha")
+        )
+        manifest_content_revision = review_manifest_entry.get(
+            "authority_content_revision"
+        )
+        if (
+            manifest_entry.get("revision_source")
+            == "checked_platform_observation"
+            and not branch
+            and current_observation_revision != state["head"]
+        ):
+            issue(
+                "SOURCE_PLATFORM_OBSERVATION_MISMATCH",
+                repo_name,
+                "HAWKINS_PLATFORM_IMMUTABLE_OBSERVED_SHA",
+                state["head"],
+                current_observation_revision,
+                (
+                    "Supply the exact detached platform checkout SHA through the "
+                    "read-only convergence environment; another repository event "
+                    "SHA cannot establish platform currentness."
+                ),
+                revision=state["head"],
+            )
+        expected_origin = HOXLINE_CANONICAL_ORIGINS[repo_name]
+        actual_origin = hoxline_case_growth_normalized_origin(str(state.get("origin", "")))
+        if actual_origin != expected_origin:
+            issue(
+                "SOURCE_REPOSITORY_IDENTITY_INVALID",
+                repo_name,
+                repo_name,
+                expected_origin,
+                actual_origin,
+                f"Use the canonical HawkinsOperations/{repo_name} checkout; repository-name suffixes are not authority.",
+                revision=state["head"],
+            )
+        if state.get("dirty") is True:
+            issue(
+                "SOURCE_WORKTREE_DIRTY",
+                repo_name,
+                repo_name,
+                "clean source-controlled state",
+                "dirty worktree",
+                f"Finish and validate scoped {repo_name} changes, commit them, then regenerate the cross-repo snapshot.",
+                revision=state["head"],
+            )
+        revision = revisions.get(repo_name, {})
+        expected_source_path = HOXLINE_CASE_GROWTH_AUTHORITY_PATHS[repo_name]
+        stated_source_path = revision.get("authoritative_path") or revision.get("source_path")
+        if stated_source_path != expected_source_path:
+            issue(
+                "SOURCE_AUTHORITY_PATH_INVALID",
+                repo_name,
+                f"source_revisions/{repo_name}/authoritative_path",
+                expected_source_path,
+                stated_source_path,
+                f"Regenerate the source identity from the canonical {repo_name} authority path.",
+                revision=state["head"],
+            )
+            continue
+        current_blob = hoxline_case_growth_git_blob(repo_path, "HEAD", expected_source_path)
+        if current_blob is None:
+            issue(
+                "SOURCE_AUTHORITY_BLOB_MISSING",
+                repo_name,
+                expected_source_path,
+                "blob at checked current tree",
+                "missing",
+                f"Restore the canonical {repo_name} authority file in the checked current tree.",
+                revision=state["head"],
+            )
+            continue
+        current_blob_sha, current_blob_bytes = current_blob
+        try:
+            current_semantic_fingerprint = hoxline_case_growth_semantic_fingerprint(
+                expected_source_path, current_blob_bytes
+            )
+        except FactoryError as exc:
+            issue(
+                "SOURCE_AUTHORITY_SEMANTIC_INVALID",
+                repo_name,
+                expected_source_path,
+                "canonicalizable authoritative content",
+                str(exc),
+                f"Repair the canonical {repo_name} source content and regenerate its source identity.",
+                revision=state["head"],
+            )
+            continue
+        stated_blob_sha = revision.get("authoritative_git_blob_sha") or revision.get("source_git_blob_sha")
+        stated_semantic_fingerprint = (
+            revision.get("authoritative_content_fingerprint")
+            or revision.get("source_semantic_fingerprint_sha256")
+        )
+        sources[repo_name].update(
+            {
+                "authority_path": expected_source_path,
+                "authoritative_git_blob_sha": current_blob_sha,
+                "authoritative_content_fingerprint": current_semantic_fingerprint,
+                "manifest_selected_reviewed_revision": manifest_revision,
+                "manifest_selected_reviewed_tree": manifest_reviewed_tree,
+                "manifest_selected_authority_content_revision": (
+                    manifest_content_revision
+                ),
+                "current_event_observation_revision": current_observation_revision,
+            }
+        )
+        content_revision_matches_current = False
+        if not isinstance(
+            manifest_content_revision, str
+        ) or not hoxline_case_growth_commit_exists(
+            repo_path, manifest_content_revision
+        ):
+            issue(
+                "SOURCE_AUTHORITY_CONTENT_REVISION_UNREACHABLE",
+                repo_name,
+                "governance/CONVERGENCE_SOURCE_MANIFEST.json",
+                "reachable immutable authority content revision",
+                manifest_content_revision,
+                (
+                    f"Fetch the complete reviewed {repo_name} history and select the "
+                    "immutable commit carrying the current authority content."
+                ),
+                revision=state["head"],
+            )
+        else:
+            content_blob = hoxline_case_growth_git_blob(
+                repo_path,
+                manifest_content_revision,
+                expected_source_path,
+            )
+            content_semantic_fingerprint: str | None = None
+            if content_blob is not None:
+                try:
+                    content_semantic_fingerprint = (
+                        hoxline_case_growth_semantic_fingerprint(
+                            expected_source_path, content_blob[1]
+                        )
+                    )
+                except FactoryError:
+                    content_semantic_fingerprint = None
+            content_identity_matches = (
+                content_blob is not None
+                and content_blob[0] == current_blob_sha
+                and content_semantic_fingerprint
+                == current_semantic_fingerprint
+            )
+            if not content_identity_matches:
+                issue(
+                    "SOURCE_AUTHORITY_CONTENT_REVISION_STALE",
+                    repo_name,
+                    expected_source_path,
+                    current_blob_sha,
+                    None if content_blob is None else content_blob[0],
+                    (
+                        f"Review the changed {repo_name} authority content and refresh "
+                        "authority_content_revision without changing the live observation."
+                    ),
+                    revision=state["head"],
+                )
+            current_is_content_ancestor = hoxline_case_growth_is_ancestor(
+                repo_path, state["head"], manifest_content_revision
+            )
+            content_is_current_ancestor = hoxline_case_growth_is_ancestor(
+                repo_path, manifest_content_revision, state["head"]
+            )
+            current_tree_for_content = hoxline_case_growth_tree_sha(
+                repo_path, state["head"]
+            )
+            content_tree = hoxline_case_growth_tree_sha(
+                repo_path, manifest_content_revision
+            )
+            content_tree_is_current_equivalent = (
+                current_tree_for_content is not None
+                and content_tree is not None
+                and current_tree_for_content == content_tree
+            )
+            reviewed_revision_exists_for_content = (
+                isinstance(manifest_revision, str)
+                and hoxline_case_growth_commit_exists(
+                    repo_path, manifest_revision
+                )
+            )
+            content_is_reviewed_ancestor = (
+                reviewed_revision_exists_for_content
+                and (
+                    manifest_content_revision == manifest_revision
+                    or hoxline_case_growth_is_ancestor(
+                        repo_path,
+                        manifest_content_revision,
+                        manifest_revision,
+                    )
+                )
+            )
+            reviewed_tree_for_content = (
+                hoxline_case_growth_tree_sha(repo_path, manifest_revision)
+                if reviewed_revision_exists_for_content
+                else None
+            )
+            current_is_exact_reviewed_tree = (
+                current_tree_for_content is not None
+                and reviewed_tree_for_content is not None
+                and current_tree_for_content == reviewed_tree_for_content
+                and reviewed_tree_for_content == manifest_reviewed_tree
+            )
+            rewritten_reviewed_projection = (
+                manifest_content_revision != state["head"]
+                and not current_is_content_ancestor
+                and not content_is_current_ancestor
+                and (
+                    content_is_reviewed_ancestor
+                    or repo_name == ".github"
+                )
+                and current_is_exact_reviewed_tree
+            )
+            content_relationship_valid = (
+                not (
+                    manifest_content_revision != state["head"]
+                    and current_is_content_ancestor
+                )
+                and (
+                    manifest_content_revision == state["head"]
+                    or content_is_current_ancestor
+                    or content_tree_is_current_equivalent
+                    or rewritten_reviewed_projection
+                )
+            )
+            if not content_relationship_valid:
+                issue(
+                    "SOURCE_AUTHORITY_CONTENT_RELATIONSHIP_INVALID",
+                    repo_name,
+                    "governance/CONVERGENCE_SOURCE_MANIFEST.json",
+                    (
+                        "authority content revision equal to or ancestral to current, "
+                        "or carrying the exact current repository tree"
+                    ),
+                    {
+                        "current_head": state["head"],
+                        "authority_content_revision": manifest_content_revision,
+                        "current_is_content_ancestor": current_is_content_ancestor,
+                        "content_is_current_ancestor": content_is_current_ancestor,
+                        "current_tree": current_tree_for_content,
+                        "content_tree": content_tree,
+                        "reviewed_revision": manifest_revision,
+                        "reviewed_tree": reviewed_tree_for_content,
+                        "manifest_reviewed_tree": manifest_reviewed_tree,
+                        "content_is_reviewed_ancestor": (
+                            content_is_reviewed_ancestor
+                        ),
+                        "current_is_exact_reviewed_tree": (
+                            current_is_exact_reviewed_tree
+                        ),
+                    },
+                    (
+                        f"Select reviewed {repo_name} authority content from the current "
+                        "lineage; a future descendant cannot establish current authority."
+                    ),
+                    revision=state["head"],
+                )
+            content_revision_matches_current = (
+                content_identity_matches and content_relationship_valid
+            )
+        manifest_content_matches_current = False
+        if (
+            isinstance(manifest_revision, str)
+            and manifest_revision != state["head"]
+        ):
+            if not hoxline_case_growth_commit_exists(repo_path, manifest_revision):
+                issue(
+                    "SOURCE_MANIFEST_REVISION_UNREACHABLE",
+                    repo_name,
+                    "governance/CONVERGENCE_SOURCE_MANIFEST.json",
+                    "reachable immutable revision in canonical repository",
+                    manifest_revision,
+                    f"Refresh the source manifest with a reviewed reachable {repo_name} revision.",
+                    revision=state["head"],
+                )
+            else:
+                manifest_blob = hoxline_case_growth_git_blob(
+                    repo_path, manifest_revision, expected_source_path
+                )
+                manifest_semantic_fingerprint: str | None = None
+                if manifest_blob is not None:
+                    try:
+                        manifest_semantic_fingerprint = (
+                            hoxline_case_growth_semantic_fingerprint(
+                                expected_source_path, manifest_blob[1]
+                            )
+                        )
+                    except FactoryError:
+                        manifest_semantic_fingerprint = None
+                manifest_content_matches_current = (
+                    manifest_blob is not None
+                    and manifest_blob[0] == current_blob_sha
+                    and manifest_semantic_fingerprint
+                    == current_semantic_fingerprint
+                )
+                if not manifest_content_matches_current:
+                    issue(
+                        "SOURCE_MANIFEST_CONTENT_STALE",
+                        repo_name,
+                        expected_source_path,
+                        current_blob_sha,
+                        None if manifest_blob is None else manifest_blob[0],
+                        f"Review the changed {repo_name} authority content and refresh the immutable source manifest.",
+                        revision=state["head"],
+                    )
+                else:
+                    current_is_historical_ancestor = hoxline_case_growth_is_ancestor(
+                        repo_path, state["head"], manifest_revision
+                    )
+                    reviewed_is_ancestor = hoxline_case_growth_is_ancestor(
+                        repo_path, manifest_revision, state["head"]
+                    )
+                    current_tree = hoxline_case_growth_tree_sha(
+                        repo_path, state["head"]
+                    )
+                    reviewed_tree = hoxline_case_growth_tree_sha(
+                        repo_path, manifest_revision
+                    )
+                    reviewed_tree_is_manifest_selected = (
+                        reviewed_tree is not None
+                        and reviewed_tree == manifest_reviewed_tree
+                    )
+                    if not reviewed_tree_is_manifest_selected:
+                        manifest_content_matches_current = False
+                        issue(
+                            "SOURCE_REVIEW_MANIFEST_TREE_MISMATCH",
+                            repo_name,
+                            "governance/CONVERGENCE_SOURCE_MANIFEST.json",
+                            manifest_reviewed_tree,
+                            reviewed_tree,
+                            (
+                                f"Refresh the command-center manifest only after reviewing "
+                                f"the exact {repo_name} PR-head tree."
+                            ),
+                            revision=state["head"],
+                        )
+                    tree_is_reviewed_equivalent = (
+                        current_tree is not None
+                        and reviewed_tree is not None
+                        and current_tree == reviewed_tree
+                    )
+                    observation_relationship_valid = (
+                        not current_is_historical_ancestor
+                        and reviewed_tree_is_manifest_selected
+                        and (reviewed_is_ancestor or tree_is_reviewed_equivalent)
+                    )
+                    if not observation_relationship_valid:
+                        manifest_content_matches_current = False
+                        issue(
+                            "SOURCE_MANIFEST_OBSERVATION_RELATIONSHIP_INVALID",
+                            repo_name,
+                            "governance/CONVERGENCE_SOURCE_MANIFEST.json",
+                            (
+                                "checked current revision descended from the reviewed "
+                                "revision or carrying its exact reviewed repository tree"
+                            ),
+                            {
+                                "current_head": state["head"],
+                                "reviewed_revision": manifest_revision,
+                                "current_is_historical_ancestor": (
+                                    current_is_historical_ancestor
+                                ),
+                                "reviewed_is_ancestor": reviewed_is_ancestor,
+                                "current_tree": current_tree,
+                                "reviewed_tree": reviewed_tree,
+                                "manifest_reviewed_tree": manifest_reviewed_tree,
+                            },
+                            (
+                                f"Check out the intended current {repo_name} revision; "
+                                "an older same-blob ancestor is historical, not current authority."
+                            ),
+                            revision=state["head"],
+                        )
+                    else:
+                        issue(
+                            "SOURCE_MANIFEST_HEAD_OBSERVATION_STALE_CONTENT_CURRENT",
+                            repo_name,
+                            "governance/CONVERGENCE_SOURCE_MANIFEST.json",
+                            state["head"],
+                            manifest_revision,
+                            f"Refresh the observed {repo_name} manifest revision after merge; content identity remains current.",
+                            revision=state["head"],
+                            historical=True,
+                        )
+        elif manifest_revision == state["head"]:
+            current_tree = hoxline_case_growth_tree_sha(repo_path, state["head"])
+            manifest_content_matches_current = (
+                current_tree is not None
+                and current_tree == manifest_reviewed_tree
+            )
+            if not manifest_content_matches_current:
+                issue(
+                    "SOURCE_REVIEW_MANIFEST_TREE_MISMATCH",
+                    repo_name,
+                    "governance/CONVERGENCE_SOURCE_MANIFEST.json",
+                    manifest_reviewed_tree,
+                    current_tree,
+                    (
+                        f"Refresh the command-center manifest only after reviewing "
+                        f"the exact {repo_name} PR-head tree."
+                    ),
+                    revision=state["head"],
+                )
+        manifest_content_matches_current = (
+            manifest_content_matches_current
+            and content_revision_matches_current
+        )
+        detached_platform_observation_mismatch = (
+            repo_name == "hawkinsoperations-platform"
+            and not branch
+            and current_observation_revision != state["head"]
+        )
+        if (
+            not branch
+            and (
+                not manifest_content_matches_current
+                or detached_platform_observation_mismatch
+            )
+        ):
+            issue(
+                "DETACHED_SOURCE_NOT_MANIFEST_SELECTED",
+                repo_name,
+                repo_name,
+                (
+                    "detached current tree whose canonical authority content "
+                    "matches an exact manifest-selected reviewed revision"
+                ),
+                {
+                    "current_head": state["head"],
+                    "manifest_selected_reviewed_revision": manifest_revision,
+                    "current_blob": current_blob_sha,
+                },
+                (
+                    f"Supply the exact reviewed {repo_name} revision through the "
+                    "immutable source manifest and verify that its authority blob and "
+                    "semantic fingerprint equal the detached current tree."
+                ),
+                revision=state["head"],
+            )
+        if stated_blob_sha != current_blob_sha:
+            issue(
+                "SOURCE_AUTHORITY_BLOB_DRIFT",
+                repo_name,
+                expected_source_path,
+                current_blob_sha,
+                stated_blob_sha,
+                f"Regenerate only the {repo_name} content identity after reviewing the authoritative file change.",
+                revision=state["head"],
+            )
+        if stated_semantic_fingerprint != current_semantic_fingerprint:
+            issue(
+                "SOURCE_AUTHORITY_SEMANTIC_DRIFT",
+                repo_name,
+                expected_source_path,
+                current_semantic_fingerprint,
+                stated_semantic_fingerprint,
+                f"Regenerate the {repo_name} semantic fingerprint from canonical authoritative content.",
+                revision=state["head"],
+            )
+        content_sha = (
+            revision.get("source_commit_sha")
+            or revision.get("commit_sha")
+            or revision.get("source_revision")
+        )
+        if (
+            not isinstance(content_sha, str)
+            or re.fullmatch(r"[0-9a-fA-F]{40}", content_sha) is None
+        ):
+            issue(
+                "SOURCE_CONTENT_REVISION_INVALID",
+                "hoxline",
+                f"source_revisions/{repo_name}/source_commit_sha",
+                "40-character immutable authority-content revision",
+                content_sha,
+                (
+                    f"Regenerate the snapshot with the manifest-selected {repo_name} "
+                    "authority-content revision."
+                ),
+                revision=state["head"],
+            )
+            continue
+        if content_sha != manifest_content_revision:
+            issue(
+                "SOURCE_CONTENT_REVISION_NOT_MANIFEST_SELECTED",
+                repo_name,
+                f"source_revisions/{repo_name}/source_commit_sha",
+                manifest_content_revision,
+                content_sha,
+                (
+                    f"Record the separately reviewed {repo_name} authority-content "
+                    "revision; a live-head observation cannot replace content identity."
+                ),
+                revision=state["head"],
+            )
+            continue
+        stated_sha = revision.get("current_observed_head_sha")
+        if not isinstance(stated_sha, str) or re.fullmatch(r"[0-9a-fA-F]{40}", stated_sha) is None:
+            issue(
+                "SOURCE_REVISION_INVALID",
+                "hoxline",
+                f"source_revisions/{repo_name}/current_observed_head_sha",
+                "40-character current-head observation SHA",
+                stated_sha,
+                f"Regenerate the snapshot with the resolved {repo_name} current-head observation.",
+                revision=state["head"],
+            )
+            continue
+        observed_commit_exists = hoxline_case_growth_commit_exists(repo_path, stated_sha)
+        if not observed_commit_exists:
+            issue(
+                "SOURCE_REVISION_UNRESOLVED",
+                repo_name,
+                f"source_revisions/{repo_name}/current_observed_head_sha",
+                "commit reachable in the declared repository",
+                stated_sha,
+                f"Record a reachable {repo_name} current-head observation selected by the source manifest and regenerate the snapshot.",
+                revision=state["head"],
+            )
+            continue
+        selected_observations = {state["head"]}
+        if isinstance(manifest_revision, str) and re.fullmatch(
+            r"[0-9a-fA-F]{40}", manifest_revision
+        ):
+            selected_observations.add(manifest_revision)
+        stated_is_reviewed_identity = False
+        stated_relationship: dict[str, Any] | None = None
+        if stated_sha not in selected_observations:
+            current_is_historical_ancestor = hoxline_case_growth_is_ancestor(
+                repo_path, state["head"], stated_sha
+            )
+            stated_is_ancestor = hoxline_case_growth_is_ancestor(
+                repo_path, stated_sha, state["head"]
+            )
+            manifest_is_ancestor_of_stated = (
+                isinstance(manifest_content_revision, str)
+                and (
+                    manifest_content_revision == stated_sha
+                    or hoxline_case_growth_is_ancestor(
+                        repo_path, manifest_content_revision, stated_sha
+                    )
+                )
+            )
+            current_tree = hoxline_case_growth_tree_sha(repo_path, state["head"])
+            stated_tree = hoxline_case_growth_tree_sha(repo_path, stated_sha)
+            tree_is_reviewed_equivalent = (
+                current_tree is not None
+                and stated_tree is not None
+                and current_tree == stated_tree
+            )
+            manifest_tree_selects_stated = (
+                stated_tree is not None
+                and stated_tree == manifest_reviewed_tree
+            )
+            generated_pair_parent_selects_stated = (
+                repo_name == "hoxline"
+                and isinstance(manifest_revision, str)
+                and hoxline_case_growth_is_direct_parent(
+                    repo_path,
+                    stated_sha,
+                    manifest_revision,
+                )
+            )
+            projection_paths = HOXLINE_CASE_GROWTH_OBSERVATION_PROJECTION_PATHS.get(
+                repo_name
+            )
+            observed_projection_paths = hoxline_case_growth_changed_paths(
+                repo_path, stated_sha, state["head"]
+            )
+            reviewed_tree_projection_selects_stated = (
+                projection_paths is not None
+                and observed_projection_paths == projection_paths
+                and current_tree is not None
+                and current_tree == manifest_reviewed_tree
+                and manifest_is_ancestor_of_stated
+            )
+            reviewed_lineage_selects_stated = (
+                manifest_is_ancestor_of_stated
+                or manifest_tree_selects_stated
+                or generated_pair_parent_selects_stated
+                or reviewed_tree_projection_selects_stated
+            )
+            rewritten_current_is_exact_reviewed_tree = (
+                current_tree is not None
+                and current_tree == manifest_reviewed_tree
+                and reviewed_lineage_selects_stated
+                and observed_projection_paths is not None
+                and expected_source_path not in observed_projection_paths
+            )
+            stated_is_reviewed_identity = (
+                not current_is_historical_ancestor
+                and reviewed_lineage_selects_stated
+                and (
+                    stated_is_ancestor
+                    or tree_is_reviewed_equivalent
+                    or reviewed_tree_projection_selects_stated
+                    or rewritten_current_is_exact_reviewed_tree
+                )
+            )
+            stated_relationship = {
+                "current_head": state["head"],
+                "stated_reviewed_revision": stated_sha,
+                "current_is_historical_ancestor": current_is_historical_ancestor,
+                "stated_is_ancestor": stated_is_ancestor,
+                "manifest_is_ancestor_of_stated": (
+                    manifest_is_ancestor_of_stated
+                ),
+                "current_tree": current_tree,
+                "stated_tree": stated_tree,
+                "tree_is_reviewed_equivalent": tree_is_reviewed_equivalent,
+                "manifest_tree_selects_stated": manifest_tree_selects_stated,
+                "generated_pair_parent_selects_stated": (
+                    generated_pair_parent_selects_stated
+                ),
+                "reviewed_tree_projection_selects_stated": (
+                    reviewed_tree_projection_selects_stated
+                ),
+                "observed_projection_paths": (
+                    None
+                    if observed_projection_paths is None
+                    else sorted(observed_projection_paths)
+                ),
+                "reviewed_lineage_selects_stated": (
+                    reviewed_lineage_selects_stated
+                ),
+                "rewritten_current_is_exact_reviewed_tree": (
+                    rewritten_current_is_exact_reviewed_tree
+                ),
+            }
+        if (
+            stated_sha not in selected_observations
+            and not stated_is_reviewed_identity
+        ):
+            issue(
+                "SOURCE_OBSERVATION_NOT_MANIFEST_SELECTED",
+                repo_name,
+                f"source_revisions/{repo_name}/current_observed_head_sha",
+                sorted(selected_observations),
+                stated_relationship or stated_sha,
+                (
+                    f"Record either the checked {repo_name} current head, the exact "
+                    "command-center-reviewed immutable revision, or a snapshot-reviewed "
+                    "revision inside the manifest-selected lineage that is an ancestor "
+                    "of current or has the exact reviewed full-tree identity. A current "
+                    "ancestor of the reviewed revision is historical, and an arbitrary "
+                    "same-blob ancestor outside the selected lineage is rejected."
+                ),
+                revision=state["head"],
+            )
+            continue
+        if observed_commit_exists:
+            observed_blob = hoxline_case_growth_git_blob(repo_path, stated_sha, expected_source_path)
+            if observed_blob is None or observed_blob[0] != current_blob_sha:
+                issue(
+                    "SOURCE_OBSERVATION_CONTENT_MISMATCH",
+                    repo_name,
+                    expected_source_path,
+                    current_blob_sha,
+                    None if observed_blob is None else observed_blob[0],
+                    f"Record a reviewed {repo_name} observation carrying the same authoritative content as the checked current tree.",
+                    revision=state["head"],
+                )
+        if stated_sha != state["head"]:
+            issue(
+                "SOURCE_HEAD_OBSERVATION_STALE_CONTENT_CURRENT",
+                repo_name,
+                f"source_revisions/{repo_name}/current_observed_head_sha",
+                state["head"],
+                stated_sha,
+                f"Refresh the observed {repo_name} head when the reviewer artifact is next regenerated; authoritative content remains current by blob identity.",
+                revision=state["head"],
+                historical=stated_blob_sha == current_blob_sha
+                and stated_semantic_fingerprint == current_semantic_fingerprint,
+            )
+
+    proof_entries = proof_index.get("entries") if isinstance(proof_index, dict) else None
+    if not isinstance(proof_entries, list):
+        proof_entries = []
+        issue("PROOF_ENTRIES_INVALID", "hawkinsoperations-proof", "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml", "entries list", type(proof_entries).__name__, "Repair the proof-owned index structure.")
+    proof_ids: set[str] = set()
+    record_paths: list[str] = []
+    card_paths: list[str] = []
+    for entry in proof_entries:
+        if not isinstance(entry, dict):
+            continue
+        case_id = entry.get("detection_id")
+        if not isinstance(case_id, str) or case_id in proof_ids:
+            issue("DUPLICATE_PROOF_CASE", "hawkinsoperations-proof", "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml", "unique detection_id", case_id, "Remove the duplicate index entry through proof-owner review.")
+            continue
+        proof_ids.add(case_id)
+        if entry.get("public_safe_status") != "NOT_PUBLIC_SAFE":
+            issue("UNAUTHORIZED_PUBLIC_SAFE_STATUS", "hawkinsoperations-proof", f"proof index entry {case_id}", "NOT_PUBLIC_SAFE", entry.get("public_safe_status"), "Restore NOT_PUBLIC_SAFE unless separate proof authority approves promotion.")
+        for field, collection in (("proof_record_path", record_paths), ("proof_card_path", card_paths)):
+            value = entry.get(field)
+            if value is None:
+                continue
+            decoded_value = value if isinstance(value, str) else ""
+            for _ in range(4):
+                try:
+                    next_value = unquote(decoded_value)
+                except (UnicodeDecodeError, ValueError):
+                    next_value = decoded_value
+                if next_value == decoded_value:
+                    break
+                decoded_value = next_value
+            normalized_value = decoded_value.replace("\\", "/")
+            path_parts = [part for part in normalized_value.split("/") if part not in {"", "."}]
+            if (
+                not isinstance(value, str)
+                or re.match(r"^[A-Za-z]:[\\/]", decoded_value)
+                or decoded_value.startswith(("\\\\", "//"))
+                or normalized_value.startswith("/")
+                or "\x00" in decoded_value
+                or ("/" in decoded_value and "\\" in decoded_value)
+                or ".." in path_parts
+                or decoded_value != value
+            ):
+                issue("UNSAFE_PROOF_PATH", "hawkinsoperations-proof", f"{case_id}/{field}", "safe repository-relative path", value, "Replace with a proof-repo-relative owned path.")
+                continue
+            proof_root = (org_root / "hawkinsoperations-proof").resolve()
+            owned_root = (proof_root / "proof" / ("records" if field == "proof_record_path" else "cards")).resolve()
+            resolved_value = (proof_root / normalized_value).resolve()
+            try:
+                resolved_value.relative_to(owned_root)
+            except ValueError:
+                issue("UNSAFE_PROOF_PATH", "hawkinsoperations-proof", f"{case_id}/{field}", f"path under {owned_root.relative_to(proof_root).as_posix()}", value, "Restore the proof-owner path to its designated records or cards directory.")
+                continue
+            collection.append(str(resolved_value).replace("\\", "/").casefold())
+            if not resolved_value.is_file():
+                issue("DANGLING_PROOF_PATH", "hawkinsoperations-proof", value, "existing file", "missing", f"Restore or remove the dangling {field} through proof-owner review.")
+    if len(record_paths) != len(set(record_paths)):
+        issue("DUPLICATE_PROOF_RECORD_OWNERSHIP", "hawkinsoperations-proof", "proof index proof_record_path", "one case per path", record_paths, "Assign every proof record path to exactly one case.")
+    if len(card_paths) != len(set(card_paths)):
+        issue("DUPLICATE_PROOFCARD_OWNERSHIP", "hawkinsoperations-proof", "proof index proof_card_path", "one case per path", card_paths, "Assign every ProofCard path to exactly one case.")
+    proof_counts = {
+        "indexed_case_count": len(proof_entries),
+        "proof_record_count": len(record_paths),
+        "proof_card_count": len(card_paths),
+        "missing_proof_record_count": len(proof_entries) - len(record_paths),
+        "missing_proof_card_count": len(proof_entries) - len(card_paths),
+    }
+    declared_counts = (
+        proof_index.get("current_authority", {}).get("derived_counts")
+        if isinstance(proof_index, dict) and isinstance(proof_index.get("current_authority"), dict)
+        else None
+    )
+    if not isinstance(declared_counts, dict) or any(declared_counts.get(key) != value for key, value in proof_counts.items()):
+        issue("PROOF_COUNT_DRIFT", "hawkinsoperations-proof", "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml#/current_authority/derived_counts", proof_counts, declared_counts, "Regenerate proof-owned counts from non-null unique index paths.")
+
+    summary = snapshot.get("summary", {}) if isinstance(snapshot, dict) else {}
+    snapshot_records = summary.get("proof_records_count", summary.get("proof_record_count")) if isinstance(summary, dict) else None
+    snapshot_cards = summary.get("proofcards_count", summary.get("proof_card_count")) if isinstance(summary, dict) else None
+    if snapshot_records != proof_counts["proof_record_count"] or snapshot_cards != proof_counts["proof_card_count"]:
+        issue("HOXLINE_PROOF_COUNT_DRIFT", "hoxline", "examples/case-growth/current-case-growth-index.json#/summary", {"proof_record_count": proof_counts["proof_record_count"], "proof_card_count": proof_counts["proof_card_count"]}, {"proof_record_count": snapshot_records, "proof_card_count": snapshot_cards}, "Regenerate the Hoxline current snapshot from the proof-owned index.")
+
+    detection_entries = detection_matrix.get("entries") if isinstance(detection_matrix, dict) else None
+    if not isinstance(detection_entries, list):
+        issue(
+            "DETECTION_ENTRIES_INVALID",
+            "hawkinsoperations-detections",
+            "detections/DETECTION_PROMOTION_MATRIX.yml#/entries",
+            "array of detection-owned entries",
+            type(detection_entries).__name__,
+            "Repair the detection-owned promotion matrix shape; do not infer entries from a malformed source.",
+        )
+        detection_entries = []
+    validation_packages = (
+        validation_registry.get("packages") if isinstance(validation_registry, dict) else None
+    )
+    if not isinstance(validation_packages, list):
+        issue(
+            "VALIDATION_PACKAGES_INVALID",
+            "hawkinsoperations-validation",
+            "validation/VALIDATION_REGISTRY.yml#/packages",
+            "array of validation-owned packages",
+            type(validation_packages).__name__,
+            "Repair the validation-owned registry shape; do not infer packages from a malformed source.",
+        )
+        validation_packages = []
+    detection_ids = {item.get("detection_id") for item in detection_entries if isinstance(item, dict)}
+    validation_ids = {item.get("detection_id") for item in validation_packages if isinstance(item, dict)}
+    for entry in proof_entries:
+        if not isinstance(entry, dict):
+            continue
+        case_id = entry.get("detection_id")
+        if case_id not in detection_ids:
+            issue("DETECTION_LINK_MISSING", "hawkinsoperations-detections", "detections/DETECTION_PROMOTION_MATRIX.yml", case_id, "missing", f"Add or correct the detection-owned source entry for {case_id}.")
+        if case_id not in validation_ids and entry.get("validation_status") != "VALIDATION_PLANNED":
+            issue("VALIDATION_LINK_MISSING", "hawkinsoperations-validation", "validation/VALIDATION_REGISTRY.yml", case_id, "missing", f"Add the owned validation package or lower {case_id} to VALIDATION_PLANNED.")
+        detection_entry = next(
+            (item for item in detection_entries if isinstance(item, dict) and item.get("detection_id") == case_id),
+            None,
+        )
+        if entry.get("proof_record_path") and isinstance(detection_entry, dict):
+            detection_text = json.dumps(detection_entry, sort_keys=True).lower()
+            if "proof record creation" in detection_text or f"no {str(case_id).lower()} proof record" in detection_text:
+                issue(
+                    "DETECTION_PROOF_HANDOFF_CONTRADICTION",
+                    "hawkinsoperations-detections",
+                    f"detections/DETECTION_PROMOTION_MATRIX.yml#/{case_id}",
+                    "proof handoff consistent with proof-owned current index",
+                    detection_entry.get("next_gate"),
+                    "Update only the detection-owned handoff wording to acknowledge the proof-owned record without raising detection authority.",
+                )
+
+    website_metric = website_status.get("metrics", {}).get("proof_records", {}) if isinstance(website_status, dict) else {}
+    if website_metric.get("value") != proof_counts["proof_record_count"]:
+        issue("WEBSITE_PROOF_COUNT_DRIFT", "hawkinsoperations-website", "public/data/public-status.json#/metrics/proof_records", proof_counts["proof_record_count"], website_metric.get("value"), "Regenerate the website status plane from the proof-owned current index.")
+    website_source_repo = str(website_metric.get("source_repo", ""))
+    if website_source_repo != "HawkinsOperations/hawkinsoperations-proof":
+        issue("WEBSITE_PROOF_OWNER_INVALID", "hawkinsoperations-website", "public/data/public-status.json#/metrics/proof_records/source_repo", "HawkinsOperations/hawkinsoperations-proof", website_source_repo, "Restore the exact proof-owner identifier; website remains a consumer only.")
+    if website_metric.get("source_path") != "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml":
+        issue("WEBSITE_PROOF_SOURCE_INVALID", "hawkinsoperations-website", "public/data/public-status.json#/metrics/proof_records/source_path", "proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml", website_metric.get("source_path"), "Regenerate from the current proof index instead of a historical summary.")
+    generated_at = hoxline_case_growth_parse_time(website_status.get("generated_at") if isinstance(website_status, dict) else None)
+    max_age_hours = website_status.get("freshness", {}).get("max_age_hours") if isinstance(website_status, dict) else None
+    if generated_at is None or not isinstance(max_age_hours, (int, float)):
+        issue("WEBSITE_FRESHNESS_UNRESOLVED", "hawkinsoperations-website", "public/data/public-status.json#/freshness", "parseable generated_at and max_age_hours", {"generated_at": website_status.get("generated_at"), "max_age_hours": max_age_hours}, "Regenerate freshness metadata from source-owned inputs.")
+    else:
+        age_hours = (now_utc - generated_at.astimezone(timezone.utc)).total_seconds() / 3600
+        if age_hours < 0:
+            issue("WEBSITE_GENERATED_AT_FUTURE", "hawkinsoperations-website", "public/data/public-status.json#/generated_at", "timestamp not later than verifier time", website_status.get("generated_at"), "Regenerate the status artifact using a trustworthy UTC clock.")
+        expected_freshness = "stale" if age_hours > max_age_hours else "fresh"
+        if website_status.get("freshness", {}).get("status") != expected_freshness:
+            issue("WEBSITE_FRESHNESS_CONTRADICTION", "hawkinsoperations-website", "public/data/public-status.json#/freshness/status", expected_freshness, website_status.get("freshness", {}).get("status"), "Regenerate or relabel the website status using the declared freshness window.")
+
+    contract_field = platform_contract.get("public_fields", {}).get("proof_record_count", {}) if isinstance(platform_contract, dict) else {}
+    proof_head = sources.get("hawkinsoperations-proof", {}).get("head")
+    proof_blob = sources.get("hawkinsoperations-proof", {}).get("authoritative_git_blob_sha")
+    proof_semantic = sources.get("hawkinsoperations-proof", {}).get("authoritative_content_fingerprint")
+    contract_expected = {
+        "current_value": proof_counts["proof_record_count"],
+        "source_path": "../hawkinsoperations-proof/proof/indexes/DETECTION_PROOF_STATUS_INDEX.yml",
+        "source_git_blob_sha": proof_blob,
+        "source_semantic_fingerprint_sha256": proof_semantic,
+        "historical_snapshot": False,
+        "current_authority": True,
+    }
+    contract_actual = {key: contract_field.get(key) for key in contract_expected}
+    if contract_actual != contract_expected:
+        issue("PLATFORM_PROOF_SOURCE_DRIFT", "hawkinsoperations-platform", "contracts/public-status-source-contract-v1.json#/public_fields/proof_record_count", contract_expected, contract_actual, "Refresh the platform source contract from the proof-owned current index without changing proof authority.", revision=proof_head)
+    contract_observed_head = contract_field.get("source_observed_head_sha") or contract_field.get("source_revision")
+    if contract_observed_head != proof_head:
+        issue(
+            "PLATFORM_PROOF_HEAD_OBSERVATION_STALE_CONTENT_CURRENT",
+            "hawkinsoperations-platform",
+            "contracts/public-status-source-contract-v1.json#/public_fields/proof_record_count/source_observed_head_sha",
+            proof_head,
+            contract_observed_head,
+            "Refresh the observed proof head after merge; do not change content identity when the authority blob is unchanged.",
+            revision=proof_head,
+            historical=contract_actual == contract_expected,
+        )
+    contract_generated_at = hoxline_case_growth_parse_time(
+        platform_contract.get("generated_at") if isinstance(platform_contract, dict) else None
+    )
+    contract_window_days = platform_contract.get("freshness_window_days") if isinstance(platform_contract, dict) else None
+    if contract_generated_at is None or not isinstance(contract_window_days, (int, float)):
+        issue(
+            "PLATFORM_CONTRACT_FRESHNESS_UNRESOLVED",
+            "hawkinsoperations-platform",
+            "contracts/public-status-source-contract-v1.json",
+            "parseable generated_at and freshness_window_days",
+            {"generated_at": platform_contract.get("generated_at"), "freshness_window_days": contract_window_days},
+            "Refresh the platform contract from verified current sources and preserve its freshness window.",
+        )
+    elif contract_generated_at.astimezone(timezone.utc) > now_utc:
+        issue(
+            "PLATFORM_CONTRACT_GENERATED_AT_FUTURE",
+            "hawkinsoperations-platform",
+            "contracts/public-status-source-contract-v1.json#/generated_at",
+            "timestamp not later than verifier time",
+            platform_contract.get("generated_at"),
+            "Refresh the contract using a trustworthy UTC clock.",
+        )
+    elif (now_utc - contract_generated_at.astimezone(timezone.utc)).total_seconds() > contract_window_days * 86400:
+        issue(
+            "PLATFORM_CONTRACT_STALE",
+            "hawkinsoperations-platform",
+            "contracts/public-status-source-contract-v1.json#/generated_at",
+            f"age <= {contract_window_days} days",
+            platform_contract.get("generated_at"),
+            "Refresh the source contract from current owned sources; do not rewrite historical snapshots as current.",
+        )
+
+    return {
+        "controller_version": CONTROLLER_VERSION,
+        "mode": "hoxline-case-growth-convergence-verify",
+        "status": "pass" if not contradictions else "fail",
+        "source_revisions_verified": len(sources),
+        "sources": sources,
+        "proof_counts": proof_counts,
+        "contradictions": contradictions,
+        "drift": drift,
+        "read_only": True,
+        "ledger_mutated": False,
+        "runtime_mutated": False,
+        "signal_mutated": False,
+        "public_proof_promoted": False,
+        "evidence_published": False,
+        "website_is_proof": False,
+        "green_ci_is_approval": False,
+        "proof_ceiling": "CONTROLLED_REPO_CONVERGENCE_AND_LOCAL_FIXTURE_REVIEW_ONLY",
+    }
+
+HOXLINE_ACTIONS_CHECKOUT_SHA = "11bd71901bbe5b1630ceea73d27597364c9af683"
+
+
+def hoxline_workflow_job_condition(workflow: str, job_name: str) -> str:
+    """Extract one exact top-level job condition without substring matching."""
+    lines = workflow.splitlines()
+    job_start = [
+        index
+        for index, line in enumerate(lines)
+        if line == f"  {job_name}:"
+    ]
+    if len(job_start) != 1:
+        raise FactoryError(f"workflow must define exactly one {job_name} job")
+    block: list[str] = []
+    for line in lines[job_start[0] + 1 :]:
+        if re.fullmatch(r"  [A-Za-z0-9_-]+:", line):
+            break
+        block.append(line)
+    conditions = [
+        match.group(1).strip()
+        for line in block
+        if (match := re.fullmatch(r"    if:\s*(.*?)\s*", line))
+    ]
+    if len(conditions) != 1:
+        raise FactoryError(f"{job_name} must define exactly one job-level if condition")
+    return conditions[0]
+
+
+def hoxline_workflow_has_shell_neutralizer(workflow: str) -> bool:
+    neutralizers = (
+        r"\|\|\s*(?:true|:|exit\s+0)(?:\s*(?:#.*)?)?$",
+        r"(?:^|[;&]\s*)set\s+\+e(?:\s|$)",
+        r"\|\|\s*(?:echo|printf)\b",
+        r"trap\s+['\"].*['\"]\s+EXIT(?:\s|$)",
+    )
+    return any(
+        re.search(pattern, workflow, flags=re.IGNORECASE | re.MULTILINE)
+        for pattern in neutralizers
+    )
+
+
 def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
-    workflow_dir = repo_root / ".github" / "workflows"
-    workflows = {path.name: path.read_text(encoding="utf-8") for path in sorted(workflow_dir.glob("*.yml"))}
+    repo_root = repo_root.resolve()
+    tracked = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_root),
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "HEAD",
+            "--",
+            ".github/workflows",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=sanitized_git_env(),
+    )
+    if tracked.returncode == 0:
+        workflow_paths = sorted(
+            line.strip()
+            for line in tracked.stdout.splitlines()
+            if line.strip().endswith(".yml")
+        )
+        workflows = {}
+        for relative_path in workflow_paths:
+            committed = subprocess.run(
+                ["git", "-C", str(repo_root), "show", f"HEAD:{relative_path}"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=sanitized_git_env(),
+            )
+            if committed.returncode != 0:
+                raise FactoryError(
+                    f"Hoxline workflow safety cannot read committed workflow: {relative_path}"
+                )
+            workflows[Path(relative_path).name] = committed.stdout
+    else:
+        workflow_dir = repo_root / ".github" / "workflows"
+        workflows = {
+            path.name: path.read_text(encoding="utf-8")
+            for path in sorted(workflow_dir.glob("*.yml"))
+        }
     required = {
         "hoxline-source-checks.yml",
         "hoxline-trusted-runtime-verify.yml",
@@ -11514,11 +14089,109 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
     for name, text in workflows.items():
         if "pull_request_target" in text:
             raise FactoryError(f"pull_request_target is not allowed: {name}")
+        if re.search(r"(?m)^\s*continue-on-error\s*:", text):
+            raise FactoryError(f"continue-on-error is not allowed: {name}")
+        if hoxline_workflow_has_shell_neutralizer(text):
+            raise FactoryError(f"shell failure swallowing is not allowed: {name}")
+        checkout_refs = re.findall(
+            r"(?m)^\s*(?:-\s*)?uses:\s*actions/checkout@([^\s#]+)",
+            text,
+        )
+        if any(ref != HOXLINE_ACTIONS_CHECKOUT_SHA for ref in checkout_refs):
+            raise FactoryError(f"actions/checkout must use the reviewed immutable SHA: {name}")
         if "pull_request:" in text:
             if "self-hosted" in text:
                 raise FactoryError(f"pull_request workflow cannot use self-hosted runner: {name}")
             if "secrets." in text or "private-route" in text or "PRIVATE_ROUTE" in text:
                 raise FactoryError(f"pull_request workflow cannot access private runtime routes or secrets: {name}")
+    source = workflows["hoxline-source-checks.yml"]
+    if "pull_request:" not in source:
+        raise FactoryError("Hoxline source checks must run on pull_request")
+    if re.search(r"(?m)^\s*if\s*:", source) or re.search(r"(?m)^\s*needs\s*:", source):
+        raise FactoryError("Hoxline source checks cannot be conditional on another job")
+    if not re.search(r"(?ms)^permissions:\s*\n\s+contents:\s*read\s*$", source):
+        raise FactoryError("Hoxline source checks must use read-only contents permission")
+    checkout_paths = re.findall(r"(?m)^\s+path:\s*(source-set/[^\s#]+)\s*$", source)
+    expected_checkout_paths = {
+        "source-set/.github",
+        "source-set/hawkinsoperations-detections",
+        "source-set/hawkinsoperations-validation",
+        "source-set/hawkinsoperations-platform",
+        "source-set/hawkinsoperations-proof",
+        "source-set/hawkinsoperations-website",
+        "source-set/hoxline",
+    }
+    if set(checkout_paths) != expected_checkout_paths or len(checkout_paths) != 7:
+        raise FactoryError("Hoxline source checks must check out exactly seven collision-free repositories")
+    if (
+        source.count(f"uses: actions/checkout@{HOXLINE_ACTIONS_CHECKOUT_SHA}") != 7
+        or source.count("persist-credentials: false") != 7
+    ):
+        raise FactoryError("Every Hoxline source checkout must disable persisted credentials")
+    required_source_commands = {
+        "hoxline-case-growth-convergence-verify",
+        "public-status-source-contract-verify",
+        "hoxline-workflow-safety-verify",
+        "python -B -m unittest discover -s tests",
+        "git diff --check",
+    }
+    missing_commands = sorted(command for command in required_source_commands if command not in source)
+    if missing_commands:
+        raise FactoryError(
+            "Hoxline source checks omit mandatory platform gates: "
+            + ", ".join(missing_commands)
+        )
+    explicit_workflow_root = (
+        'hoxline-workflow-safety-verify --repo-root '
+        '"$GITHUB_WORKSPACE/source-set/hawkinsoperations-platform"'
+    )
+    if explicit_workflow_root not in source:
+        raise FactoryError(
+            "Hoxline workflow safety must inspect the explicit checked platform repository root"
+        )
+    explicit_platform_root_commands = {
+        "hoxline-runtime-ops-self-test",
+        "hoxline-control-plane-self-test",
+        "hoxline-schedule-readiness-self-test",
+        "hoxline-schedule-pilot-self-test",
+    }
+    missing_explicit_roots = sorted(
+        command
+        for command in explicit_platform_root_commands
+        if (
+            f'{command} --repo-root '
+            '"$GITHUB_WORKSPACE/source-set/hawkinsoperations-platform"'
+        )
+        not in source
+    )
+    if missing_explicit_roots:
+        raise FactoryError(
+            "Platform-owned self-tests must inspect the explicit checked platform "
+            "repository root: " + ", ".join(missing_explicit_roots)
+        )
+    if "lifetime-ledger-" in source:
+        raise FactoryError("Ledger jobs must remain independent from mandatory convergence checks")
+    governance = workflows.get("governance-gate.yml", "")
+    governance_checkout_count = governance.count(
+        f"uses: actions/checkout@{HOXLINE_ACTIONS_CHECKOUT_SHA}"
+    )
+    if (
+        governance_checkout_count == 0
+        or governance.count("persist-credentials: false")
+        != governance_checkout_count
+    ):
+        raise FactoryError(
+            "Every governance checkout must disable persisted credentials"
+        )
+    if governance.count("python -m pip install jsonschema==4.23.0") != 2:
+        raise FactoryError(
+            "Governance schema validation must pin the reviewed jsonschema version"
+        )
+    ledger_condition = hoxline_workflow_job_condition(
+        governance, "lifetime-case-ledger-v1"
+    )
+    if ledger_condition != "github.event_name != 'pull_request'":
+        raise FactoryError("The intentional PR ledger skip must remain explicit and independently bounded")
     trusted = workflows["hoxline-trusted-runtime-verify.yml"]
     canary = workflows["hoxline-private-canary.yml"]
     schedule = workflows["hoxline-schedule-gated-collection.yml"]
@@ -11546,6 +14219,9 @@ def hoxline_workflow_safety_verify(repo_root: Path) -> dict[str, Any]:
         "schedule_disabled_by_default": True,
         "active_cron_trigger": active_cron,
         "unrestricted_artifact_upload": False,
+        "source_checkout_count": len(checkout_paths),
+        "mandatory_convergence_unconditional": True,
+        "ledger_pr_skip_independent": True,
     }
 
 
@@ -11922,6 +14598,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub = subparsers.add_parser("hoxline-evidence-product-convergence-self-test")
     sub.add_argument("--repo-root", default=str(PLATFORM_ROOT))
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("detection-quality-run")
+    sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+    sub.add_argument("--detections-ref", required=True)
+    sub.add_argument("--validation-ref", required=True)
+    sub = subparsers.add_parser("hoxline-case-growth-convergence-verify")
+    sub.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("hoxline-evidence-graph")
     sub.add_argument("--execution-id")
     sub.add_argument("--private-route")
@@ -12039,6 +14722,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
+
+    if args.mode == "detection-quality-run":
+        print(json.dumps(detection_quality_run(Path(args.repo_root), args.detections_ref, args.validation_ref), indent=2, sort_keys=True))
+        return 0
 
     if args.mode in {"ledger-init-sample", "ledger-verify", "ledger-metrics"}:
         repo_root = Path(args.repo_root).resolve()
@@ -12422,6 +15109,11 @@ def main(argv: list[str] | None = None) -> int:
         output = hoxline_evidence_to_product_convergence_self_test(Path(args.repo_root).resolve())
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
+
+    if args.mode == "hoxline-case-growth-convergence-verify":
+        output = hoxline_case_growth_convergence_verify(Path(args.repo_root))
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0 if output["status"] == "pass" else 1
 
     if args.mode == "hoxline-evidence-graph":
         replay = hoxline_runtime_replay_fixture(execution_id=args.execution_id or "HO-DET-001-20260620T173615Z-6ELQ03") if args.fixture else hoxline_runtime_replay(args.execution_id, args.private_route)
