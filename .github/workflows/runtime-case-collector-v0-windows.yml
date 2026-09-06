@@ -3,110 +3,99 @@ name: Runtime Case Collector v0 Windows
 on:
   workflow_dispatch:
     inputs:
-      collector_output_route:
-        description: Private Windows collector output route on the trusted runner host
+      collect_candidates:
+        description: Explicitly authorized receipt intake; default performs no private job
+        type: boolean
         required: true
+        default: false
+      collector_output_route:
+        description: Existing approved collector output directory
         type: string
-  # Scheduled runs paused while self-hosted runtime runners/main PC are offline. Manual workflow_dispatch remains available for approved runtime reentry.
-  # schedule:
-  #   - cron: "0 * * * *"
+        required: true
+      receipt_path:
+        description: Sanitized hoxline-collector-receipt-v1 envelope on trusted host
+        type: string
+        required: true
+      evidence_path:
+        description: Referenced sanitized evidence file matching the receipt digest
+        type: string
+        required: true
+      execution_id:
+        description: Exact HO-DET-001 execution correlation
+        type: string
+        required: true
+  # Scheduled runs remain paused. No schedule is enabled by this workflow.
 
 permissions:
   contents: read
 
+concurrency:
+  group: runtime-collector-windows
+  cancel-in-progress: false
+
 jobs:
   collect-windows-candidates:
     name: Collect Windows runtime candidates
-    if: github.repository == 'HawkinsOperations/hawkinsoperations-platform' && github.ref == 'refs/heads/main'
+    if: github.repository == 'HawkinsOperations/hawkinsoperations-platform' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.collect_candidates
     runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: ${{ github.workspace }}
+        shell: pwsh
     steps:
       - name: Check out platform repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-
-      - name: Verify Windows factory script path
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
+          fetch-depth: 0
+      - name: Set up selected Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Install explicit collector dependency
         run: |
-          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
-          if (-not (Test-Path -LiteralPath $factoryScript)) {
-            Write-Error "Expected checked-out factory script was not found at $factoryScript."
-            exit 1
-          }
-
-      - name: Preflight Windows collector lane
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
-        env:
-          COLLECTOR_OUTPUT_ROUTE: ${{ github.event_name == 'schedule' && vars.RCC_WINDOWS_OUTPUT_ROUTE || inputs.collector_output_route }}
-        run: |
-          $route = $env:COLLECTOR_OUTPUT_ROUTE
-          if ([string]::IsNullOrWhiteSpace($route)) {
-            Write-Error "RCC_WINDOWS_OUTPUT_ROUTE is required for scheduled collection, and collector_output_route is required for workflow_dispatch."
-            exit 1
-          }
-          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
-          $preflight = python -B "$factoryScript" collector-windows-preflight --output-route "$route" --format json
+          python -m pip install --disable-pip-version-check PyYAML==6.0.2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $preflightJson = $preflight | ConvertFrom-Json
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Runtime Case Collector v0 Windows"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- collector lane: windows"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- workflow run ID: $env:GITHUB_RUN_ID"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- route approved: $($preflightJson.route_status.approved_windows_private_route -ne $null)"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- route exists: $($preflightJson.route_status.route_exists)"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- route writable: $($preflightJson.route_status.route_writable)"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- append_to_lifetime_ledger: false"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- governed_cases_appended: false"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- public_safe_status: NOT_PUBLIC_SAFE"
 
-      - name: Self-test Windows collector lane
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
-        run: |
-          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
-          python -B "$factoryScript" collector-windows-self-test --format json
-
-      - name: Dry-run Windows collector lane
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
-        run: |
-          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
-          python -B "$factoryScript" collector-windows-run-once --dry-run --format json
-
-      - name: Collect Windows private candidates
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
+      - name: Collect and verify this execution only
         env:
-          COLLECTOR_OUTPUT_ROUTE: ${{ github.event_name == 'schedule' && vars.RCC_WINDOWS_OUTPUT_ROUTE || inputs.collector_output_route }}
+          COLLECTOR_LANE: windows
+          COLLECTOR_OUTPUT_ROUTE: ${{ inputs.collector_output_route }}
+          RECEIPT_PATH: ${{ inputs.receipt_path }}
+          EVIDENCE_PATH: ${{ inputs.evidence_path }}
+          EXECUTION_ID: ${{ inputs.execution_id }}
+          SELECTED_SOURCE_REF: ${{ github.sha }}
         run: |
-          $route = $env:COLLECTOR_OUTPUT_ROUTE
-          if ([string]::IsNullOrWhiteSpace($route)) {
-            Write-Error "RCC_WINDOWS_OUTPUT_ROUTE is required for scheduled collection, and collector_output_route is required for workflow_dispatch."
-            exit 1
-          }
-          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
-          $collect = python -B "$factoryScript" collector-windows-run-once --output-route "$route" --format json
+          $ErrorActionPreference = 'Stop'
+          @'
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          lane = os.environ["COLLECTOR_LANE"]
+          script = Path("scripts/ho_factory.py").resolve()
+          def invoke(*arguments):
+              result = subprocess.run([sys.executable, "-B", str(script), *arguments, "--format", "json"],
+                                      capture_output=True, text=True, timeout=120)
+              if result.returncode:
+                  raise SystemExit("Collector stage failed; private details withheld")
+              return json.loads(result.stdout)
+          route = os.environ["COLLECTOR_OUTPUT_ROUTE"]
+          execution = os.environ["EXECUTION_ID"]
+          source = os.environ["SELECTED_SOURCE_REF"]
+          invoke("collector-" + lane + "-preflight", "--output-route", route)
+          result = invoke("collector-" + lane + "-run-once", "--collect", "--output-route", route,
+                          "--receipt", os.environ["RECEIPT_PATH"], "--evidence", os.environ["EVIDENCE_PATH"],
+                          "--execution-id", execution, "--source-ref", source)
+          candidate = str(Path(route) / result["output_name"])
+          for action in ("verify", "dedupe-check"):
+              invoke("collector-" + lane + "-" + action, "--candidate", candidate,
+                     "--execution-id", execution, "--source-ref", source, "--packet-hash", result["packet_hash"])
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("Receipt intake and current-output verification completed. "
+                            "AI unavailable; human review required. No ledger append or proof promotion.\n")
+          '@ | python -
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $collectJson = $collect | ConvertFrom-Json
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- candidate_count: $($collectJson.candidate_count)"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- duplicate_count: $($collectJson.duplicate_count)"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- generated_output_files: $($collectJson.generated_output_files)"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- final boundary: RUNTIME_CASE_COLLECTOR_V0_WINDOWS_PRIVATE_CANDIDATE_COLLECTION_ONLY"
-
-      - name: Verify Windows collector sample
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
-        run: |
-          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
-          python -B "$factoryScript" collector-windows-verify --format json
-
-      - name: Check Windows collector dedupe
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
-        run: |
-          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
-          python -B "$factoryScript" collector-windows-dedupe-check --format json

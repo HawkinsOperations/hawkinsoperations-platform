@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
@@ -5108,7 +5110,299 @@ def verify_runtime_collector_windows_packet(packet: dict[str, Any]) -> dict[str,
     }
 
 
+def collector_read_json(path: Path) -> dict[str, Any]:
+    """Strict, bounded intake; errors never echo private input or filesystem paths."""
+    def pairs(items: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in items:
+            if key in result:
+                raise FactoryError("COLLECTOR_DUPLICATE_KEY")
+            result[key] = value
+        return result
+    try:
+        collector_safe_path(path)
+        with path.open("rb") as stream:
+            raw = stream.read(262145)
+        if len(raw) > 262144:
+            raise FactoryError("COLLECTOR_INPUT_TOO_LARGE")
+        result = json.loads(raw.decode("utf-8"), object_pairs_hook=pairs,
+                            parse_constant=lambda _: (_ for _ in ()).throw(FactoryError("COLLECTOR_NONFINITE")))
+        if not isinstance(result, dict):
+            raise FactoryError("COLLECTOR_OBJECT_REQUIRED")
+        return result
+    except (OSError, ValueError, UnicodeError, RecursionError) as exc:
+        raise FactoryError("COLLECTOR_INPUT_UNAVAILABLE_OR_INVALID") from exc
+
+
+def collector_safe_path(path: Path) -> Path:
+    if not path.is_absolute() or ".." in path.parts:
+        raise FactoryError("COLLECTOR_ABSOLUTE_CONFINED_PATH_REQUIRED")
+    for part in (path, *path.parents):
+        try:
+            info = part.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 1024:
+            raise FactoryError("COLLECTOR_LINK_PATH_BLOCKED")
+        if stat.S_ISREG(info.st_mode) and info.st_nlink > 1:
+            raise FactoryError("COLLECTOR_HARDLINK_PATH_BLOCKED")
+    return path
+
+
+def collector_source_identity(source_ref: str, *, test_only: bool) -> dict[str, Any]:
+    if not isinstance(source_ref, str) or not re.fullmatch(r"[0-9a-f]{40}", source_ref):
+        raise FactoryError("COLLECTOR_EXACT_SOURCE_REQUIRED")
+    def git(*args: str) -> str:
+        result = subprocess.run(["git", "-C", str(PLATFORM_ROOT), *args], capture_output=True,
+                                text=True, timeout=15, env=sanitized_git_env())
+        if result.returncode:
+            raise FactoryError("COLLECTOR_SOURCE_UNAVAILABLE")
+        return result.stdout.strip()
+    if git("rev-parse", "HEAD") != source_ref:
+        raise FactoryError("COLLECTOR_SOURCE_HEAD_CHANGED")
+    origin = git("remote", "get-url", "origin").removesuffix(".git")
+    if origin not in {"https://github.com/HawkinsOperations/hawkinsoperations-platform",
+                      "git@github.com:HawkinsOperations/hawkinsoperations-platform"}:
+        raise FactoryError("COLLECTOR_WRONG_SOURCE_OWNER")
+    if not test_only and git("status", "--porcelain", "--untracked-files=no"):
+        raise FactoryError("COLLECTOR_DIRTY_SOURCE")
+    files = ("scripts/ho_factory.py", "scripts/run_local_gpu_triage.py")
+    return {"repository": "HawkinsOperations/hawkinsoperations-platform", "head": source_ref,
+            "executed_content": {name: hashlib.sha256((PLATFORM_ROOT / name).read_bytes().replace(b"\r\n", b"\n")).hexdigest() for name in files}}
+
+
+def collector_restart_preflight(lane: str, output_route: str | None, *, test_only: bool = False) -> dict[str, Any]:
+    host = "windows" if sys.platform == "win32" else "linux" if sys.platform.startswith("linux") else "unsupported"
+    if host == "unsupported" or (not test_only and lane != host):
+        raise FactoryError("COLLECTOR_HOST_OS_MISMATCH")
+    if yaml is None:
+        raise FactoryError("COLLECTOR_PYYAML_REQUIRED")
+    if output_route:
+        route = collector_safe_path(Path(output_route))
+        if not test_only:
+            (normalize_windows_collector_route if lane == "windows" else normalize_linux_collector_route)(output_route)
+        if not route.is_dir() or not os.access(route, os.W_OK):
+            raise FactoryError("COLLECTOR_EXISTING_WRITABLE_ROUTE_REQUIRED")
+    return {"status": "pass", "execution_host_os": host, "telemetry_source_os": "windows",
+            "collector_lane": lane, "detection_id": "HO-DET-001", "backend": "Wazuh",
+            "route_checked": bool(output_route), "write_probe_executed": False,
+            "collection_authorized": False, "generated_output_files": False}
+
+
+def collector_validate_receipt(receipt: dict[str, Any], evidence: dict[str, Any], evidence_sha256: str,
+                               execution_id: str, *, test_only: bool, now: datetime | None = None) -> None:
+    fields = {"schema_version", "receipt", "input_provenance", "telemetry_source_os", "detection_id",
+              "window_start_utc", "window_end_utc"}
+    signal_fields = {"execution_id", "receipt_digest", "observed_at_utc", "wazuh_rule_id",
+                     "backend_identity", "event_class", "signal_count"}
+    if set(receipt) != fields or receipt["schema_version"] != "hoxline-collector-receipt-v1":
+        raise FactoryError("COLLECTOR_RECEIPT_SCHEMA")
+    signal = receipt["receipt"]
+    if not isinstance(signal, dict) or set(signal) != signal_fields:
+        raise FactoryError("COLLECTOR_SIGNAL_SCHEMA")
+    if receipt["detection_id"] != "HO-DET-001" or receipt["telemetry_source_os"] != "Windows":
+        raise FactoryError("COLLECTOR_DETECTION_OR_TELEMETRY_MISMATCH")
+    expected_provenance = "CONTROLLED_TEST" if test_only else "OPERATOR_ATTESTED_RECEIPT"
+    if receipt["input_provenance"] != expected_provenance:
+        raise FactoryError("COLLECTOR_PROVENANCE_MISMATCH")
+    if signal["execution_id"] != execution_id or not re.fullmatch(r"HO-DET-001-[0-9]{8}T[0-9]{6}Z-[A-Z0-9]{6}", execution_id):
+        raise FactoryError("COLLECTOR_EXECUTION_MISMATCH")
+    if signal["backend_identity"] != "HO-WAZUH-01" or signal["wazuh_rule_id"] != "100204":
+        raise FactoryError("COLLECTOR_BACKEND_MISMATCH")
+    if signal["event_class"] != "process_behavior" or type(signal["signal_count"]) is not int or not 1 <= signal["signal_count"] <= 10000:
+        raise FactoryError("COLLECTOR_SIGNAL_FIELDS")
+    expected_evidence = {key: value for key, value in signal.items() if key != "receipt_digest"}
+    expected_evidence["input_provenance"] = expected_provenance
+    if evidence != expected_evidence or signal["receipt_digest"] != evidence_sha256:
+        raise FactoryError("COLLECTOR_REFERENCED_EVIDENCE_MISMATCH")
+    def instant(value: Any) -> datetime:
+        if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", value):
+            raise FactoryError("COLLECTOR_TIME_INVALID")
+        try:
+            return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except ValueError as exc:
+            raise FactoryError("COLLECTOR_TIME_INVALID") from exc
+    start, end, observed = (instant(receipt["window_start_utc"]), instant(receipt["window_end_utc"]), instant(signal["observed_at_utc"]))
+    execution_time = datetime.strptime(execution_id.split("-")[3], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+    current = now or datetime.now(timezone.utc)
+    if not start <= observed <= end or not start <= execution_time <= end or not 0 <= (end-start).total_seconds() <= 3600:
+        raise FactoryError("COLLECTOR_CORRELATION_WINDOW_MISMATCH")
+    if not 0 <= (current-observed).total_seconds() <= 3600 or end > current:
+        raise FactoryError("COLLECTOR_RECEIPT_STALE_OR_FUTURE")
+    hoxline_validate_canary_receipt(signal)
+
+
+def collector_ai_module() -> Any:
+    spec = importlib.util.spec_from_file_location("collector_support_adapter", PLATFORM_ROOT / "scripts/run_local_gpu_triage.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def collector_build_restart_packet(lane: str, receipt: dict[str, Any], evidence: dict[str, Any],
+                                   source: dict[str, Any], *, ai_config: dict[str, Any] | None = None,
+                                   transport: Callable | None = None) -> dict[str, Any]:
+    signal = receipt["receipt"]
+    payload = runtime_collector_linux_payload_from_signal(execution_id=signal["execution_id"],
+        signal_receipt_digest=signal["receipt_digest"], signal_observed_time_utc=signal["observed_at_utc"],
+        backend_class="Wazuh", wazuh_rule_id=signal["wazuh_rule_id"])
+    assert payload is not None
+    payload.update(source_truth_status="RECEIPT_CONTENT_INTEGRITY_CHECKED",
+                   runtime_truth_status="RUNTIME_CANDIDATE_ONLY",
+                   signal_truth_status="CONTROLLED_TEST_ONLY" if receipt["input_provenance"] == "CONTROLLED_TEST" else "OPERATOR_ATTESTED_NOT_INDEPENDENTLY_OBSERVED")
+    build = build_runtime_collector_windows_candidate if lane == "windows" else build_runtime_collector_linux_candidate
+    candidate = build(payload, collector_run_id=signal["execution_id"], collected_at_utc=signal["observed_at_utc"])
+    normalized = normalize_runtime_collector_candidate(candidate, lane, review_only=True)
+    verify_runtime_collector_normalized_candidate(normalized)
+    adapter = collector_ai_module()
+    support_input = adapter.build_support_input(detection_id="HO-DET-001", execution_id=signal["execution_id"],
+        backend="Wazuh", execution_host_os="Windows" if sys.platform == "win32" else "Linux",
+        telemetry_source_os="Windows", input_provenance=receipt["input_provenance"],
+        upstream_sha256=canonical_sha256(normalized), event_class="process_behavior")
+    ai = adapter.run_support(support_input, ai_config, transport=transport)
+    checkpoint = {"schema_version": "hoxline-runtime-checkpoint-v0", "backend_identity": "HO-WAZUH-01",
+        "detection_id": "HO-DET-001", "last_successful_observed_at": signal["observed_at_utc"],
+        "last_signal_digest": signal["receipt_digest"], "last_execution_id": signal["execution_id"],
+        "last_candidate_digest": candidate["candidate_hash"], "last_run_id": signal["execution_id"],
+        "retry_count": 0, "last_error_code": None, "dead_letter_count": 0}
+    checkpoint["checkpoint_hash"] = canonical_sha256(checkpoint)
+    hoxline_verify_checkpoint(checkpoint)
+    packet = {"schema_version": "hoxline-collector-execution-v1", "collector_lane": lane,
+        "execution_id": signal["execution_id"], "source": source, "receipt": receipt,
+        "evidence": evidence, "candidate": candidate, "normalized_candidate": normalized,
+        "checkpoint": checkpoint, "support_input": support_input, "ai_support": ai,
+        "stages": {"receipt_integrity": "VERIFIED", "provenance": receipt["input_provenance"],
+                   "normalization": "VERIFIED", "ai_support": ai["state"], "operator_review": "REQUIRED"},
+        "human_review_required": True, "append_to_lifetime_ledger": False, "case_closed": False,
+        "proof_promoted": False, "public_safe": False, "actual_model_inference_executed": False}
+    packet["packet_hash"] = canonical_sha256(packet)
+    return packet
+
+
+def collector_verify_restart_packet(packet: dict[str, Any], lane: str, execution_id: str, source_ref: str) -> dict[str, Any]:
+    if packet.get("schema_version") != "hoxline-collector-execution-v1" or packet.get("collector_lane") != lane or packet.get("execution_id") != execution_id:
+        raise FactoryError("COLLECTOR_CURRENT_OUTPUT_MISMATCH")
+    if packet.get("packet_hash") != canonical_sha256({k:v for k,v in packet.items() if k != "packet_hash"}):
+        raise FactoryError("COLLECTOR_OUTPUT_INTEGRITY")
+    test_only = packet["receipt"]["input_provenance"] == "CONTROLLED_TEST"
+    collector_validate_receipt(packet["receipt"], packet["evidence"], packet["receipt"]["receipt"]["receipt_digest"],
+                               execution_id, test_only=test_only)
+    if packet["source"] != collector_source_identity(source_ref, test_only=test_only):
+        raise FactoryError("COLLECTOR_OUTPUT_SOURCE_MISMATCH")
+    # Reconstruct owner-derived stages. AI is checked separately against its original input.
+    expected = collector_build_restart_packet(lane, packet["receipt"], packet["evidence"], packet["source"])
+    for key in expected:
+        if key not in {"packet_hash", "ai_support", "stages"} and packet.get(key) != expected[key]:
+            raise FactoryError("COLLECTOR_REPLAY_STAGE_MISMATCH")
+    if set(packet) != set(expected):
+        raise FactoryError("COLLECTOR_OUTPUT_EXTRA_FIELDS")
+    adapter = collector_ai_module()
+    if packet["ai_support"].get("execution_mode") not in {"NO_EXECUTION", "TEST_DOUBLE"} or packet["ai_support"].get("actual_model_inference_executed") is not False:
+        raise FactoryError("COLLECTOR_INFERENCE_AUTHORITY_BLOCKED")
+    adapter.verify_support_receipt(packet["ai_support"], packet["support_input"])
+    expected["stages"]["ai_support"] = packet["ai_support"]["state"]
+    if packet["stages"] != expected["stages"]:
+        raise FactoryError("COLLECTOR_STAGE_STATUS_MISMATCH")
+    return {"status": "pass", "current_output_verified": True, "execution_id": execution_id,
+            "packet_hash": packet["packet_hash"], "ai_state": packet["ai_support"]["state"],
+            "human_review_required": True, "append_to_lifetime_ledger": False}
+
+
+def collector_publish_output(target: Path, serialized: str) -> None:
+    collector_safe_path(target)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=target.parent, prefix="collector-pending-", suffix=".tmp", delete=False) as staged:
+        staged.write(serialized)
+        staged.flush()
+        os.fsync(staged.fileno())
+        staged_path = Path(staged.name)
+    collector_safe_path(target)
+    os.replace(staged_path, target)
+    if os.name != "nt":
+        descriptor = os.open(target.parent, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+
+def collector_restart_run(lane: str, *, output_route: str, receipt_path: str, evidence_path: str,
+                          execution_id: str, source_ref: str, test_only: bool = False,
+                          ai_config: dict[str, Any] | None = None, transport: Callable | None = None) -> dict[str, Any]:
+    try:
+        collector_restart_preflight(lane, output_route, test_only=test_only)
+        source = collector_source_identity(source_ref, test_only=test_only)
+        receipt = collector_read_json(Path(receipt_path))
+        evidence = collector_read_json(Path(evidence_path))
+        evidence_bytes = Path(evidence_path).read_bytes()
+        if len(evidence_bytes) > 262144 or json.loads(evidence_bytes) != evidence:
+            raise FactoryError("COLLECTOR_INPUT_CHANGED")
+        collector_validate_receipt(receipt, evidence, hashlib.sha256(evidence_bytes).hexdigest(), execution_id, test_only=test_only)
+        if not test_only and (ai_config is not None or transport is not None):
+            raise FactoryError("COLLECTOR_INFERENCE_REQUIRES_SEPARATE_ADAPTER_ACTION")
+        route = Path(output_route)
+        database = collector_safe_path(route / "collector-restart.sqlite")
+        for suffix in ("-journal", "-wal", "-shm"):
+            collector_safe_path(Path(str(database) + suffix))
+        target = collector_safe_path(route / f"collector-{lane}-{execution_id}.json")
+        # Existing SQLite checkpoint convention, with a reserved transaction for the whole handoff.
+        conn = sqlite3.connect(str(database), timeout=3)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if tables - {"restart_receipts"}:
+                raise FactoryError("COLLECTOR_UNRELATED_DATABASE_BLOCKED")
+            conn.execute("CREATE TABLE IF NOT EXISTS restart_receipts (execution_id TEXT PRIMARY KEY, receipt_hash TEXT NOT NULL, packet TEXT NOT NULL)")
+            receipt_hash = canonical_sha256(receipt)
+            row = conn.execute("SELECT receipt_hash, packet FROM restart_receipts WHERE execution_id=?", (execution_id,)).fetchone()
+            recovered_output = False
+            if row:
+                if row[0] != receipt_hash:
+                    raise FactoryError("COLLECTOR_REPLAY_CONFLICT")
+                if not target.exists():
+                    saved = json.loads(row[1])
+                    collector_verify_restart_packet(saved, lane, execution_id, source_ref)
+                    if saved["receipt"] != receipt or saved["evidence"] != evidence:
+                        raise FactoryError("COLLECTOR_RECOVERY_INPUT_MISMATCH")
+                    collector_publish_output(target, row[1])
+                    recovered_output = True
+                packet = collector_read_json(target)
+                if canonical_sha256(packet) != canonical_sha256(json.loads(row[1])):
+                    raise FactoryError("COLLECTOR_CHECKPOINT_OUTPUT_MISMATCH")
+                hoxline_verify_checkpoint(packet["checkpoint"])
+                decision = hoxline_checkpoint_decision(packet["checkpoint"], signal_digest=receipt["receipt"]["receipt_digest"], execution_id=execution_id)
+                if decision["candidate_created"]:
+                    raise FactoryError("COLLECTOR_CHECKPOINT_DEDUPE_MISMATCH")
+                duplicate = True
+            else:
+                packet = collector_build_restart_packet(lane, receipt, evidence, source, ai_config=ai_config, transport=transport)
+                serialized = json.dumps(packet, indent=2, sort_keys=True, allow_nan=False) + "\n"
+                if target.exists():
+                    # Resume after file publication but before transaction commit, never accept partial bytes.
+                    if collector_read_json(target) != packet:
+                        raise FactoryError("COLLECTOR_PARTIAL_OR_CONFLICTING_OUTPUT")
+                else:
+                    collector_publish_output(target, serialized)
+                conn.execute("INSERT INTO restart_receipts VALUES (?,?,?)", (execution_id, receipt_hash, serialized))
+                duplicate = False
+            if source != collector_source_identity(source_ref, test_only=test_only):
+                raise FactoryError("COLLECTOR_SOURCE_CHANGED_DURING_RUN")
+            verification = collector_verify_restart_packet(collector_read_json(target), lane, execution_id, source_ref)
+            conn.commit()
+        finally:
+            conn.close()
+        return {**verification, "candidate_count": 1, "duplicate_count": int(duplicate),
+                "generated_output_files": not duplicate or recovered_output, "recovered_output": recovered_output,
+                "output_name": target.name,
+                "input_provenance": receipt["input_provenance"], "actual_model_inference_executed": False}
+    except (OSError, sqlite3.Error, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+        raise FactoryError("COLLECTOR_HANDOFF_FAILED") from exc
+
+
 def runtime_collector_windows_preflight(output_route: str | None = None) -> dict[str, Any]:
+    if output_route:
+        collector_restart_preflight("windows", output_route)
     route_status: dict[str, Any] = {
         "approved_route_identity": "windows_canonical_private_route",
         "output_route_required_for_collect": True,
@@ -5164,22 +5458,7 @@ def runtime_collector_windows_run_once(dry_run: bool, output_route: str | None =
     }
     if dry_run:
         return output
-    if not output_route:
-        raise FactoryError("collector-windows-run-once collect mode requires --output-route")
-    approved_route = normalize_windows_collector_route(output_route)
-    route_path = Path(approved_route).resolve()
-    route_path.mkdir(parents=True, exist_ok=True)
-    output_file = route_path / f"{candidate['collector_run_id']}-{candidate['candidate_id']}.json"
-    if output_file.exists():
-        output["generated_output_files"] = False
-        output["duplicate_preserved"] = True
-        output["output_file"] = str(output_file)
-        return output
-    output_file.write_text(json.dumps(packet, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    output["generated_output_files"] = True
-    output["duplicate_preserved"] = False
-    output["output_file"] = str(output_file)
-    return output
+    raise FactoryError('COLLECTOR_RECEIPT_BOUND_COLLECT_REQUIRED')
 
 
 def runtime_collector_windows_self_test() -> dict[str, Any]:
@@ -5518,6 +5797,8 @@ def normalize_linux_collector_route(output_route: str) -> str:
 
 
 def runtime_collector_linux_preflight(output_route: str | None = None) -> dict[str, Any]:
+    if output_route:
+        collector_restart_preflight("linux", output_route)
     route_status: dict[str, Any] = {
         "preferred_output_route": RUNTIME_COLLECTOR_LINUX_OUTPUT_ROUTE,
         "fallback_output_route": RUNTIME_COLLECTOR_LINUX_ROUTE_FALLBACK,
@@ -5656,23 +5937,7 @@ def runtime_collector_linux_run_once(
     }
     if dry_run:
         return output
-    if not output_route:
-        raise FactoryError("collector-linux-run-once collect mode requires --output-route")
-    normalize_linux_collector_route(output_route)
-    route_path = Path(output_route).resolve()
-    if not route_path.is_dir() or not os.access(route_path, os.W_OK):
-        raise FactoryError("collector-linux-run-once requires an existing writable Linux-private output route")
-    output_file = route_path / f"{candidate['collector_run_id']}-{candidate['candidate_id']}.json"
-    if output_file.exists():
-        output["generated_output_files"] = False
-        output["duplicate_preserved"] = True
-        output["output_file"] = str(output_file)
-        return output
-    output_file.write_text(json.dumps(packet, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    output["generated_output_files"] = True
-    output["duplicate_preserved"] = False
-    output["output_file"] = str(output_file)
-    return output
+    raise FactoryError('COLLECTOR_RECEIPT_BOUND_COLLECT_REQUIRED')
 
 
 def runtime_collector_linux_self_test() -> dict[str, Any]:
@@ -5760,7 +6025,7 @@ def load_runtime_collector_normalizer_plan(candidate_plan: Path | None = None) -
     return plan
 
 
-def normalize_runtime_collector_candidate(candidate: dict[str, Any], expected_lane: str) -> dict[str, Any]:
+def normalize_runtime_collector_candidate(candidate: dict[str, Any], expected_lane: str, *, review_only: bool = False) -> dict[str, Any]:
     if expected_lane == "windows":
         verify_runtime_collector_windows_candidate(candidate)
     elif expected_lane == "linux":
@@ -5819,8 +6084,8 @@ def normalize_runtime_collector_candidate(candidate: dict[str, Any], expected_la
         "runtime_truth_status": candidate["runtime_truth_status"],
         "signal_truth_status": candidate["signal_truth_status"],
         "case_status": "RUNTIME_CANDIDATE_ONLY",
-        "append_status": "APPEND_READY_REQUIRES_EXACT_APPROVAL",
-        "append_blocked_reason": "APPEND_APPROVAL_REQUIRED",
+        "append_status": "REVIEW_REQUIRED" if review_only else "APPEND_READY_REQUIRES_EXACT_APPROVAL",
+        "append_blocked_reason": "RECEIPT_INTAKE_ONLY" if review_only else "APPEND_APPROVAL_REQUIRED",
         "triage_status": "HUMAN_REVIEW_REQUIRED",
         "disposition_status": "NO_DISPOSITION",
         "ai_support_mode": "AI_SUPPORT_ONLY",
@@ -14478,26 +14743,47 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--receipt", required=True, choices=("ho-det-001",))
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-windows-preflight")
+    sub.add_argument("--test-only", action="store_true")
     sub.add_argument("--output-route")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-windows-self-test")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-windows-run-once")
+    sub.add_argument("--collect", action="store_true")
+    sub.add_argument("--test-only", action="store_true")
+    sub.add_argument("--receipt")
+    sub.add_argument("--evidence")
+    sub.add_argument("--source-ref")
+    sub.add_argument("--execution-id")
     sub.add_argument("--dry-run", action="store_true")
     sub.add_argument("--output-route")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-windows-verify")
+    sub.add_argument("--execution-id")
+    sub.add_argument("--source-ref")
+    sub.add_argument("--packet-hash")
+    sub.add_argument("--sample", action="store_true")
     sub.add_argument("--candidate")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-windows-dedupe-check")
+    sub.add_argument("--execution-id")
+    sub.add_argument("--source-ref")
+    sub.add_argument("--packet-hash")
+    sub.add_argument("--sample", action="store_true")
     sub.add_argument("--candidate")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-linux-preflight")
+    sub.add_argument("--test-only", action="store_true")
     sub.add_argument("--output-route")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-linux-self-test")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-linux-run-once")
+    sub.add_argument("--collect", action="store_true")
+    sub.add_argument("--test-only", action="store_true")
+    sub.add_argument("--receipt")
+    sub.add_argument("--evidence")
+    sub.add_argument("--source-ref")
     sub.add_argument("--dry-run", action="store_true")
     sub.add_argument("--output-route")
     sub.add_argument("--execution-id")
@@ -14507,9 +14793,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub.add_argument("--wazuh-rule-id")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-linux-verify")
+    sub.add_argument("--execution-id")
+    sub.add_argument("--source-ref")
+    sub.add_argument("--packet-hash")
+    sub.add_argument("--sample", action="store_true")
     sub.add_argument("--candidate")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-linux-dedupe-check")
+    sub.add_argument("--execution-id")
+    sub.add_argument("--source-ref")
+    sub.add_argument("--packet-hash")
+    sub.add_argument("--sample", action="store_true")
     sub.add_argument("--candidate")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-normalizer-self-test")
@@ -14908,6 +15202,52 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(verify_ho_det_001_socaas_pilot_receipt(), indent=2, sort_keys=True))
         return 0
 
+    if args.mode in {f"collector-{lane}-{action}" for lane in ("windows", "linux") for action in ("run-once", "verify", "dedupe-check", "preflight")}:
+        lane = args.mode.split("-")[1]
+        if args.mode.endswith("preflight") and args.test_only:
+            output = collector_restart_preflight(lane, args.output_route, test_only=True)
+            print(json.dumps(output, sort_keys=True))
+            return 0
+        if args.mode.endswith("run-once"):
+            if lane == "linux" and any((args.signal_receipt_digest, args.signal_observed_time_utc, args.backend_class, args.wazuh_rule_id)):
+                raise FactoryError("COLLECTOR_DIGEST_ONLY_INTAKE_BLOCKED_USE_RECEIPT_AND_EVIDENCE")
+            if args.collect:
+                if args.dry_run or not all((args.output_route, args.receipt, args.evidence, args.execution_id, args.source_ref)):
+                    raise FactoryError("COLLECTOR_EXPLICIT_RECEIPT_ARGUMENTS_REQUIRED")
+                output = collector_restart_run(lane, output_route=args.output_route, receipt_path=args.receipt,
+                    evidence_path=args.evidence, execution_id=args.execution_id, source_ref=args.source_ref, test_only=args.test_only)
+            else:
+                if any((args.receipt, args.evidence, args.output_route)):
+                    raise FactoryError("COLLECTOR_COLLECT_OPT_IN_REQUIRED")
+                output = (runtime_collector_windows_run_once if lane == "windows" else runtime_collector_linux_run_once)(True)
+                output["input_provenance"] = "HISTORICAL_SAMPLE_DEMONSTRATION"
+                output["collection_executed"] = False
+            print(json.dumps(output, indent=2, sort_keys=True))
+            return 0
+        if args.mode.endswith(("verify", "dedupe-check")):
+            if not args.candidate:
+                if not args.sample:
+                    raise FactoryError("COLLECTOR_CURRENT_CANDIDATE_REQUIRED")
+            else:
+                if args.sample or not all((args.execution_id, args.source_ref, args.packet_hash)):
+                    raise FactoryError("COLLECTOR_CURRENT_OUTPUT_BINDING_REQUIRED")
+                packet = collector_read_json(Path(args.candidate))
+                if packet.get("packet_hash") != args.packet_hash:
+                    raise FactoryError("COLLECTOR_EXPECTED_OUTPUT_HASH_MISMATCH")
+                try:
+                    output = collector_verify_restart_packet(packet, lane, args.execution_id, args.source_ref)
+                    database = collector_safe_path(Path(args.candidate).parent / "collector-restart.sqlite")
+                    if not database.is_file():
+                        raise FactoryError("COLLECTOR_CURRENT_CHECKPOINT_REQUIRED")
+                    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=3) as conn:
+                        row = conn.execute("SELECT packet FROM restart_receipts WHERE execution_id=?", (args.execution_id,)).fetchone()
+                    if not row or json.loads(row[0]) != packet:
+                        raise FactoryError("COLLECTOR_CURRENT_CHECKPOINT_MISMATCH")
+                except (OSError, ValueError, KeyError, TypeError, sqlite3.Error, subprocess.SubprocessError) as exc:
+                    raise FactoryError("COLLECTOR_CURRENT_OUTPUT_INVALID") from exc
+                print(json.dumps(output, sort_keys=True))
+                return 0
+
     if args.mode == "collector-windows-preflight":
         output = runtime_collector_windows_preflight(args.output_route)
         print(json.dumps(output, indent=2, sort_keys=True))
@@ -14994,7 +15334,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode == "hoxline-runtime-health":
         output = hoxline_runtime_health(args.private_route)
         print(json.dumps(output, indent=2, sort_keys=True))
-        return 0
+        return 0 if output["health_status"] == "pass" else 1
 
     if args.mode == "hoxline-runtime-replay":
         output = hoxline_runtime_replay(

@@ -1,5 +1,73 @@
 # Local GPU Triage Pipeline v0
 
+## Server-return support adapter v1
+
+The additive `support-run` and `support-verify` commands in
+`scripts/run_local_gpu_triage.py` prepare bounded support execution. The existing
+`status` command and Phase A/B packet below remain historical no-model paths;
+their timestamps and receipts are not refreshed by this adapter.
+
+`build_support_input` accepts only detection ID, execution correlation, backend,
+execution-host OS, telemetry-source OS, provenance, upstream SHA256 and an
+enumerated event class. Its caller must verify the current execution's candidate
+first. This shape check cannot authenticate origin. `OPERATOR_ATTESTED_RECEIPT`
+remains operator-attested; `CONTROLLED_TEST` never activates real inference.
+Linux-host execution of Windows-origin input stays Windows telemetry.
+
+`run_support(input_packet, config=None)` returns `AI_UNAVAILABLE`, retaining the
+upstream digest, and makes no call. With an injected test transport, it exercises
+the actual request and output validator and labels receipts `TEST_DOUBLE` with
+`actual_model_inference_executed=false`. Failed optional support never deletes
+valid upstream evidence or grants ledger append eligibility.
+
+The versioned `local-ai-support-execution-v1` receipt is validated by
+`verify_support_receipt(receipt, input_packet)`. This is separate from the older
+schema-only local LLM runtime receipt. It binds canonical input/output hashes,
+selected model identity and attempts, with fixed human-review and non-authority
+fields. Receipt integrity is not independent origin authentication. The selected
+model digest is operator-attested; a matching provider response does not prove
+the installed model's bytes or deployment state. Successful test transport is
+not inference evidence. For unsuccessful real requests the receipt makes no
+inference-success claim; the provider may have begun computation before failure.
+
+The optional real connector supports only an operator-selected loopback HTTP
+origin and the fixed Ollama `/api/chat` route. It ignores proxy environment
+configuration, refuses redirects, uses nonstreaming JSON, bounds requests to
+16 KiB, responses to 32 KiB, and output to 512 tokens, with at most two attempts
+and at most 30 seconds per attempt. Model response identity and completion are
+checked. Only summary, uncertainty, missing context and suggested checks survive
+output validation. No model text selects tools or changes configuration or
+detection outcomes. Raw event text is never sent. Uncertainty and missing context
+must remain present. Errors expose no provider exception body or private route.
+
+Operator configuration requires these exact fields: `provider` (`ollama`),
+`endpoint` (explicit loopback origin including port), `model` (sanitized selected
+model identity), `model_digest` (64 lowercase hexadecimal characters),
+`timeout_seconds` and `max_attempts`. No private endpoint/model value is supplied
+by this repository. Before a real trial the operator must independently establish
+the installed model identity, approve the sanitized input/output routes, and
+provide separate runtime activation authorization. No download or model pull is
+implemented. The existing status-only GPU workflow is not an inference workflow.
+
+Prepared CLI forms, whose input/configuration paths must be operator resolved:
+
+```text
+python -B scripts/run_local_gpu_triage.py support-run --input INPUT_JSON
+python -B scripts/run_local_gpu_triage.py support-run --input INPUT_JSON --config CONFIG_JSON --test-response TEST_RESPONSE_JSON
+python -B scripts/run_local_gpu_triage.py support-verify --input INPUT_JSON --receipt RECEIPT_JSON
+```
+
+These commands write only stdout. Exit 0 means support output was accepted, or
+receipt integrity passed for `support-verify`; exit 3 is optional support
+unavailable/rejected; exit 2 is invalid input/configuration/receipt. A later
+authorized real trial uses `support-run --input INPUT_JSON --config CONFIG_JSON
+--authorize-inference`. That flag and test-response mode are mutually exclusive.
+The server-return source mission does not execute this real trial.
+
+Hosted Windows/Linux tests use injected responses and mocked HTTP connection
+objects, never a service, model, private runner or raw telemetry. Run the adapter
+suite with `python -B -m unittest discover -s tests -p test_local_gpu_triage_adapter.py`.
+
 ## Purpose
 
 Local GPU Triage Pipeline v0 is a platform-side contract and verifier lane for
