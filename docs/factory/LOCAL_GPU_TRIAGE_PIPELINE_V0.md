@@ -1,72 +1,100 @@
 # Local GPU Triage Pipeline v0
 
-## Server-return support adapter v1
+## Evidence-grounded support v2
 
-The additive `support-run` and `support-verify` commands in
-`scripts/run_local_gpu_triage.py` prepare bounded support execution. The existing
-`status` command and Phase A/B packet below remain historical no-model paths;
-their timestamps and receipts are not refreshed by this adapter.
+`evidence-input`, `evidence-run` and `evidence-verify` in
+`scripts/run_local_gpu_triage.py` connect validation-owned HO-DET-001 event facts
+to bounded advisory support. The historical `status` packet below is unchanged.
+Legacy `support-run` v1 remains metadata-only, supports controlled injected
+responses, and now rejects actual-inference activation. Its old receipt semantics
+must not be used to describe new provider execution.
 
-`build_support_input` accepts only detection ID, execution correlation, backend,
-execution-host OS, telemetry-source OS, provenance, upstream SHA256 and an
-enumerated event class. Its caller must verify the current execution's candidate
-first. This shape check cannot authenticate origin. `OPERATOR_ATTESTED_RECEIPT`
-remains operator-attested; `CONTROLLED_TEST` never activates real inference.
-Linux-host execution of Windows-origin input stays Windows telemetry.
+The validation owner, `scripts/detection_quality.py`, provides `--facts-case` for
+an existing controlled fixture and `--facts-event` for independently supplied
+operator-sanitized process input. Both execute the selected canonical source rule.
+They emit safe identity categories, actual selector matches, lexical argument
+indicator categories, missing fields and unknown parent context. EventID is an
+input classification; the current rule does not enforce EventID. Argument
+categories do not establish decoded payload behavior or intent.
 
-`run_support(input_packet, config=None)` returns `AI_UNAVAILABLE`, retaining the
-upstream digest, and makes no call. With an injected test transport, it exercises
-the actual request and output validator and labels receipts `TEST_DOUBLE` with
-`actual_model_inference_executed=false`. Failed optional support never deletes
-valid upstream evidence or grants ledger append eligibility.
+Controlled fixtures retain their original expected and observed outcomes. The
+operator-input route has no invented expectation: `expected_match=null`,
+`status=EVALUATED`, `input_provenance=OPERATOR_ATTESTED_INPUT`,
+`origin_authenticated=false`, and a `SOURCE_EXISTS` ceiling. It rejects exact
+known corpus events as attested input. This exclusion cannot authenticate an
+arbitrary submitted event. Operator provenance remains an operator responsibility.
 
-The versioned `local-ai-support-execution-v1` receipt is validated by
-`verify_support_receipt(receipt, input_packet)`. This is separate from the older
-schema-only local LLM runtime receipt. It binds canonical input/output hashes,
-selected model identity and attempts, with fixed human-review and non-authority
-fields. Receipt integrity is not independent origin authentication. The selected
-model digest is operator-attested; a matching provider response does not prove
-the installed model's bytes or deployment state. Successful test transport is
-not inference evidence. For unsuccessful real requests the receipt makes no
-inference-success claim; the provider may have begun computation before failure.
+The platform verifies exact selected validation root/origin/revision and committed
+executable bytes before loading the owner. It reexecutes the full owner result
+before and after transport. Fact substitution, changed sources, changed execution
+or changed independent event input invalidate the binding. The provider sees
+only the sanitized owner result, never the event file, raw commands or parent
+prose. The standalone support receipt binds the entire validated upstream packet;
+it does not add inference to the collector format that forbids it.
 
-The optional real connector supports only an operator-selected loopback HTTP
-origin and the fixed Ollama `/api/chat` route. It ignores proxy environment
-configuration, refuses redirects, uses nonstreaming JSON, bounds requests to
-16 KiB, responses to 32 KiB, and output to 512 tokens, with at most two attempts
-and at most 30 seconds per attempt. Model response identity and completion are
-checked. Only summary, uncertainty, missing context and suggested checks survive
-output validation. No model text selects tools or changes configuration or
-detection outcomes. Raw event text is never sent. Uncertainty and missing context
-must remain present. Errors expose no provider exception body or private route.
+The v2 receipt distinguishes input validation, authorization, attempted request,
+possible delivery, response receipt, valid completion and application output
+acceptance. Rejected application content does not erase an observed completion.
+A timeout after possible delivery remains `UNKNOWN_AFTER_REQUEST`; automatic
+retry is allowed only before any possible delivery. Unavailable AI preserves the
+validated facts for operator review. No case, ledger or proof state is changed.
 
-Operator configuration requires these exact fields: `provider` (`ollama`),
-`endpoint` (explicit loopback origin including port), `model` (sanitized selected
-model identity), `model_digest` (64 lowercase hexadecimal characters),
-`timeout_seconds` and `max_attempts`. No private endpoint/model value is supplied
-by this repository. Before a real trial the operator must independently establish
-the installed model identity, approve the sanitized input/output routes, and
-provide separate runtime activation authorization. No download or model pull is
-implemented. The existing status-only GPU workflow is not an inference workflow.
+The exact selected model name and SHA256 digest must match the provider's model
+inventory before and after the request. No implicit tag or alias resolution is
+performed. This is provider-reported inventory comparison, not hardware
+attestation. An operator-selected digest alone is never called observed.
+The bounded protocol follows official Ollama [chat](https://docs.ollama.com/api/chat)
+and [model inventory](https://docs.ollama.com/api/tags) contracts: nonstreaming
+JSON, optional string `thinking` metadata discarded, no tool calls or image
+outputs, typed numeric metadata, exact completion model identity. The installed
+operator version/model/digest must still be established before activation.
 
-Prepared CLI forms, whose input/configuration paths must be operator resolved:
+Configuration uses exactly `provider` (`ollama`), `endpoint` (explicit numeric
+loopback HTTP origin with port), `model`, `model_digest` (64 lowercase hex),
+`timeout_seconds` (greater than zero, at most 30), and `max_attempts` (1 or 2).
+No download, proxy, redirect, model pull or service activation is implemented.
+Each HTTP exchange has a total deadline; requests are bounded to 16 KiB,
+responses to 32 KiB, and generated content is requested with `num_predict=512`.
+The sequence has two inventory reads and at most two pre-delivery chat attempts.
+
+Output contains only summary, uncertainty, missing context, suggested checks and
+this execution's evidence reference. Valid factual security vocabulary is allowed;
+commands, private routes, action/authority attempts and unsupported fields are
+blocked. References establish linkage, not the truth of every advisory sentence.
+The separately displayed facts remain authoritative owner results; free-form
+interpretation is advisory. This is not a natural-language truth verifier.
+
+Prepared command templates below require operator-resolved paths and exact
+revisions. `SELECTION` means all of `--validation-root`, `--validation-ref`,
+`--detections-root`, `--detections-ref`, `--execution-id`, and exactly one of
+`--facts-case CASE_ID` or `--event EVENT_JSON`.
 
 ```text
-python -B scripts/run_local_gpu_triage.py support-run --input INPUT_JSON
-python -B scripts/run_local_gpu_triage.py support-run --input INPUT_JSON --config CONFIG_JSON --test-response TEST_RESPONSE_JSON
-python -B scripts/run_local_gpu_triage.py support-verify --input INPUT_JSON --receipt RECEIPT_JSON
+python -B scripts/detection_quality.py --detections-root DETECTIONS_ROOT --detections-ref DETECTIONS_SHA --facts-case CASE_ID --execution-id EXECUTION_ID
+python -B scripts/run_local_gpu_triage.py evidence-input SELECTION --facts FACTS_JSON
+python -B scripts/run_local_gpu_triage.py evidence-run SELECTION --input INPUT_JSON
+python -B scripts/run_local_gpu_triage.py evidence-run SELECTION --input INPUT_JSON --config CONFIG_JSON --test-http
+python -B scripts/run_local_gpu_triage.py evidence-verify SELECTION --input INPUT_JSON --receipt RECEIPT_JSON
 ```
 
-These commands write only stdout. Exit 0 means support output was accepted, or
-receipt integrity passed for `support-verify`; exit 3 is optional support
-unavailable/rejected; exit 2 is invalid input/configuration/receipt. A later
-authorized real trial uses `support-run --input INPUT_JSON --config CONFIG_JSON
---authorize-inference`. That flag and test-response mode are mutually exclusive.
-The server-return source mission does not execute this real trial.
+The first command belongs in validation; the others belong in platform. Commands
+write stdout only. Capture it only to an approved private route. Exit 0 is accepted
+support or successful verification; exit 3 is unavailable/rejected support with
+facts preserved; exit 2 is invalid source/input/configuration/receipt.
 
-Hosted Windows/Linux tests use injected responses and mocked HTTP connection
-objects, never a service, model, private runner or raw telemetry. Run the adapter
-suite with `python -B -m unittest discover -s tests -p test_local_gpu_triage_adapter.py`.
+`--test-http` starts and owns an isolated loopback HTTP emulator. It ignores the
+configured provider endpoint and produces deterministic request-sensitive test
+support. It is controlled provider emulation, not model inference. A separately
+authorized real trial replaces `--test-http` with `--authorize-inference` and
+requires the independently supplied operator-input route. Controlled fixtures
+cannot activate that branch. Real receipts describe `PROVIDER_REPORTED_COMPLETION`,
+`UNKNOWN` or `NOT_OBSERVED`; these are not independent proof of hardware execution.
+
+Hosted Windows and Linux tests run the real owner/CLI/HTTP handoff with controlled
+inputs, including positive and negative source results. Windows-origin telemetry
+remains Windows-origin on either host; no Linux endpoint coverage is implied.
+Run `python -B -m unittest discover -s tests -p test_local_gpu_triage_adapter.py`
+from the selected platform checkout with the exact selected sibling owners.
 
 ## Purpose
 

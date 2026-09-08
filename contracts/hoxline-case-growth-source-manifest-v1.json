@@ -17,7 +17,7 @@
     },
     "hawkinsoperations-validation": {
       "repository": "HawkinsOperations/hawkinsoperations-validation",
-      "revision": "c8f3f08995d78fa103115610e5c6a2b85ee61701"
+      "revision": "e76726eb041e137092d52f5bdd8f5797e78cd8f4"
     },
     "hawkinsoperations-proof": {
       "repository": "HawkinsOperations/hawkinsoperations-proof",

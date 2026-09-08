@@ -90,7 +90,7 @@ This lane does not establish Linux endpoint detection coverage.
    sanitized `support_input`, and per-stage status. Normalization is
    `REVIEW_REQUIRED`, with no append readiness or closure authority.
 8. Optional AI support is a separate explicit operation through
-   `scripts/run_local_gpu_triage.py support-run`; see
+   `scripts/run_local_gpu_triage.py evidence-run`; see
    [the existing GPU support guide](LOCAL_GPU_TRIAGE_PIPELINE_V0.md).
    Missing AI preserves upstream evidence and reports `AI_UNAVAILABLE`.
    No collector call implicitly invokes inference.
@@ -136,3 +136,23 @@ Do not dispatch `hoxline-private-canary.yml`, enable schedules, or use
 `collector-normalizer-append-approved` as part of this prepared intake path.
 The existing emergency stops remain in place. Later ledger/proof/publication
 work requires separate human authority and evidence review.
+
+### Evidence-grounded support handoff
+
+The standalone v2 support path consumes a validation-owned fact receipt and
+reexecutes the independently selected event/source. The existing collector
+envelope contains aggregate signal metadata, not process arguments or parent
+facts. It cannot substitute for that event input, and matching an execution ID
+alone does not authenticate a relationship between the two receipts.
+
+An operator must retain the captured event's origin, time-window and execution
+correlation separately, prepare only the validation owner's allowlisted normalized
+fields, and inspect sanitization before a separately authorized inference trial.
+No generated fixture may be relabeled as live input. Source-predicate evaluation
+is distinct from backend execution; negative events remain source-review results
+and are never forced into a positive runtime candidate.
+
+The support receipt always displays owner facts when AI is unavailable. Hoxline
+operator review remains required. No support result alters collector checkpoint
+state, makes a candidate append-ready, changes close eligibility, or raises proof
+status. See the v2 command sequence in `LOCAL_GPU_TRIAGE_PIPELINE_V0.md`.
