@@ -16,6 +16,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -155,6 +156,10 @@ RUNTIME_COLLECTOR_WINDOWS_SAMPLE = (
 )
 RUNTIME_COLLECTOR_WINDOWS_PROOF_CEILING = "RUNTIME_CASE_COLLECTOR_V0_WINDOWS_PRIVATE_CANDIDATE_COLLECTION_ONLY"
 RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTE = "C:\\Raylee\\Data\\HawkinsOperations\\runtime-case-collector-v0\\windows\\"
+RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTES = (
+    RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTE,
+    "C:\\Raylee\\Data\\runtime-case-collector-v0\\windows\\",
+)
 RUNTIME_COLLECTOR_WINDOWS_ROUTE_PROBE_RUN_ID = "26849122652"
 RUNTIME_COLLECTOR_WINDOWS_ROUTE_PROBE_STATUS = "pass"
 RUNTIME_COLLECTOR_WINDOWS_RUNNER_LABELS = ("self-hosted", "Windows", "X64")
@@ -4877,11 +4882,26 @@ def build_runtime_collector_windows_candidate(
     }
 
 
-def load_runtime_collector_windows_packet(candidate_path: Path | None = None) -> dict[str, Any]:
-    if candidate_path:
-        packet = load_json(candidate_path)
-    else:
-        packet = load_json(RUNTIME_COLLECTOR_WINDOWS_SAMPLE)
+def load_runtime_collector_windows_packet(candidate_path: Path | None = None, *, candidate_text: str | None = None) -> dict[str, Any]:
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise FactoryError("Windows runtime collector JSON must not contain duplicate object keys")
+            result[key] = value
+        return result
+
+    def reject_nonfinite(value: str) -> Any:
+        raise FactoryError("Windows runtime collector JSON must not contain non-finite numeric constants")
+
+    try:
+        packet = json.loads(
+            candidate_text if candidate_text is not None else (candidate_path or RUNTIME_COLLECTOR_WINDOWS_SAMPLE).read_text(encoding="utf-8"),
+            object_pairs_hook=reject_duplicate_keys,
+            parse_constant=reject_nonfinite,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise FactoryError("Windows runtime collector packet must be readable valid JSON") from exc
     if not isinstance(packet, dict):
         raise FactoryError("Runtime Case Collector Windows packet must be an object")
     return packet
@@ -4929,10 +4949,10 @@ def runtime_collector_windows_dedupe_key(candidate: dict[str, Any]) -> tuple[Any
 
 def normalize_windows_collector_route(output_route: str) -> str:
     normalized = output_route.strip().strip('"').strip("'").replace("/", "\\").rstrip("\\").casefold()
-    approved = RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTE.rstrip("\\").casefold()
-    if normalized != approved:
-        raise FactoryError("Windows collector output route is not the approved Windows-private collector route")
-    return RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTE
+    for approved in RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTES:
+        if normalized == approved.rstrip("\\").casefold():
+            return approved
+    raise FactoryError("Windows collector output route is not an approved Windows-private collector route")
 
 
 def verify_runtime_collector_windows_candidate(candidate: dict[str, Any]) -> dict[str, bool]:
@@ -4988,6 +5008,56 @@ def verify_runtime_collector_windows_candidate(candidate: dict[str, Any]) -> dic
 
 
 def verify_runtime_collector_windows_packet(packet: dict[str, Any]) -> dict[str, Any]:
+    def verify_schema_assertions(schema: dict[str, Any]) -> None:
+        supported_keywords = {
+            "$schema", "$id", "title", "description", "type", "const", "properties", "required",
+            "additionalProperties", "items", "minItems", "minLength", "pattern", "minimum",
+        }
+        if set(schema) - supported_keywords or isinstance(schema.get("additionalProperties"), dict):
+            raise FactoryError("Windows runtime collector owning schema contains unsupported assertions")
+        for child in schema.get("properties", {}).values():
+            verify_schema_assertions(child)
+        if "items" in schema:
+            verify_schema_assertions(schema["items"])
+
+    def verify_schema(value: Any, schema: dict[str, Any]) -> None:
+        schema_type = schema.get("type")
+        type_checks = {
+            "object": isinstance(value, dict),
+            "array": isinstance(value, list),
+            "string": isinstance(value, str),
+            "boolean": type(value) is bool,
+            "integer": type(value) is int,
+        }
+        if schema_type and not type_checks.get(schema_type, False):
+            raise FactoryError("Windows runtime collector packet violates its owning schema type")
+        if "const" in schema and canonical_sha256(value) != canonical_sha256(schema["const"]):
+            raise FactoryError("Windows runtime collector packet violates its owning schema constant")
+        if schema_type == "object":
+            properties = schema.get("properties", {})
+            if set(schema.get("required", ())) - set(value):
+                raise FactoryError("Windows runtime collector packet is missing required schema fields")
+            if schema.get("additionalProperties") is False and set(value) - set(properties):
+                raise FactoryError("Windows runtime collector packet contains unsupported schema fields")
+            for key in set(value) & set(properties):
+                verify_schema(value[key], properties[key])
+        elif schema_type == "array":
+            if len(value) < schema.get("minItems", 0):
+                raise FactoryError("Windows runtime collector packet has too few schema array items")
+            if "items" in schema:
+                for item in value:
+                    verify_schema(item, schema["items"])
+        elif schema_type == "string":
+            if len(value) < schema.get("minLength", 0) or (
+                "pattern" in schema and re.search(schema["pattern"], value) is None
+            ):
+                raise FactoryError("Windows runtime collector packet violates its owning schema string contract")
+        elif schema_type == "integer" and value < schema.get("minimum", value):
+            raise FactoryError("Windows runtime collector packet violates its owning schema minimum")
+
+    schema = load_json(RUNTIME_COLLECTOR_WINDOWS_SCHEMA)
+    verify_schema_assertions(schema)
+    verify_schema(packet, schema)
     candidates = packet.get("candidates")
     if not isinstance(candidates, list):
         raise FactoryError("Windows runtime collector packet candidates must be a list")
@@ -5004,6 +5074,11 @@ def verify_runtime_collector_windows_packet(packet: dict[str, Any]) -> dict[str,
         seen.add(key)
     checks = {
         "schema_version": packet.get("schema_version") == RUNTIME_COLLECTOR_WINDOWS_VERSION,
+        "collector_version": packet.get("collector_version") == RUNTIME_COLLECTOR_WINDOWS_VERSION,
+        "collector_run_id_matches": all(candidate["collector_run_id"] == packet["collector_run_id"] for candidate in candidates),
+        "generated_output_files_false": packet.get("generated_output_files") is False,
+        "notes_boundary": packet.get("notes_boundary") == RUNTIME_COLLECTOR_WINDOWS_BOUNDARY,
+        "candidate_notes_boundaries": all(candidate["notes_boundary"] == RUNTIME_COLLECTOR_WINDOWS_BOUNDARY for candidate in candidates),
         "collector_lane": packet.get("collector_lane") == "windows",
         "public_safe_status": packet.get("public_safe_status") == "NOT_PUBLIC_SAFE",
         "proof_ceiling": packet.get("proof_ceiling") == RUNTIME_COLLECTOR_WINDOWS_PROOF_CEILING,
@@ -5014,6 +5089,7 @@ def verify_runtime_collector_windows_packet(packet: dict[str, Any]) -> dict[str,
             candidate.get("append_to_lifetime_ledger") is False for candidate in candidates
         ),
         "case_closure_blocked": all(candidate.get("case_closed") is False for candidate in candidates),
+        "deterministic_historical_packet": canonical_sha256(packet) == canonical_sha256(runtime_collector_windows_packet()),
     }
     failed = sorted(name for name, passed in checks.items() if not passed)
     if failed:
@@ -5039,12 +5115,22 @@ def runtime_collector_windows_preflight(output_route: str | None = None) -> dict
         "route_writable_probe": "not_run_by_preflight",
     }
     if output_route:
+        if sys.platform != "win32":
+            raise FactoryError("Windows collector collection preflight requires a Windows host")
         approved_route = normalize_windows_collector_route(output_route)
         route_status["approved_windows_private_route"] = "canonical_windows_private_route"
         route_path = Path(approved_route).resolve()
+        if route_path != Path(approved_route).absolute():
+            raise FactoryError("Windows collector output route must not redirect outside its approved path")
         route_status["route_exists"] = route_path.exists()
         route_status["route_is_dir"] = route_path.is_dir()
         route_status["route_writable"] = os.access(route_path, os.W_OK) if route_path.exists() else False
+        if not route_status["route_exists"]:
+            raise FactoryError("Windows collector output route does not exist; provision the approved private route first")
+        if not route_status["route_is_dir"]:
+            raise FactoryError("Windows collector output route must be a directory")
+        if not route_status["route_writable"]:
+            raise FactoryError("Windows collector output route is not writable")
     return {
         "controller_version": CONTROLLER_VERSION,
         "mode": "collector-windows-preflight",
@@ -5054,6 +5140,9 @@ def runtime_collector_windows_preflight(output_route: str | None = None) -> dict
         "runner_labels": list(RUNTIME_COLLECTOR_WINDOWS_RUNNER_LABELS),
         "route_probe_run_id": RUNTIME_COLLECTOR_WINDOWS_ROUTE_PROBE_RUN_ID,
         "route_probe_status": RUNTIME_COLLECTOR_WINDOWS_ROUTE_PROBE_STATUS,
+        "route_probe_scope": "historical_route_probe_receipt_only",
+        "current_route_probe_status": "not_run_by_preflight",
+        "collect_ready": bool(output_route),
         "workflow_trigger_required": "workflow_dispatch",
         "pull_request_allowed": False,
         "pull_request_target_allowed": False,
@@ -5063,6 +5152,177 @@ def runtime_collector_windows_preflight(output_route: str | None = None) -> dict
         "route_status": route_status,
         "status": "pass",
     }
+
+
+@contextmanager
+def locked_runtime_collector_windows_route(route_path: Path):
+    """Hold every path component against redirection while accessing a candidate."""
+    components = [*reversed(route_path.parents), route_path]
+    handles: list[int] = []
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        close = kernel32.CloseHandle
+        close.argtypes = [wintypes.HANDLE]
+        close.restype = wintypes.BOOL
+        try:
+            for component in components:
+                handle = native_runtime_collector_windows_handle(
+                    component.name if handles else "\\??\\" + str(component),
+                    handles[-1] if handles else None,
+                    "r",
+                    directory=True,
+                )
+                handles.append(handle)
+            yield ("windows", handles[-1])
+        finally:
+            for handle in reversed(handles):
+                close(handle)
+    elif os.name == "posix" and os.open in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW") and hasattr(os, "O_DIRECTORY"):
+        try:
+            for component in components:
+                handle = os.open(
+                    str(component) if not handles else component.name,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=handles[-1] if handles else None,
+                )
+                handles.append(handle)
+            yield ("posix", handles[-1])
+        except OSError as exc:
+            raise FactoryError("Windows collector directory-relative route protection failed") from exc
+        finally:
+            for handle in reversed(handles):
+                os.close(handle)
+    else:
+        raise FactoryError("Windows collector requires supported native route protection")
+
+
+def native_runtime_collector_windows_handle(name_value: str, root_handle: int | None, mode: str, *, directory: bool = False) -> int:
+    if os.name != "nt" or mode not in {"r", "x"} or directory and mode != "r":
+        raise FactoryError("Windows collector requires supported native handle acquisition")
+    if root_handle is not None and (not name_value or name_value in {".", ".."} or any(character in name_value for character in "\\/:")):
+        raise FactoryError("Windows collector native child name must be a single relative component")
+    import ctypes
+    from ctypes import wintypes
+
+    class UnicodeString(ctypes.Structure):
+        _fields_ = [("length", wintypes.USHORT), ("maximum_length", wintypes.USHORT), ("buffer", wintypes.LPWSTR)]
+
+    class ObjectAttributes(ctypes.Structure):
+        _fields_ = [
+            ("length", wintypes.ULONG), ("root_directory", wintypes.HANDLE),
+            ("object_name", ctypes.POINTER(UnicodeString)), ("attributes", wintypes.ULONG),
+            ("security_descriptor", ctypes.c_void_p), ("security_quality", ctypes.c_void_p),
+        ]
+
+    class IoStatusBlock(ctypes.Structure):
+        _fields_ = [("status", ctypes.c_void_p), ("information", ctypes.c_size_t)]
+
+    class AttributeTagInfo(ctypes.Structure):
+        _fields_ = [("attributes", wintypes.DWORD), ("reparse_tag", wintypes.DWORD)]
+
+    native = ctypes.WinDLL("ntdll", use_last_error=True).NtCreateFile
+    native.argtypes = [
+        ctypes.POINTER(wintypes.HANDLE), wintypes.DWORD, ctypes.POINTER(ObjectAttributes),
+        ctypes.POINTER(IoStatusBlock), ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+        wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD,
+    ]
+    native.restype = ctypes.c_long
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    info = kernel32.GetFileInformationByHandleEx
+    info.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    info.restype = wintypes.BOOL
+    close = kernel32.CloseHandle
+    close.argtypes = [wintypes.HANDLE]
+    close.restype = wintypes.BOOL
+    name_buffer = ctypes.create_unicode_buffer(name_value)
+    name_bytes = len(name_value.encode("utf-16-le"))
+    name = UnicodeString(name_bytes, name_bytes + 2, ctypes.cast(name_buffer, wintypes.LPWSTR))
+    attributes = ObjectAttributes(ctypes.sizeof(ObjectAttributes), root_handle, ctypes.pointer(name), 0x1040, None, None)
+    handle = wintypes.HANDLE()
+    status_block = IoStatusBlock()
+    # Relative to an already-held parent. Opens request read/list attributes;
+    # OPEN_REPARSE_POINT and same-handle inspection enforce directory-only acquisition.
+    desired_access = 0x00100081 if directory else (0x40000000 if mode == "x" else 0x80000000) | 0x00100080
+    status = native(
+        ctypes.byref(handle), desired_access,
+        ctypes.byref(attributes), ctypes.byref(status_block), None, 0x80, 0x1,
+        2 if mode == "x" else 1, 0x00200020 | (0 if directory else 0x40), None, 0,
+    )
+    if status & 0xFFFFFFFF == 0xC0000035:
+        raise FileExistsError("Windows collector candidate already exists")
+    if status < 0:
+        raise FactoryError("Windows collector directory-relative no-reparse file access failed")
+    try:
+        file_info = AttributeTagInfo()
+        if not info(handle, 9, ctypes.byref(file_info), ctypes.sizeof(file_info)):
+            raise FactoryError("Windows collector could not inspect its acquired native handle")
+        if bool(file_info.attributes & 0x10) != directory or file_info.attributes & 0x400:
+            raise FactoryError("Windows collector native handle has the wrong type or a reparse point")
+    except BaseException:
+        close(handle)
+        raise
+    return handle.value
+
+
+def open_runtime_collector_windows_output(output_file: Path, route_handle: tuple[str, int], mode: str):
+    backend, route_fd = route_handle
+    if backend == "windows":
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        handle = native_runtime_collector_windows_handle(output_file.name, route_fd, mode)
+        try:
+            descriptor = msvcrt.open_osfhandle(handle, os.O_WRONLY if mode == "x" else os.O_RDONLY)
+        except BaseException:
+            close = ctypes.WinDLL("kernel32", use_last_error=True).CloseHandle
+            close.argtypes = [wintypes.HANDLE]
+            close.restype = wintypes.BOOL
+            close(handle)
+            raise
+        return os.fdopen(descriptor, "w" if mode == "x" else "r", encoding="utf-8")
+    if backend != "posix":
+        raise FactoryError("Windows collector requires supported directory-relative file access")
+    current = os.stat(output_file.parent, follow_symlinks=False)
+    held = os.fstat(route_fd)
+    if (current.st_dev, current.st_ino) != (held.st_dev, held.st_ino):
+        raise FactoryError("Windows collector approved route identity changed during protected access")
+    flags = os.O_NOFOLLOW | (os.O_WRONLY | os.O_CREAT | os.O_EXCL if mode == "x" else os.O_RDONLY)
+    descriptor = os.open(output_file.name, flags, 0o600, dir_fd=route_fd)
+    return os.fdopen(descriptor, "w" if mode == "x" else "r", encoding="utf-8")
+
+
+def runtime_collector_windows_route_probe(output_route: str, run_id: str, run_attempt: str) -> dict[str, Any]:
+    if not all(re.fullmatch(r"[1-9][0-9]{0,19}", value) for value in (run_id, run_attempt)):
+        raise FactoryError("Windows route probe requires bounded numeric run identity")
+    runtime_collector_windows_preflight(output_route)
+    route_path = Path(normalize_windows_collector_route(output_route)).absolute()
+    output_file = route_path / f"route-probe-{run_id}-{run_attempt}.txt"
+    result = {
+        "mode": "collector-windows-route-probe",
+        "status": "pass",
+        "write_succeeded": True,
+        "read_verified": True,
+        "collector_invoked": False,
+        "lifetime_case_ledger_mutated": False,
+        "governed_cases_appended": False,
+        "public_safe_promotion": False,
+    }
+    body = json.dumps(result, sort_keys=True) + "\n"
+    try:
+        with locked_runtime_collector_windows_route(route_path) as route_handle:
+            with open_runtime_collector_windows_output(output_file, route_handle, "x") as stream:
+                stream.write(body)
+            with open_runtime_collector_windows_output(output_file, route_handle, "r") as stream:
+                if stream.read() != body:
+                    raise FactoryError("Windows protected route probe readback does not match")
+            if route_path.resolve() != route_path.absolute():
+                raise FactoryError("Windows approved route identity changed during its protected probe")
+    except OSError as exc:
+        raise FactoryError("Windows protected route probe failed; existing probe targets must not be overwritten") from exc
+    return result
 
 
 def runtime_collector_windows_run_once(dry_run: bool, output_route: str | None = None) -> dict[str, Any]:
@@ -5085,16 +5345,36 @@ def runtime_collector_windows_run_once(dry_run: bool, output_route: str | None =
         return output
     if not output_route:
         raise FactoryError("collector-windows-run-once collect mode requires --output-route")
+    runtime_collector_windows_preflight(output_route)
     approved_route = normalize_windows_collector_route(output_route)
-    route_path = Path(approved_route).resolve()
-    route_path.mkdir(parents=True, exist_ok=True)
+    route_path = Path(approved_route).absolute()
     output_file = route_path / f"{candidate['collector_run_id']}-{candidate['candidate_id']}.json"
-    if output_file.exists():
+    if output_file.resolve() != output_file.absolute():
+        raise FactoryError("Windows collector candidate output must not redirect outside its approved path")
+    def preserve_existing_packet(route_fd: tuple[str, int]) -> dict[str, Any]:
+        if output_file.resolve() != output_file.absolute():
+            raise FactoryError("Windows collector candidate output must not redirect outside its approved path")
+        with open_runtime_collector_windows_output(output_file, route_fd, "r") as existing_stream:
+            existing_packet = load_runtime_collector_windows_packet(candidate_text=existing_stream.read())
+        verify_runtime_collector_windows_packet(existing_packet)
+        if canonical_sha256(existing_packet) != canonical_sha256(packet):
+            raise FactoryError("Existing Windows collector candidate packet differs from the expected deterministic packet")
         output["generated_output_files"] = False
         output["duplicate_preserved"] = True
         output["output_file"] = str(output_file)
         return output
-    output_file.write_text(json.dumps(packet, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    try:
+        with locked_runtime_collector_windows_route(route_path) as route_fd:
+            try:
+                with open_runtime_collector_windows_output(output_file, route_fd, "x") as output_stream:
+                    output_stream.write(json.dumps(packet, indent=2, sort_keys=True) + "\n")
+                if route_path.resolve() != route_path.absolute():
+                    raise FactoryError("Windows collector route changed during protected candidate creation")
+            except FileExistsError:
+                return preserve_existing_packet(route_fd)
+    except OSError as exc:
+        raise FactoryError("Windows collector protected candidate file access failed") from exc
     output["generated_output_files"] = True
     output["duplicate_preserved"] = False
     output["output_file"] = str(output_file)
@@ -5131,6 +5411,9 @@ def runtime_collector_windows_self_test() -> dict[str, Any]:
         "duplicate_detected": duplicate_count == 1,
         "unsupported_disposition_mutation_blocked": mutation_blocked,
         "approved_route_allowed": approved_route_allowed,
+        "alternate_approved_route_allowed": normalize_windows_collector_route(
+            "c:/raylee/data/runtime-case-collector-v0/windows/"
+        ) == RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTES[1],
         "arbitrary_route_rejected": expect_route_rejected("C:\\not-approved\\runtime-case-collector-v0\\windows\\"),
         "temp_route_rejected": expect_route_rejected("C:\\Users\\Raylee\\AppData\\Local\\Temp\\runtime-case-collector-v0\\windows\\"),
         "workspace_route_rejected": expect_route_rejected("C:\\Raylee\\Repo\\HawkinsOperations\\hawkinsoperations-platform\\out\\windows\\"),
@@ -11804,6 +12087,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     sub = subparsers.add_parser("collector-windows-preflight")
     sub.add_argument("--output-route")
     sub.add_argument("--format", default="json", choices=("json",))
+    sub = subparsers.add_parser("collector-windows-route-probe")
+    sub.add_argument("--output-route", required=True)
+    sub.add_argument("--run-id", required=True)
+    sub.add_argument("--run-attempt", required=True)
+    sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-windows-self-test")
     sub.add_argument("--format", default="json", choices=("json",))
     sub = subparsers.add_parser("collector-windows-run-once")
@@ -12223,6 +12511,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "collector-windows-preflight":
         output = runtime_collector_windows_preflight(args.output_route)
+        print(json.dumps(output, indent=2, sort_keys=True))
+        return 0
+
+    if args.mode == "collector-windows-route-probe":
+        output = runtime_collector_windows_route_probe(args.output_route, args.run_id, args.run_attempt)
         print(json.dumps(output, indent=2, sort_keys=True))
         return 0
 

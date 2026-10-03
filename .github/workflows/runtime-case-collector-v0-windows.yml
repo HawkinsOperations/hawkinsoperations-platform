@@ -14,11 +14,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: runtime-case-collector-v0-windows
+  cancel-in-progress: false
+
 jobs:
   collect-windows-candidates:
     name: Collect Windows runtime candidates
     if: github.repository == 'HawkinsOperations/hawkinsoperations-platform' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: ${{ github.workspace }}
@@ -92,6 +97,14 @@ jobs:
           $collect = python -B "$factoryScript" collector-windows-run-once --output-route "$route" --format json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $collectJson = $collect | ConvertFrom-Json
+          if ([string]::IsNullOrWhiteSpace($collectJson.output_file)) {
+            Write-Error "Collector returned no private candidate path to verify."
+            exit 1
+          }
+          python -B "$factoryScript" collector-windows-verify --candidate "$($collectJson.output_file)" --format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -B "$factoryScript" collector-windows-dedupe-check --candidate "$($collectJson.output_file)" --format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- candidate_count: $($collectJson.candidate_count)"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- duplicate_count: $($collectJson.duplicate_count)"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- generated_output_files: $($collectJson.generated_output_files)"

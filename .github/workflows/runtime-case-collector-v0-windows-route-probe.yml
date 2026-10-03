@@ -23,6 +23,16 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Check out platform repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Set up pinned Python version
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
       - name: Confirm safe runner context
         shell: pwsh
         run: |
@@ -35,43 +45,13 @@ jobs:
 
       - name: Probe private collector output route
         shell: pwsh
+        env:
+          COLLECTOR_OUTPUT_ROUTE: ${{ inputs.collector_output_route }}
         run: |
-          $route = '${{ inputs.collector_output_route }}'
-          if ([string]::IsNullOrWhiteSpace($route)) {
-            Write-Output "WINDOWS_ROUTE_PROBE=fail_missing_route_input"
-            exit 1
-          }
-          $allowed = @(
-            'C:\Raylee\Data\runtime-case-collector-v0\windows',
-            'C:\Raylee\Data\HawkinsOperations\runtime-case-collector-v0\windows'
-          )
-          if ($allowed -notcontains $route) {
-            Write-Output "WINDOWS_ROUTE_PROBE=fail_route_not_allowlisted"
-            exit 1
-          }
-          $routeExistsBefore = Test-Path -LiteralPath $route
-          if (-not $routeExistsBefore) {
-            Write-Output "WINDOWS_ROUTE_PROBE=fail_route_missing"
-            exit 1
-          }
-          $probeName = "route-probe-$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT).txt"
-          $probePath = Join-Path -Path $route -ChildPath $probeName
-          $probeBody = @(
-            'WINDOWS_ROUTE_PROBE=pass',
-            "RUN_ID=$env:GITHUB_RUN_ID",
-            "RUN_ATTEMPT=$env:GITHUB_RUN_ATTEMPT",
-            "PROBE_TIME_UTC=$((Get-Date).ToUniversalTime().ToString('o'))"
-          )
-          Set-Content -LiteralPath $probePath -Value $probeBody -Encoding UTF8
-          $writeSucceeded = Test-Path -LiteralPath $probePath
-          Write-Output "ROUTE_EXISTS_BEFORE=$routeExistsBefore"
-          Write-Output "ROUTE_EXISTS_AFTER=$(Test-Path -LiteralPath $route)"
-          Write-Output "WRITE_SUCCEEDED=$writeSucceeded"
-          if (-not $writeSucceeded) {
-            Write-Output "WINDOWS_ROUTE_PROBE=fail_write"
-            exit 1
-          }
-          Write-Output "WINDOWS_ROUTE_PROBE=pass"
+          $route = $env:COLLECTOR_OUTPUT_ROUTE
+          $factoryScript = Join-Path $env:GITHUB_WORKSPACE "scripts\ho_factory.py"
+          python -B "$factoryScript" collector-windows-route-probe --output-route "$route" --run-id "$env:GITHUB_RUN_ID" --run-attempt "$env:GITHUB_RUN_ATTEMPT" --format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Confirm no collector or ledger mutation
         shell: pwsh

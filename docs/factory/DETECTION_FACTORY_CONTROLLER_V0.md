@@ -243,9 +243,11 @@ trusted-runner output route is supplied.
 
 ## Runtime Case Collector v0 Windows Lane
 
-The Windows lane is a private candidate collector only. It uses the verified
-Windows self-hosted route probe from GitHub Actions run `26849122652` and the
-runner label set `[self-hosted, Windows, X64]`.
+The Windows lane is a private candidate collector only. Its deterministic
+candidate uses the historical Windows route-probe receipt from GitHub Actions
+run `26849122652`. Replaying that candidate does not establish current runner
+availability, a current route probe, or fresh endpoint telemetry. The configured
+runner label set is `[self-hosted, Windows, X64]`.
 
 The lane supports:
 
@@ -257,22 +259,60 @@ The lane supports:
 - `collector-windows-dedupe-check`
 
 The workflow `.github/workflows/runtime-case-collector-v0-windows.yml` is
-`workflow_dispatch` plus an hourly private-candidate schedule. It must not use
+manual `workflow_dispatch` only; the hourly schedule remains paused. It must not use
 `pull_request` or `pull_request_target`, must not upload private evidence, must
 not push commits, must not create GitHub issues, must not mutate the Lifetime
 Case Ledger, and must not update proof or website repos.
 
-Windows collect mode is allowlisted to the canonical Windows-private route only:
+Windows collect mode is allowlisted to the two existing private Windows routes:
 
 ```text
 C:\Raylee\Data\HawkinsOperations\runtime-case-collector-v0\windows\
+C:\Raylee\Data\runtime-case-collector-v0\windows\
 ```
 
 The allowlist normalizes slash direction, casing, and trailing slash, but it
 rejects arbitrary routes, temp paths, workspace paths, wrong drives, and
-unapproved directories. Scheduled collection requires the GitHub
-repository/environment variable `RCC_WINDOWS_OUTPUT_ROUTE` to match the approved
-route and fails closed if the variable is missing or wrong.
+unapproved directories. A supplied-route preflight requires a Windows host and
+an existing writable directory at the approved path; redirected paths fail
+closed. Collection runs the same preflight and does not create missing routes.
+Preflight without `--output-route` checks configuration only and reports
+`collect_ready=false`. Preflight never performs a write probe; its historical
+probe metadata is explicitly distinguished from current route verification.
+Run the existing route-probe workflow after independently verifying an
+enforceable runner access boundary. Current workflow source checks alone do not
+prevent a public fork PR from introducing a workflow targeting a broadly
+registered self-hosted runner. Do not enable the paused schedule as part of
+manual reentry.
+
+An existing candidate file is preserved only after packet verification and exact
+deterministic content comparison. Corrupted or substituted packets fail closed
+without overwriting private output. Use `collector-windows-verify --candidate
+<private candidate file>` and `collector-windows-dedupe-check --candidate <private
+candidate file>` to validate collected output; omitting `--candidate` checks the
+repository sample only.
+
+Packet verification also requires exact deterministic historical packet content,
+including source/runtime status, detection family, collection timestamp, and
+receipt identity. Arbitrary substituted semantics cannot inherit the original
+candidate hash. This lane does not accept newly asserted endpoint observations.
+
+Candidate and route-probe file access acquire every Windows route component
+relative to the previously held parent handle, with no full-path reacquisition.
+Each acquired handle is inspected for directory type and reparse metadata before
+use. They open the child relative to the retained directory handle using `NtCreateFile`,
+`OBJ_DONT_REPARSE`, and exclusive `FILE_CREATE`. Parent paths are not resolved
+again for the child write. Reparse metadata, raced existing files, and unknown
+native protection modes fail closed. Controlled POSIX tests use held directory
+descriptors with `O_NOFOLLOW` and exclusive creation. These operations follow
+the Microsoft contracts for [NtCreateFile](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile)
+and [OBJECT_ATTRIBUTES](https://learn.microsoft.com/en-us/windows/win32/api/ntdef/ns-ntdef-_object_attributes).
+
+The existing route-probe workflow invokes `collector-windows-route-probe` with
+the allowlisted route and numeric GitHub run identity. It writes one exclusive
+probe, verifies its contents through the retained handle, and emits sanitized
+flags only. Existing probe targets are rejected. It does not invoke the
+candidate collector or mutate a ledger, cases, or public-safe state.
 
 Windows runtime candidates are not governed cases. They remain private outputs
 awaiting separate human append approval. Public-safe status stays

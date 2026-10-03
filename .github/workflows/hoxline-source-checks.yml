@@ -73,3 +73,23 @@ jobs:
 
       - name: Git whitespace check
         run: git diff --check
+
+  windows-collector-contract:
+    name: Windows collector contract (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify collector contract
+        run: python -B scripts/ho_factory.py collector-windows-self-test --format json
+      - name: Test rejected preflights and private output integrity
+        run: python -B -m unittest tests/test_runtime_case_collector_windows.py
