@@ -292,6 +292,28 @@ without overwriting private output. Use `collector-windows-verify --candidate
 candidate file>` to validate collected output; omitting `--candidate` checks the
 repository sample only.
 
+Packet verification also requires exact deterministic historical packet content,
+including source/runtime status, detection family, collection timestamp, and
+receipt identity. Arbitrary substituted semantics cannot inherit the original
+candidate hash. This lane does not accept newly asserted endpoint observations.
+
+Candidate and route-probe file access acquire every Windows route component
+relative to the previously held parent handle, with no full-path reacquisition.
+Each acquired handle is inspected for directory type and reparse metadata before
+use. They open the child relative to the retained directory handle using `NtCreateFile`,
+`OBJ_DONT_REPARSE`, and exclusive `FILE_CREATE`. Parent paths are not resolved
+again for the child write. Reparse metadata, raced existing files, and unknown
+native protection modes fail closed. Controlled POSIX tests use held directory
+descriptors with `O_NOFOLLOW` and exclusive creation. These operations follow
+the Microsoft contracts for [NtCreateFile](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile)
+and [OBJECT_ATTRIBUTES](https://learn.microsoft.com/en-us/windows/win32/api/ntdef/ns-ntdef-_object_attributes).
+
+The existing route-probe workflow invokes `collector-windows-route-probe` with
+the allowlisted route and numeric GitHub run identity. It writes one exclusive
+probe, verifies its contents through the retained handle, and emits sanitized
+flags only. Existing probe targets are rejected. It does not invoke the
+candidate collector or mutate a ledger, cases, or public-safe state.
+
 Windows runtime candidates are not governed cases. They remain private outputs
 awaiting separate human append approval. Public-safe status stays
 `NOT_PUBLIC_SAFE`; AI remains `AI_SUPPORT_ONLY`; disposition, publication, and
