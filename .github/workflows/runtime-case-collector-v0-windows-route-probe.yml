@@ -35,8 +35,10 @@ jobs:
 
       - name: Probe private collector output route
         shell: pwsh
+        env:
+          COLLECTOR_OUTPUT_ROUTE: ${{ inputs.collector_output_route }}
         run: |
-          $route = '${{ inputs.collector_output_route }}'
+          $route = $env:COLLECTOR_OUTPUT_ROUTE
           if ([string]::IsNullOrWhiteSpace($route)) {
             Write-Output "WINDOWS_ROUTE_PROBE=fail_missing_route_input"
             exit 1
@@ -54,6 +56,19 @@ jobs:
             Write-Output "WINDOWS_ROUTE_PROBE=fail_route_missing"
             exit 1
           }
+          # Reject junctions/symlinks at every route component before writing.
+          $routeComponent = Get-Item -LiteralPath $route -ErrorAction Stop
+          if (-not $routeComponent.PSIsContainer) {
+            Write-Output "WINDOWS_ROUTE_PROBE=fail_route_not_directory"
+            exit 1
+          }
+          while ($null -ne $routeComponent) {
+            if (($routeComponent.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+              Write-Output "WINDOWS_ROUTE_PROBE=fail_route_redirected"
+              exit 1
+            }
+            $routeComponent = $routeComponent.Parent
+          }
           $probeName = "route-probe-$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT).txt"
           $probePath = Join-Path -Path $route -ChildPath $probeName
           $probeBody = @(
@@ -62,7 +77,14 @@ jobs:
             "RUN_ATTEMPT=$env:GITHUB_RUN_ATTEMPT",
             "PROBE_TIME_UTC=$((Get-Date).ToUniversalTime().ToString('o'))"
           )
-          Set-Content -LiteralPath $probePath -Value $probeBody -Encoding UTF8
+          # Exclusive creation refuses existing files, including redirected targets.
+          $probeStream = [System.IO.File]::Open($probePath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+          try {
+            $probeBytes = [System.Text.UTF8Encoding]::new($false).GetBytes(($probeBody -join "`n") + "`n")
+            $probeStream.Write($probeBytes, 0, $probeBytes.Length)
+          } finally {
+            $probeStream.Dispose()
+          }
           $writeSucceeded = Test-Path -LiteralPath $probePath
           Write-Output "ROUTE_EXISTS_BEFORE=$routeExistsBefore"
           Write-Output "ROUTE_EXISTS_AFTER=$(Test-Path -LiteralPath $route)"

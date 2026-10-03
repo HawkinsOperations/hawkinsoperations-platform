@@ -155,6 +155,10 @@ RUNTIME_COLLECTOR_WINDOWS_SAMPLE = (
 )
 RUNTIME_COLLECTOR_WINDOWS_PROOF_CEILING = "RUNTIME_CASE_COLLECTOR_V0_WINDOWS_PRIVATE_CANDIDATE_COLLECTION_ONLY"
 RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTE = "C:\\Raylee\\Data\\HawkinsOperations\\runtime-case-collector-v0\\windows\\"
+RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTES = (
+    RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTE,
+    "C:\\Raylee\\Data\\runtime-case-collector-v0\\windows\\",
+)
 RUNTIME_COLLECTOR_WINDOWS_ROUTE_PROBE_RUN_ID = "26849122652"
 RUNTIME_COLLECTOR_WINDOWS_ROUTE_PROBE_STATUS = "pass"
 RUNTIME_COLLECTOR_WINDOWS_RUNNER_LABELS = ("self-hosted", "Windows", "X64")
@@ -4878,10 +4882,25 @@ def build_runtime_collector_windows_candidate(
 
 
 def load_runtime_collector_windows_packet(candidate_path: Path | None = None) -> dict[str, Any]:
-    if candidate_path:
-        packet = load_json(candidate_path)
-    else:
-        packet = load_json(RUNTIME_COLLECTOR_WINDOWS_SAMPLE)
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise FactoryError("Windows runtime collector JSON must not contain duplicate object keys")
+            result[key] = value
+        return result
+
+    def reject_nonfinite(value: str) -> Any:
+        raise FactoryError("Windows runtime collector JSON must not contain non-finite numeric constants")
+
+    try:
+        packet = json.loads(
+            (candidate_path or RUNTIME_COLLECTOR_WINDOWS_SAMPLE).read_text(encoding="utf-8"),
+            object_pairs_hook=reject_duplicate_keys,
+            parse_constant=reject_nonfinite,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise FactoryError("Windows runtime collector packet must be readable valid JSON") from exc
     if not isinstance(packet, dict):
         raise FactoryError("Runtime Case Collector Windows packet must be an object")
     return packet
@@ -4929,10 +4948,10 @@ def runtime_collector_windows_dedupe_key(candidate: dict[str, Any]) -> tuple[Any
 
 def normalize_windows_collector_route(output_route: str) -> str:
     normalized = output_route.strip().strip('"').strip("'").replace("/", "\\").rstrip("\\").casefold()
-    approved = RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTE.rstrip("\\").casefold()
-    if normalized != approved:
-        raise FactoryError("Windows collector output route is not the approved Windows-private collector route")
-    return RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTE
+    for approved in RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTES:
+        if normalized == approved.rstrip("\\").casefold():
+            return approved
+    raise FactoryError("Windows collector output route is not an approved Windows-private collector route")
 
 
 def verify_runtime_collector_windows_candidate(candidate: dict[str, Any]) -> dict[str, bool]:
@@ -5039,12 +5058,22 @@ def runtime_collector_windows_preflight(output_route: str | None = None) -> dict
         "route_writable_probe": "not_run_by_preflight",
     }
     if output_route:
+        if sys.platform != "win32":
+            raise FactoryError("Windows collector collection preflight requires a Windows host")
         approved_route = normalize_windows_collector_route(output_route)
         route_status["approved_windows_private_route"] = "canonical_windows_private_route"
         route_path = Path(approved_route).resolve()
+        if route_path != Path(approved_route).absolute():
+            raise FactoryError("Windows collector output route must not redirect outside its approved path")
         route_status["route_exists"] = route_path.exists()
         route_status["route_is_dir"] = route_path.is_dir()
         route_status["route_writable"] = os.access(route_path, os.W_OK) if route_path.exists() else False
+        if not route_status["route_exists"]:
+            raise FactoryError("Windows collector output route does not exist; provision the approved private route first")
+        if not route_status["route_is_dir"]:
+            raise FactoryError("Windows collector output route must be a directory")
+        if not route_status["route_writable"]:
+            raise FactoryError("Windows collector output route is not writable")
     return {
         "controller_version": CONTROLLER_VERSION,
         "mode": "collector-windows-preflight",
@@ -5054,6 +5083,9 @@ def runtime_collector_windows_preflight(output_route: str | None = None) -> dict
         "runner_labels": list(RUNTIME_COLLECTOR_WINDOWS_RUNNER_LABELS),
         "route_probe_run_id": RUNTIME_COLLECTOR_WINDOWS_ROUTE_PROBE_RUN_ID,
         "route_probe_status": RUNTIME_COLLECTOR_WINDOWS_ROUTE_PROBE_STATUS,
+        "route_probe_scope": "historical_route_probe_receipt_only",
+        "current_route_probe_status": "not_run_by_preflight",
+        "collect_ready": bool(output_route),
         "workflow_trigger_required": "workflow_dispatch",
         "pull_request_allowed": False,
         "pull_request_target_allowed": False,
@@ -5085,11 +5117,17 @@ def runtime_collector_windows_run_once(dry_run: bool, output_route: str | None =
         return output
     if not output_route:
         raise FactoryError("collector-windows-run-once collect mode requires --output-route")
+    runtime_collector_windows_preflight(output_route)
     approved_route = normalize_windows_collector_route(output_route)
     route_path = Path(approved_route).resolve()
-    route_path.mkdir(parents=True, exist_ok=True)
     output_file = route_path / f"{candidate['collector_run_id']}-{candidate['candidate_id']}.json"
+    if output_file.resolve() != output_file.absolute():
+        raise FactoryError("Windows collector candidate output must not redirect outside its approved path")
     if output_file.exists():
+        existing_packet = load_runtime_collector_windows_packet(output_file)
+        verify_runtime_collector_windows_packet(existing_packet)
+        if canonical_sha256(existing_packet) != canonical_sha256(packet):
+            raise FactoryError("Existing Windows collector candidate packet differs from the expected deterministic packet")
         output["generated_output_files"] = False
         output["duplicate_preserved"] = True
         output["output_file"] = str(output_file)
@@ -5131,6 +5169,9 @@ def runtime_collector_windows_self_test() -> dict[str, Any]:
         "duplicate_detected": duplicate_count == 1,
         "unsupported_disposition_mutation_blocked": mutation_blocked,
         "approved_route_allowed": approved_route_allowed,
+        "alternate_approved_route_allowed": normalize_windows_collector_route(
+            "c:/raylee/data/runtime-case-collector-v0/windows/"
+        ) == RUNTIME_COLLECTOR_WINDOWS_OUTPUT_ROUTES[1],
         "arbitrary_route_rejected": expect_route_rejected("C:\\not-approved\\runtime-case-collector-v0\\windows\\"),
         "temp_route_rejected": expect_route_rejected("C:\\Users\\Raylee\\AppData\\Local\\Temp\\runtime-case-collector-v0\\windows\\"),
         "workspace_route_rejected": expect_route_rejected("C:\\Raylee\\Repo\\HawkinsOperations\\hawkinsoperations-platform\\out\\windows\\"),
