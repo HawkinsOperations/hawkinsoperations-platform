@@ -5007,6 +5007,56 @@ def verify_runtime_collector_windows_candidate(candidate: dict[str, Any]) -> dic
 
 
 def verify_runtime_collector_windows_packet(packet: dict[str, Any]) -> dict[str, Any]:
+    def verify_schema_assertions(schema: dict[str, Any]) -> None:
+        supported_keywords = {
+            "$schema", "$id", "title", "description", "type", "const", "properties", "required",
+            "additionalProperties", "items", "minItems", "minLength", "pattern", "minimum",
+        }
+        if set(schema) - supported_keywords or isinstance(schema.get("additionalProperties"), dict):
+            raise FactoryError("Windows runtime collector owning schema contains unsupported assertions")
+        for child in schema.get("properties", {}).values():
+            verify_schema_assertions(child)
+        if "items" in schema:
+            verify_schema_assertions(schema["items"])
+
+    def verify_schema(value: Any, schema: dict[str, Any]) -> None:
+        schema_type = schema.get("type")
+        type_checks = {
+            "object": isinstance(value, dict),
+            "array": isinstance(value, list),
+            "string": isinstance(value, str),
+            "boolean": type(value) is bool,
+            "integer": type(value) is int,
+        }
+        if schema_type and not type_checks.get(schema_type, False):
+            raise FactoryError("Windows runtime collector packet violates its owning schema type")
+        if "const" in schema and canonical_sha256(value) != canonical_sha256(schema["const"]):
+            raise FactoryError("Windows runtime collector packet violates its owning schema constant")
+        if schema_type == "object":
+            properties = schema.get("properties", {})
+            if set(schema.get("required", ())) - set(value):
+                raise FactoryError("Windows runtime collector packet is missing required schema fields")
+            if schema.get("additionalProperties") is False and set(value) - set(properties):
+                raise FactoryError("Windows runtime collector packet contains unsupported schema fields")
+            for key in set(value) & set(properties):
+                verify_schema(value[key], properties[key])
+        elif schema_type == "array":
+            if len(value) < schema.get("minItems", 0):
+                raise FactoryError("Windows runtime collector packet has too few schema array items")
+            if "items" in schema:
+                for item in value:
+                    verify_schema(item, schema["items"])
+        elif schema_type == "string":
+            if len(value) < schema.get("minLength", 0) or (
+                "pattern" in schema and re.search(schema["pattern"], value) is None
+            ):
+                raise FactoryError("Windows runtime collector packet violates its owning schema string contract")
+        elif schema_type == "integer" and value < schema.get("minimum", value):
+            raise FactoryError("Windows runtime collector packet violates its owning schema minimum")
+
+    schema = load_json(RUNTIME_COLLECTOR_WINDOWS_SCHEMA)
+    verify_schema_assertions(schema)
+    verify_schema(packet, schema)
     candidates = packet.get("candidates")
     if not isinstance(candidates, list):
         raise FactoryError("Windows runtime collector packet candidates must be a list")
@@ -5023,6 +5073,11 @@ def verify_runtime_collector_windows_packet(packet: dict[str, Any]) -> dict[str,
         seen.add(key)
     checks = {
         "schema_version": packet.get("schema_version") == RUNTIME_COLLECTOR_WINDOWS_VERSION,
+        "collector_version": packet.get("collector_version") == RUNTIME_COLLECTOR_WINDOWS_VERSION,
+        "collector_run_id_matches": all(candidate["collector_run_id"] == packet["collector_run_id"] for candidate in candidates),
+        "generated_output_files_false": packet.get("generated_output_files") is False,
+        "notes_boundary": packet.get("notes_boundary") == RUNTIME_COLLECTOR_WINDOWS_BOUNDARY,
+        "candidate_notes_boundaries": all(candidate["notes_boundary"] == RUNTIME_COLLECTOR_WINDOWS_BOUNDARY for candidate in candidates),
         "collector_lane": packet.get("collector_lane") == "windows",
         "public_safe_status": packet.get("public_safe_status") == "NOT_PUBLIC_SAFE",
         "proof_ceiling": packet.get("proof_ceiling") == RUNTIME_COLLECTOR_WINDOWS_PROOF_CEILING,
@@ -5123,7 +5178,9 @@ def runtime_collector_windows_run_once(dry_run: bool, output_route: str | None =
     output_file = route_path / f"{candidate['collector_run_id']}-{candidate['candidate_id']}.json"
     if output_file.resolve() != output_file.absolute():
         raise FactoryError("Windows collector candidate output must not redirect outside its approved path")
-    if output_file.exists():
+    def preserve_existing_packet() -> dict[str, Any]:
+        if output_file.resolve() != output_file.absolute():
+            raise FactoryError("Windows collector candidate output must not redirect outside its approved path")
         existing_packet = load_runtime_collector_windows_packet(output_file)
         verify_runtime_collector_windows_packet(existing_packet)
         if canonical_sha256(existing_packet) != canonical_sha256(packet):
@@ -5132,7 +5189,14 @@ def runtime_collector_windows_run_once(dry_run: bool, output_route: str | None =
         output["duplicate_preserved"] = True
         output["output_file"] = str(output_file)
         return output
-    output_file.write_text(json.dumps(packet, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    if output_file.exists():
+        return preserve_existing_packet()
+    try:
+        with output_file.open("x", encoding="utf-8") as output_stream:
+            output_stream.write(json.dumps(packet, indent=2, sort_keys=True) + "\n")
+    except FileExistsError:
+        return preserve_existing_packet()
     output["generated_output_files"] = True
     output["duplicate_preserved"] = False
     output["output_file"] = str(output_file)

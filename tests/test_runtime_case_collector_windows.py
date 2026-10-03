@@ -149,6 +149,109 @@ class WindowsCollectorPreflightTests(unittest.TestCase):
                 ho_factory.runtime_collector_windows_run_once(False, "approved-route")
             self.assertEqual(output.read_text(encoding="utf-8"), malformed)
 
+    def test_concurrent_valid_candidate_is_verified_and_preserved(self) -> None:
+        original_open = Path.open
+        existing = json.dumps(ho_factory.runtime_collector_windows_packet())
+
+        def create_first(path, mode="r", *args, **kwargs):
+            if mode == "x":
+                with original_open(path, "w", encoding="utf-8") as stream:
+                    stream.write(existing)
+                raise FileExistsError("simulated competing candidate creation")
+            return original_open(path, mode, *args, **kwargs)
+
+        with mock.patch.object(Path, "open", create_first):
+            result = ho_factory.runtime_collector_windows_run_once(False, "approved-route")
+        self.assertFalse(result["generated_output_files"])
+        self.assertTrue(result["duplicate_preserved"])
+        self.assertEqual(Path(result["output_file"]).read_text(encoding="utf-8"), existing)
+
+    def test_concurrent_corrupt_candidate_is_not_overwritten(self) -> None:
+        original_open = Path.open
+        raced_path = None
+
+        def create_first(path, mode="r", *args, **kwargs):
+            nonlocal raced_path
+            if mode == "x":
+                raced_path = path
+                with original_open(path, "w", encoding="utf-8") as stream:
+                    stream.write("concurrent invalid packet")
+                raise FileExistsError("simulated competing candidate creation")
+            return original_open(path, mode, *args, **kwargs)
+
+        with mock.patch.object(Path, "open", create_first):
+            with self.assertRaises(ho_factory.FactoryError):
+                ho_factory.runtime_collector_windows_run_once(False, "approved-route")
+        self.assertIsNotNone(raced_path)
+        self.assertEqual(raced_path.read_text(encoding="utf-8"), "concurrent invalid packet")
+
+    def test_concurrent_output_redirect_is_rejected_without_overwriting_target(self) -> None:
+        original_open = Path.open
+        original_resolve = Path.resolve
+        target = self.route / "outside-target"
+        target.write_text("preserve unrelated target", encoding="utf-8")
+        raced = False
+
+        def redirect_first(path, mode="r", *args, **kwargs):
+            nonlocal raced
+            if mode == "x":
+                raced = True
+                raise FileExistsError("simulated competing output symlink")
+            return original_open(path, mode, *args, **kwargs)
+
+        def resolve_redirect(path, *args, **kwargs):
+            if raced and path.name.endswith(".json"):
+                return target
+            return original_resolve(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "open", redirect_first), mock.patch.object(Path, "resolve", resolve_redirect):
+            with self.assertRaisesRegex(ho_factory.FactoryError, "must not redirect"):
+                ho_factory.runtime_collector_windows_run_once(False, "approved-route")
+        self.assertTrue(raced)
+        self.assertEqual(target.read_text(encoding="utf-8"), "preserve unrelated target")
+
+    def test_actual_packet_schema_and_promotion_boundaries_fail_closed(self) -> None:
+        original = ho_factory.runtime_collector_windows_packet()
+        output = self.route / "hostile.json"
+        mutations = [
+            lambda packet: packet.update(collector_version="unreviewed-collector"),
+            lambda packet: packet.update(generated_output_files=True),
+            lambda packet: packet.update(notes_boundary="production ready"),
+            lambda packet: packet.update(collector_run_id="different-run"),
+            lambda packet: packet.update(candidate_count=True),
+            lambda packet: packet.update(unsupported_authority=True),
+            lambda packet: packet.pop("invariants"),
+            lambda packet: packet["candidates"][0].update(case_status="CASE_CLOSED"),
+            lambda packet: packet["candidates"][0].update(notes_boundary="public-safe proof"),
+            lambda packet: packet["candidates"][0].update(unsupported_authority=True),
+            lambda packet: packet["invariants"].update(unsupported_authority=True),
+        ]
+        for key, expected in original["invariants"].items():
+            replacement = not expected if type(expected) is bool else "PROMOTED"
+            mutations.append(lambda packet, key=key, replacement=replacement: packet["invariants"].update({key: replacement}))
+        for key in ("ai_decided_disposition", "human_review_required"):
+            mutations.append(lambda packet, key=key: packet["invariants"].update({key: int(original["invariants"][key])}))
+        for index, mutate in enumerate(mutations):
+            hostile = json.loads(json.dumps(original))
+            mutate(hostile)
+            output.write_text(json.dumps(hostile), encoding="utf-8")
+            with self.subTest(mutation=index), self.assertRaises(ho_factory.FactoryError):
+                ho_factory.runtime_collector_windows_verify(str(output))
+            with self.subTest(mutation=index), self.assertRaises(ho_factory.FactoryError):
+                ho_factory.runtime_collector_windows_dedupe_check(str(output))
+
+    def test_future_unsupported_schema_assertions_fail_closed(self) -> None:
+        schema = ho_factory.load_json(ho_factory.RUNTIME_COLLECTOR_WINDOWS_SCHEMA)
+        schema["properties"]["candidates"]["maxItems"] = 1
+        with mock.patch.object(ho_factory, "load_json", return_value=schema):
+            with self.assertRaisesRegex(ho_factory.FactoryError, "unsupported assertions"):
+                ho_factory.verify_runtime_collector_windows_packet(ho_factory.runtime_collector_windows_packet())
+        schema = ho_factory.load_json(ho_factory.RUNTIME_COLLECTOR_WINDOWS_SCHEMA)
+        schema["properties"]["absent_optional_field"] = {"anyOf": [{"type": "string"}]}
+        with mock.patch.object(ho_factory, "load_json", return_value=schema):
+            with self.assertRaisesRegex(ho_factory.FactoryError, "unsupported assertions"):
+                ho_factory.verify_runtime_collector_windows_packet(ho_factory.runtime_collector_windows_packet())
+
 
 class WindowsCollectorRouteTests(unittest.TestCase):
     def test_both_existing_workflow_routes_are_allowlisted(self) -> None:
